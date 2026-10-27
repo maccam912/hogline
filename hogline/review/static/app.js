@@ -223,6 +223,94 @@ function renderFrame() {
   $("#perception-caption").innerHTML = observation
     ? `<span class="pill green">OPENCV BASELINE</span><span>${count} colored-handle candidates · uncalibrated · scores unknown</span>`
     : `<span class="fine-print">${frame ? "This cached frame has not been analyzed." : "Evidence will be analyzed with OpenCV when cached."}</span>${frame ? '<button class="button quiet" id="analyze-cached">Analyze cached frames →</button>' : ""}`;
+  renderBroadcast(frame);
+}
+function renderBroadcast(frame) {
+  const panel = $("#broadcast-content"),
+    data = state.data.broadcast;
+  const observation = data?.observations.find(
+    (o) => o.evidence_id === frame?.id,
+  );
+  const proposals =
+    data?.score_proposals.filter((p) => p.source_id === state.source) || [];
+  const width = frame?.image.width,
+    height = frame?.image.height;
+  if (!observation) {
+    $("#broadcast-summary").textContent = "Not analyzed";
+    panel.innerHTML = `<p class="fine-print">${width ? `${width} × ${height} source pixels. ` : ""}Clock and board templates are checked per sheet. Read the retained frames to generate evidence-linked proposals.</p>`;
+    return;
+  }
+  const clock = observation.clock,
+    board = observation.scoreboard;
+  $("#broadcast-summary").textContent =
+    board.status === "unconfigured"
+      ? "Board template needed"
+      : "Proposals · review required";
+  const crops = Object.keys(observation.crops)
+    .map(
+      (name) =>
+        `<figure><img src="/api/broadcast/${observation.id}/${name}" alt="Source evidence crop: ${escapeHTML(name)}"><figcaption>${escapeHTML(name.replaceAll("_", " "))}</figcaption></figure>`,
+    )
+    .join("");
+  const cards = board.cards
+    .map(
+      (c) =>
+        `<span class="board-card ${c.color}">End ${c.end_number ?? "?"} → ${c.cumulative_points} cumulative</span>`,
+    )
+    .join("");
+  panel.innerHTML = `<p class="fine-print">${width} × ${height} source pixels · seed views uncalibrated · sheet ${observation.sheet}</p><div class="broadcast-crops">${crops}</div><h4>Observed clock</h4><p>${escapeHTML(clock.date_text || "Date unreadable")} · ${escapeHTML(clock.time_text || "Time unreadable")}</p><p class="fine-print">${clock.candidates.length ? `${clock.candidates.length} wall-time alternative${clock.candidates.length === 1 ? "" : "s"} · ${clock.ambiguous ? "AM/PM or DST remains ambiguous" : "mapping still proposed"}` : escapeHTML(clock.missing_reason || "Clock not resolved")}. The recording title is not substituted for an unreadable overlay.</p><h4>Traditional board</h4>${board.status === "unconfigured" ? '<p class="fine-print">No scoreboard template is configured for this sheet. The Sheet 4 crop is not reused here.</p>' : `<div class="board-cards">${cards || '<p class="fine-print">No legible scoring cards.</p>'}</div><p class="fine-print">Numbers on movable cards identify ends; board position is cumulative points. ${board.unreadable_slots?.length || 0} occupied slots unreadable. Storage and blank markers remain uninterpreted.</p>`}${proposals.length ? `<h4>Persistent score proposals</h4>${proposals.map((p) => `<div class="score-proposal"><span>End ${p.official_number}: ${p.color} +${p.points}</span><a class="evidence-link" target="_blank" rel="noopener" href="${escapeHTML(p.youtube_links[0])}">${p.evidence_ids.length} frames ↗</a><button class="button quiet" data-score-proposal="${p.id}">Add to game review →</button></div>`).join("")}` : '<p class="fine-print">No score proposal has passed the temporal consistency checks.</p>'}`;
+}
+
+function useScoreProposal(id) {
+  const proposal = state.data.broadcast.score_proposals.find(
+    (p) => p.id === id,
+  );
+  if (!proposal) return;
+  if (state.draft) readEditor();
+  else {
+    const matching = sourceGames().filter((g) =>
+      proposal.evidence_ids.every((id) => {
+        const e = state.data.evidence.find((e) => e.id === id);
+        return g.spans.some(
+          (s) =>
+            s.source_id === e.source_id &&
+            e.source_seconds >= s.start_seconds &&
+            e.source_seconds <= s.end_seconds,
+        );
+      }),
+    );
+    if (matching.length !== 1)
+      return toast(
+        "Open the intended game review and link the supporting source span first.",
+        true,
+      );
+    state.draft = {
+      revision: matching[0].revision,
+      game: cleanGame(matching[0]),
+    };
+    state.audit = {};
+  }
+  const g = state.draft.game;
+  if (g.ends.some((e) => e.official_number === proposal.official_number))
+    return toast(
+      "That official end already exists. Compare the evidence in its review; the proposal will not overwrite it.",
+      true,
+    );
+  g.ends.push({
+    id: crypto.randomUUID(),
+    observed_index: Math.max(0, ...g.ends.map((e) => e.observed_index)) + 1,
+    official_number: proposal.official_number,
+    state: "played",
+    red_points: proposal.color === "red" ? proposal.points : 0,
+    yellow_points: proposal.color === "yellow" ? proposal.points : 0,
+    acceptance: "proposed",
+    evidence_ids: proposal.evidence_ids,
+    note: "Scoreboard-history proposal from cumulative column differences; end play and template require review.",
+  });
+  renderEditor();
+  toast(
+    "Proposed end added to the review draft. Inspect its evidence and save a revision when ready.",
+  );
 }
 function renderDetections(frame, observation) {
   const asset =
@@ -585,6 +673,8 @@ document.addEventListener("click", async (event) => {
       renderFrame();
     }
     if (button.dataset.edit) editGame(button.dataset.edit);
+    if (button.dataset.scoreProposal)
+      useScoreProposal(button.dataset.scoreProposal);
     if (button.dataset.retry) {
       await api(`/jobs/${button.dataset.retry}/retry`, "POST");
       await refresh();
@@ -624,6 +714,20 @@ document.addEventListener("click", async (event) => {
         toast(
           "OpenCV observations added from cached evidence. No video fetched.",
         );
+        break;
+      case "read-broadcast":
+        button.disabled = true;
+        try {
+          await api("/perception/broadcast", "POST", {
+            source_id: state.source,
+          });
+          await refresh();
+          toast(
+            "Clock and scoreboard observations updated from retained frames.",
+          );
+        } finally {
+          button.disabled = false;
+        }
         break;
       case "review-nav":
         state.reviewOnly = true;

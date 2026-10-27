@@ -4,7 +4,7 @@ from typing import Protocol
 import cv2
 import numpy as np
 
-VERSION = "opencv-hsv-handles-v2"
+VERSION = "opencv-hsv-handles-v3"
 
 
 class StoneDetector(Protocol):

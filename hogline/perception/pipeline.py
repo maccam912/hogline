@@ -7,6 +7,7 @@ from PIL import Image
 from sqlalchemy import select
 
 from hogline.db import Evidence, FrameObservation
+from hogline.perception.house import house_ring
 from hogline.perception.stones import VERSION, HSVHandleDetector, StoneDetector
 
 
@@ -28,7 +29,12 @@ def analyze_frame(session, evidence, root, detector: StoneDetector | None = None
             detection["id"] = f"{observation_id}:{view}:{index}"
             detection["evidence_id"] = evidence.id
             detection["youtube_url"] = frame.get("youtube_url")
-        views[view] = {"width": image.shape[1], "height": image.shape[0], "detections": detections}
+        views[view] = {
+            "width": image.shape[1],
+            "height": image.shape[0],
+            "detections": detections,
+            "house_ring": house_ring(image),
+        }
     document = {
         "id": observation_id,
         "evidence_id": evidence.id,

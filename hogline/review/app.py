@@ -1,4 +1,5 @@
 import hashlib
+import shutil
 import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -10,13 +11,15 @@ from pydantic import Field
 from sqlalchemy import select
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from hogline import __version__
 from hogline.adapters.sources import import_youtube
 from hogline.analytics.exports import csv_export, snapshot
 from hogline.config import Settings
-from hogline.db import Database, Evidence, Release, Revision, Source
+from hogline.db import Database, Evidence, FrameObservation, Release, Revision, Source
 from hogline.domain.catalog import Conflict, catalog, save_game
 from hogline.domain.models import GameEdit, Model, ScanRequest
 from hogline.orchestration.worker import enqueue, jobs, retry, run_one
+from hogline.perception.broadcast import analyze_broadcast, broadcast_catalog
 from hogline.perception.pipeline import analyze_cached, observations
 
 
@@ -26,6 +29,10 @@ class SourceImport(Model):
 
 class ReleaseRequest(Model):
     mode: str = "confirmed"
+
+
+class BroadcastRequest(Model):
+    source_id: str
 
 
 def create_app(settings: Settings | None = None, start_worker=False):
@@ -48,7 +55,7 @@ def create_app(settings: Settings | None = None, start_worker=False):
         if thread:
             thread.join(timeout=1)
 
-    app = FastAPI(title="Hogline", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title="Hogline", version=__version__, lifespan=lifespan)
     app.state.db = db
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "testserver"])
 
@@ -66,15 +73,42 @@ def create_app(settings: Settings | None = None, start_worker=False):
 
     @app.get("/api/catalog")
     def get_catalog():
-        return {**catalog(db), "jobs": jobs(db), "observations": observations(db)}
+        return {
+            **catalog(db),
+            "jobs": jobs(db),
+            "observations": observations(db),
+            "broadcast": broadcast_catalog(db),
+        }
 
     @app.post("/api/perception/analyze")
     def analyze():
         return {"observations": analyze_cached(db)}
 
+    @app.post("/api/perception/broadcast")
+    def read_broadcast(body: BroadcastRequest):
+        with db.session() as session:
+            ids = list(session.scalars(select(Evidence.id).where(Evidence.source_id == body.source_id)))
+        if not ids:
+            raise ValueError("Cache a source frame before reading its clock or board")
+        if not shutil.which("tesseract"):
+            raise ValueError("Install Tesseract OCR to read retained clock/scoreboard frames locally")
+        return {"observations": analyze_broadcast(db, ids)}
+
+    @app.get("/api/broadcast/{observation_id}/{crop}")
+    def broadcast_image(observation_id: str, crop: str):
+        with db.session() as session:
+            row = session.get(FrameObservation, observation_id)
+            asset = row.document.get("crops", {}).get(crop) if row else None
+            if asset is None:
+                raise HTTPException(404, "Broadcast crop not found")
+            path = db.settings.data_dir / asset["path"]
+            if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != asset["sha256"]:
+                raise HTTPException(410, "Broadcast crop missing or corrupt; use its YouTube timestamp")
+            return FileResponse(path, media_type="image/png")
+
     @app.get("/api/health")
     def health():
-        return {"status": "ok", "version": "0.1.0", "worker": start_worker}
+        return {"status": "ok", "version": __version__, "worker": start_worker}
 
     @app.post("/api/sources")
     def add_source(body: SourceImport):

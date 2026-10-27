@@ -1153,3 +1153,80 @@ dialog .primary {
 .view-tabs button:last-child {
   margin-left: auto;
 }
+.broadcast-panel {
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 14px;
+  margin: 0 0 22px;
+  background: #f7f9f2;
+}
+.broadcast-panel summary {
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.broadcast-panel h4 {
+  font-size: 11px;
+  margin: 16px 0 8px;
+}
+.broadcast-panel p {
+  font-size: 11px;
+}
+.broadcast-crops {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 15px;
+}
+.broadcast-crops figure {
+  margin: 0;
+  flex: 1;
+  min-width: 90px;
+  max-width: 340px;
+}
+.broadcast-crops img {
+  width: 100%;
+  object-fit: contain;
+  max-height: 130px;
+  background: #23332b;
+  border-radius: 3px;
+}
+.broadcast-crops figcaption {
+  font: 9px var(--mono);
+  color: var(--muted);
+  margin-top: 5px;
+}
+.board-cards {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+.board-card {
+  padding: 5px 8px;
+  font: 9px var(--mono);
+  border-radius: 3px;
+  border: 1px solid var(--line);
+  background: #fff;
+}
+.board-card.red {
+  border-left: 3px solid var(--red);
+}
+.board-card.yellow {
+  border-left: 3px solid #c5a94c;
+}
+.score-proposal {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  border-top: 1px solid var(--line);
+  padding: 8px 0;
+}
+.score-proposal button {
+  margin-left: auto;
+}

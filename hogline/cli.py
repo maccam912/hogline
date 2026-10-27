@@ -9,6 +9,7 @@ from hogline.db import Database
 from hogline.domain.catalog import catalog
 from hogline.domain.models import ScanRequest
 from hogline.orchestration.worker import enqueue, retry, run_one
+from hogline.perception.broadcast import analyze_broadcast
 from hogline.perception.pipeline import analyze_cached
 
 
@@ -27,6 +28,7 @@ def main():
     listing.add_argument("--limit", type=int, default=12)
     commands.add_parser("catalog")
     commands.add_parser("analyze", help="Run OpenCV on cached evidence; never downloads video")
+    commands.add_parser("analyze-broadcast", help="Read clock/scoreboard crops on up to 120 cached frames")
     scan = commands.add_parser("scan", help="Enqueue a sparse, on-demand evidence scan")
     scan.add_argument("source_id")
     scan.add_argument("--start", type=float, default=0)
@@ -61,6 +63,8 @@ def main():
                 result = catalog(db)
             case "analyze":
                 result = analyze_cached(db)
+            case "analyze-broadcast":
+                result = analyze_broadcast(db)
             case "scan":
                 result = enqueue(
                     db,

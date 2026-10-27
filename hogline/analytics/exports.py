@@ -5,6 +5,7 @@ import json
 from hogline.adapters.sources import digest
 from hogline.db import Release, now
 from hogline.domain.catalog import catalog
+from hogline.perception.broadcast import broadcast_catalog
 from hogline.perception.pipeline import observations
 
 
@@ -33,6 +34,7 @@ def snapshot(db, mode="confirmed"):
         "sources": data["sources"],
         "evidence": data["evidence"],
         "observations": observations(db),
+        "broadcast": broadcast_catalog(db),
         "coverage": {
             "inventoried_recordings": len(data["sources"]),
             "canonical_games": len(data["games"]),

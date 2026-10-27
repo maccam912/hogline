@@ -100,23 +100,43 @@ def cached_frame(db, source, seconds, layout=None):
             "source": source["id"],
             "metadata": source["metadata_sha256"],
             "second": seconds,
-            "profile": digest(layout or profile()),
-            "version": VERSION,
+            "version": "original-pts-frame-v1",
         }
     )
     path = db.settings.data_dir / "cache" / f"{key}.json"
     if not path.exists():
-        return None, path
+        # Reuse pre-acquisition-cache pilot frames without downloading them again.
+        for legacy in path.parent.glob("*.json"):
+            try:
+                candidate = json.loads(legacy.read_text())
+                if (
+                    candidate.get("source_id") == source["id"]
+                    and abs(
+                        candidate.get("requested_seconds", candidate.get("source_seconds", -1000)) - seconds
+                    )
+                    < 0.001
+                ):
+                    path.write_text(json.dumps(candidate))
+                    break
+            except (OSError, ValueError, TypeError):
+                continue
+        if not path.exists():
+            return None, path
     try:
         doc = json.loads(path.read_text())
     except (OSError, json.JSONDecodeError):
         return None, path
     import hashlib
 
-    for asset in [doc["image"], *doc["crops"].values()]:
+    for asset in [doc["image"]]:
         file = db.settings.data_dir / asset["path"]
         if not file.is_file() or hashlib.sha256(file.read_bytes()).hexdigest() != asset["sha256"]:
             return None, path
+    doc["_recrop_required"] = doc.get("profile_sha256") != digest(layout or profile())
+    for asset in doc["crops"].values():
+        file = db.settings.data_dir / asset["path"]
+        if not file.is_file() or hashlib.sha256(file.read_bytes()).hexdigest() != asset["sha256"]:
+            doc["_recrop_required"] = True
     return doc, path
 
 
@@ -148,19 +168,26 @@ def execute(db, job):
             )
         seconds = request.start_seconds + index * request.interval_seconds
         doc, cache_path = cached_frame(db, source, seconds, layout)
-        if doc:
+        if doc and not doc.pop("_recrop_required", False):
             vectors = vectors_from_doc(db, doc)
             cache_hits += 1
             for asset in [doc["image"], *doc["crops"].values()]:
                 budget.consume(asset["bytes"])
         else:
-            if media is None:
-                handle = resolve_media(source)
-                media = handle["uri"]
-                media_selection = {key: value for key, value in handle.items() if key != "uri"}
-            image, timing = capture(media, seconds)
+            if doc:
+                image = Image.open(db.settings.data_dir / doc["image"]["path"]).convert("RGB")
+                timing = {name: doc[name] for name in ("pts", "time_base_num", "time_base_den")}
+                media_selection = doc.get("media_selection", {})
+                cache_hits += 1
+            else:
+                if media is None:
+                    handle = resolve_media(source)
+                    media = handle["uri"]
+                    media_selection = {key: value for key, value in handle.items() if key != "uri"}
+                image, timing = capture(media, seconds)
             doc, vectors = observe(image, timing, source, db.settings.data_dir, budget, layout)
             doc["media_selection"] = media_selection
+            doc["requested_seconds"] = seconds
             cache_path.parent.mkdir(parents=True, exist_ok=True)
             temp = cache_path.with_suffix(f".{token}.tmp")
             temp.write_text(json.dumps(doc))

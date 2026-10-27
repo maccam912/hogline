@@ -39,6 +39,7 @@ uv run hogline work --once
 
 # Rerun the detector on retained evidence without accessing any video.
 uv run hogline analyze
+uv run hogline analyze-broadcast
 
 # Releases include source spans, exact interpretation revisions, and timestamp links.
 uv run hogline export /absolute/path/pilot.json --mode exploratory
@@ -58,13 +59,16 @@ To revise camera crops, copy/edit `profiles/wausau-v1.json` and set `HOGLINE_PRO
 
 - Sparse panel motion produces **activity candidates**, with advertisements excluded. It cannot yet distinguish games, practice, maintenance, adjacent-sheet movement, or immediate back-to-back games reliably.
 - An **OpenCV HSV/contour baseline** proposes red/yellow handle positions in overhead seed crops. It stores crop pixels and uncalibrated shape scores, not stone footprints or metric coordinates. A `StoneDetector` interface permits replacement with a trained detector.
+- Per-view blue-ring ellipse fits check house framing at the actual source resolution. They remain image-space observations, without surveyed dimensions or physical A/B labels.
+- **Local Tesseract OCR** reads the broadcast date/time and a scoped traditional-board template. Three consecutive consistent card-row observations can propose end-point differences from cumulative columns. Initial row totals, blank ends, storage markers, winners, and unreadable cards are not invented. Score proposals can populate a game review draft; saving and confirmation remain separate decisions. Install Tesseract to enable this stage.
+- Clock hypotheses retain AM/PM and DST alternatives. Offset segments require consecutive supporting frames and split at gaps or contradictory reads. A title date never replaces an unreadable overlay date.
 - Observations are versioned independently of human interpretations. A new detector can analyze retained frames without fetching media or overwriting reviewed scores.
 - All source/game links are many-to-many. Job keys, stable evidence IDs, unique constraints, leases, and transactional publication prevent repeat jobs from duplicating logical output. Overlapping proposals are conservatively associated with existing games and still require review.
 - Optimistic revision checks reject stale edits. Every accepted edit keeps an author, reason, prior snapshot, and evidence references. Exports freeze the interpretation revisions and metric eligibility rules.
 
-**Still to build:** calibrated stone footprints/tracking, traditional scoreboard OCR, clock OCR and discontinuity handling, stronger game/end segmentation, automatic score reconciliation, labeled evaluation/acceptance gates, split/merge reconciliation, historical rosters, dense Parquet observations, incremental seasonal discovery, and production operations/access control. No scores, wins, identities, physical A/B mappings, or accuracy rates are inferred by this pilot. A confirmed real overlap/continuation pair and a fully labeled long day remain validation work; synthetic fixtures currently exercise those relationships.
+**Still to build:** calibrated stone footprints/tracking, scoreboard templates for the remaining sheets/layout episodes, stronger game/end segmentation, automatic score reconciliation and acceptance gates, labeled evaluation, split/merge reconciliation, historical rosters, dense Parquet observations, incremental seasonal discovery, and production operations/access control. No final results, named identities, physical A/B mappings, or accuracy rates are accepted automatically by this pilot. A confirmed real overlap/continuation pair and a fully labeled long day remain validation work; synthetic fixtures currently exercise those relationships.
 
-The next automation milestone is **scoreboard observations + stable house states + end transitions**, evaluated on a labeled day. Human review should shrink to uncertain exceptions as measured precision improves. See [pilot notes](docs/PILOT.md) and the [annotation guide](docs/ANNOTATION.md).
+The next automation milestone is **stable house states + end transitions + labeled evaluation**, followed by measured automatic acceptance. Human review should shrink to uncertain exceptions as precision improves. See [cross-sheet validation](docs/CROSS_SHEET.md), [initial pilot notes](docs/PILOT.md), and the [annotation guide](docs/ANNOTATION.md).
 
 ## Development
 
