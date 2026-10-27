@@ -1,0 +1,21 @@
+{
+  "id": "wausau-composite-seed-v1",
+  "club": "Wausau Curling Club",
+  "timezone": "America/Chicago",
+  "sheets": [1, 2, 3, 4, 5, 6, 7, 8],
+  "reference_resolution": [1920, 1080],
+  "calibration_status": "unverified_seed_crops",
+  "physical_end_mapping": null,
+  "views": {
+    "perspective_left": [0, 0, 0.375, 0.95],
+    "house_top": [0.375, 0, 0.625, 0.444444],
+    "house_bottom": [0.375, 0.555556, 0.625, 1],
+    "perspective_right": [0.625, 0, 1, 0.95]
+  },
+  "activity_views": ["house_top", "house_bottom", "perspective_left", "perspective_right"],
+  "scoreboard_crop": null,
+  "scoreboard_convention": "traditional_cumulative_points_movable_end_cards",
+  "blank_end_convention": null,
+  "clock_mapping": "unresolved",
+  "notes": "Normalized seed bounds from DESIGN.md. Advert center excluded. Perspective views can include neighboring sheets; activity is only a review candidate. No physical A/B mapping or geometric calibration established. Scoreboard remains in full-frame evidence until its crop is verified."
+}

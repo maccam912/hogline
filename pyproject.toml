@@ -1,0 +1,40 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "hogline"
+version = "0.1.0"
+description = "An evidence-first curling archive and review workbench"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.115,<1",
+  "uvicorn>=0.34,<1",
+  "sqlalchemy>=2.0.40,<2.1",
+  "pydantic>=2.10,<3",
+  "numpy>=2.2,<3",
+  "pillow>=11,<13",
+  "opencv-python-headless>=4.11,<5",
+]
+
+[project.optional-dependencies]
+postgres = ["psycopg[binary]>=3.2,<4"]
+
+[dependency-groups]
+dev = ["pytest>=8,<10", "httpx>=0.28,<1", "ruff>=0.11,<1"]
+
+[project.scripts]
+hogline = "hogline.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["hogline"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]

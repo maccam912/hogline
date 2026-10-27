@@ -1,0 +1,27 @@
+name: Checks
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
+        with:
+          python-version: '3.12'
+          enable-cache: true
+      - name: Install media and OCR tools
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg tesseract-ocr
+      - run: uv sync --locked --group dev
+      - run: python3 scripts/check_repository.py --all
+      - run: uv run ruff check hogline tests scripts
+      - run: uv run ruff format --check hogline tests scripts
+      - run: uv run pytest -q
+      - run: node --check hogline/review/static/app.js
+      - run: uv build

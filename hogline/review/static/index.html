@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Hogline · The curling archive</title>
+    <link rel="stylesheet" href="/static/app.css" />
+    <script src="/static/app.js" defer></script>
+  </head>
+  <body>
+    <header>
+      <a class="brand" href="/" aria-label="Hogline home"
+        ><span class="stone-mark">●</span> hogline<span class="brand-dot"
+          >.</span
+        ></a
+      ><span class="header-label">THE CURLING ARCHIVE</span>
+      <div class="header-right">
+        <span class="local-light"></span> LOCAL WORKBENCH
+        <span class="version">PILOT 0.1</span>
+      </div>
+    </header>
+    <div class="shell">
+      <aside class="sidebar">
+        <div class="club-mark">W<span>WISCONSIN · USA</span></div>
+        <h2>Wausau Curling Club</h2>
+        <p class="muted small">Eight sheets. Every story has a source.</p>
+        <div class="nav-label">WORKSPACE</div>
+        <button class="nav-item selected" id="archive-nav">
+          ▤ <span>Recordings</span><b id="recording-count">0</b></button
+        ><button class="nav-item" id="review-nav">
+          ◎ <span>Needs review</span><b id="review-count">0</b>
+        </button>
+        <div class="sidebar-rule"></div>
+        <div class="nav-label">FILTER BY SHEET</div>
+        <div class="sheet-grid" id="sheet-filters"></div>
+        <div class="sidebar-bottom">
+          <span class="eyebrow">EVIDENCE FIRST</span>
+          <p>Every score has a source.<br />Unknown stays unknown.</p>
+          <a href="/docs" target="_blank" rel="noopener"
+            >API documentation ↗</a
+          >
+        </div>
+      </aside>
+      <main>
+        <section class="page-heading">
+          <div>
+            <div class="eyebrow">THE FIRST PASS</div>
+            <h1>From footage to facts.</h1>
+            <p class="muted">
+              Find the game. Follow the evidence. Keep what you can verify.
+            </p>
+          </div>
+          <div class="heading-actions">
+            <button class="button secondary" id="export-button">
+              Export dataset ↗</button
+            ><button class="button primary" id="import-button">
+              ＋ Add recording
+            </button>
+          </div>
+        </section>
+        <section class="stats" aria-label="Archive coverage">
+          <div>
+            <span>RECORDINGS</span><strong id="stat-sources">0</strong
+            ><small>metadata in the archive</small>
+          </div>
+          <div>
+            <span>INVENTORIED FOOTAGE</span><strong id="stat-hours">0h</strong
+            ><small>duration known · media fetched on demand</small>
+          </div>
+          <div>
+            <span>GAME INTERVALS</span><strong id="stat-games">0</strong
+            ><small
+              ><span id="stat-confirmed">0</span> boundaries confirmed</small
+            >
+          </div>
+          <div>
+            <span>FINAL RESULTS</span><strong id="stat-results">0</strong
+            ><small>confirmed with evidence</small>
+          </div>
+        </section>
+        <section class="workbench">
+          <div class="recording-panel">
+            <div class="section-heading">
+              <h2 id="list-heading">Source recordings</h2>
+              <span class="pill" id="source-list-count">0</span>
+            </div>
+            <input
+              type="search"
+              id="search"
+              placeholder="Search title, date, or team…"
+              aria-label="Search archive"
+            />
+            <div id="source-list"></div>
+            <p class="fine-print">
+              A recording may hold several games. A game may span several
+              recordings.
+            </p>
+          </div>
+          <div class="review-panel">
+            <div class="source-header">
+              <div>
+                <span class="eyebrow" id="source-kicker">SOURCE VIEWER</span>
+                <h2 id="source-title">Your archive starts here.</h2>
+              </div>
+              <span class="pill amber" id="clock-status">Clock unresolved</span>
+            </div>
+            <div id="empty-viewer" class="empty-viewer">
+              <div class="house-symbol"><i></i></div>
+              <h3>A whole day. A single sheet. A place to begin.</h3>
+              <p>
+                Add a YouTube recording to import its metadata.<br />Then sample
+                a small section when you’re ready.
+              </p>
+              <button class="button primary" id="empty-import">
+                Add your first recording ↗
+              </button>
+              <p class="fine-print">No full-stream download required.</p>
+            </div>
+            <div id="viewer-content" hidden>
+              <div class="view-tabs" role="group" aria-label="Camera crop">
+                <button data-view="composite" class="active">Composite</button
+                ><button data-view="house_top">Top house</button
+                ><button data-view="house_bottom">Bottom house</button
+                ><button id="overlay-toggle" aria-pressed="true">
+                  ◎ Stone candidates
+                </button>
+              </div>
+              <div class="frame-stage" id="frame-stage">
+                <div class="frame-placeholder">
+                  <span>NO CACHED FRAME</span>
+                  <p>
+                    Open the source on YouTube, or cache a frame at this moment.
+                  </p>
+                </div>
+              </div>
+              <div class="frame-toolbar">
+                <div>
+                  <span class="frame-time" id="frame-time">00:00:00</span
+                  ><span class="fine-print" id="pts-label"
+                    >Source time · wall clock unresolved</span
+                  >
+                </div>
+                <div>
+                  <button class="button quiet" id="cache-frame">
+                    Cache this frame</button
+                  ><a
+                    class="button secondary"
+                    id="youtube-link"
+                    target="_blank"
+                    rel="noopener"
+                    >Check on YouTube ↗</a
+                  >
+                </div>
+              </div>
+              <div class="perception-caption" id="perception-caption"></div>
+              <div class="timeline-block">
+                <div class="timeline-label">
+                  <span>SHEET TIMELINE</span
+                  ><span id="timeline-duration"></span>
+                </div>
+                <div class="timeline-track" id="timeline-track"></div>
+                <input
+                  type="range"
+                  id="scrubber"
+                  min="0"
+                  max="100"
+                  value="0"
+                  step="1"
+                  aria-label="Recording timestamp"
+                />
+                <div class="timeline-legend">
+                  <span><i class="legend-game"></i>Game interval</span
+                  ><span><i class="legend-scan"></i>Sparse scan</span
+                  ><span>Unscanned time remains unknown</span>
+                </div>
+              </div>
+              <div class="scan-bar">
+                <div>
+                  <h3>Make a bounded first pass</h3>
+                  <p>
+                    Sample camera panels for activity. Every proposal needs
+                    review.
+                  </p>
+                </div>
+                <button class="button secondary" id="scan-button">
+                  Scan a section →
+                </button>
+              </div>
+              <div class="section-heading games-heading">
+                <h2>Games in this recording</h2>
+                <button class="button quiet" id="add-game">
+                  ＋ Mark a game interval
+                </button>
+              </div>
+              <div id="game-list"></div>
+              <div id="game-editor" hidden></div>
+              <div class="section-heading jobs-heading">
+                <h2>Processing</h2>
+                <span class="fine-print"
+                  >Bounded work · resumable frame cache</span
+                >
+              </div>
+              <div id="job-list"></div>
+            </div>
+          </div>
+        </section>
+        <footer>
+          Hogline / Wausau pilot
+          <span>Observations → review → a dataset you can trace.</span>
+        </footer>
+      </main>
+    </div>
+    <dialog id="import-dialog">
+      <form id="import-form">
+        <button class="close-dialog" type="button" aria-label="Close">×</button
+        ><span class="eyebrow">METADATA FIRST</span>
+        <h2>Add a recording</h2>
+        <p>Import a source without downloading the stream.</p>
+        <label
+          >YouTube recording URL<input
+            name="url"
+            type="url"
+            required
+            placeholder="https://www.youtube.com/watch?v=…"
+        /></label>
+        <p class="fine-print">
+          Video duration is never interpreted as game duration. Dates and clock
+          mappings remain separate.
+        </p>
+        <button class="button primary" type="submit">Import recording →</button>
+      </form>
+    </dialog>
+    <dialog id="scan-dialog">
+      <form id="scan-form">
+        <button class="close-dialog" type="button" aria-label="Close">×</button
+        ><span class="eyebrow">SMALL, RESUMABLE STEPS</span>
+        <h2>Scan a section</h2>
+        <p>Frames are sought on demand. Full video is not stored.</p>
+        <div class="form-grid">
+          <label
+            >Start (HH:MM:SS)<input
+              name="start"
+              value="00:00:00"
+              required /></label
+          ><label
+            >End (HH:MM:SS)<input name="end" value="00:10:00" required /></label
+          ><label
+            >Sample interval (seconds)<input
+              name="interval"
+              type="number"
+              min="1"
+              max="60"
+              value="10"
+              required /></label
+          ><label
+            >Evidence budget (MB)<input
+              name="budget"
+              type="number"
+              min="1"
+              max="512"
+              value="200"
+              required
+          /></label>
+        </div>
+        <p class="fine-print">
+          Maximum 20 minutes / 120 frames per section. Motion does not establish
+          a game, league, score, or player identity. Camera crops are unverified
+          seeds.
+        </p>
+        <button class="button primary" type="submit">
+          Queue this section →
+        </button>
+      </form>
+    </dialog>
+    <dialog id="export-dialog">
+      <form id="export-form">
+        <button class="close-dialog" type="button" aria-label="Close">×</button
+        ><span class="eyebrow">REPRODUCIBLE BY DESIGN</span>
+        <h2>Export a dataset</h2>
+        <p>
+          Save an immutable snapshot with exact revisions and evidence links.
+        </p>
+        <label
+          >Interpretations<select name="mode">
+            <option value="confirmed">
+              Confirmed · reviewed boundaries and scores
+            </option>
+            <option value="exploratory">
+              Exploratory · include unreviewed proposals
+            </option>
+          </select></label
+        ><label
+          >Format<select name="format">
+            <option value="json">JSON · full evidence and source spans</option>
+            <option value="csv">CSV · game and end rows</option>
+          </select></label
+        ><button class="button primary" type="submit">
+          Create and download →
+        </button>
+      </form>
+    </dialog>
+    <div id="toast" role="status" aria-live="polite" hidden></div>
+  </body>
+</html>

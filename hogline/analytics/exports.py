@@ -1,0 +1,142 @@
+import csv
+import io
+import json
+
+from hogline.adapters.sources import digest
+from hogline.db import Release, now
+from hogline.domain.catalog import catalog
+from hogline.perception.pipeline import observations
+
+
+def snapshot(db, mode="confirmed"):
+    if mode not in ("confirmed", "exploratory"):
+        raise ValueError("Export mode must be confirmed or exploratory")
+    data = catalog(db)
+    games = data["games"]
+    if mode == "confirmed":
+        games = [g for g in games if g["acceptance"] == "human_confirmed"]
+        for game in games:
+            game["ends"] = [e for e in game["ends"] if e["acceptance"] == "human_confirmed"]
+            if game["result"]["acceptance"] != "human_confirmed":
+                game["result"] = {
+                    "outcome": "unknown",
+                    "red_points": None,
+                    "yellow_points": None,
+                    "acceptance": "unknown",
+                    "evidence_ids": [],
+                }
+    payload = {
+        "schema_version": "hogline-archive-v1",
+        "mode": mode,
+        "created_at": now(),
+        "games": games,
+        "sources": data["sources"],
+        "evidence": data["evidence"],
+        "observations": observations(db),
+        "coverage": {
+            "inventoried_recordings": len(data["sources"]),
+            "canonical_games": len(data["games"]),
+            "exported_games": len(games),
+            "confirmed_results": sum(g["result"]["acceptance"] == "human_confirmed" for g in games),
+            "scan_intervals": [
+                {"source_id": s["source_id"], **s["request"], "kind": "sparse_sampled"} for s in data["scans"]
+            ],
+        },
+        "metric_definition": {
+            "id": "confirmed-results-v1",
+            "grain": "canonical_game",
+            "eligibility": "human_confirmed final result; never inferred from partial end totals",
+            "unknown": "excluded from decided-game counts; null is not zero",
+        },
+    }
+    with db.session() as session:
+        # Use the same rows that were serialized, even if a review is saved during export.
+        payload["interpretation_revisions"] = {g["id"]: g["revision"] for g in data["games"]}
+        release = Release(sha256=digest(payload), document=payload)
+        session.add(release)
+        session.flush()
+        return {"id": release.id, "sha256": release.sha256, **payload}
+
+
+def csv_export(release):
+    out = io.StringIO()
+    fields = [
+        "row_type",
+        "game_id",
+        "game_revision",
+        "sheet",
+        "label",
+        "red_team",
+        "yellow_team",
+        "league",
+        "game_acceptance",
+        "source_spans_json",
+        "coverage",
+        "completion",
+        "acceptance",
+        "observed_index",
+        "official_number",
+        "end_state",
+        "red_points",
+        "yellow_points",
+        "outcome",
+        "evidence_ids",
+        "youtube_links",
+    ]
+    writer = csv.DictWriter(out, fieldnames=fields)
+    writer.writeheader()
+    evidence = {e["id"]: e for e in release["evidence"]}
+    for game in release["games"]:
+        base = {
+            "game_id": game["id"],
+            "game_revision": game["revision"],
+            "sheet": game["sheet"],
+            "label": game["label"],
+            "red_team": game["red_team"],
+            "yellow_team": game["yellow_team"],
+            "league": game["league"],
+            "game_acceptance": game["acceptance"],
+            "source_spans_json": json.dumps(game["spans"], separators=(",", ":")),
+            "coverage": game["coverage"],
+            "completion": game["completion"],
+        }
+        result = game["result"]
+        ids = result["evidence_ids"]
+        rows = [
+            {
+                **base,
+                "row_type": "game",
+                "acceptance": result["acceptance"],
+                "red_points": result["red_points"],
+                "yellow_points": result["yellow_points"],
+                "outcome": result["outcome"],
+                "evidence_ids": "|".join(ids),
+                "youtube_links": "|".join(evidence[i].get("youtube_url") or "" for i in ids)
+                or "|".join(s.get("youtube_url") or "" for s in game["spans"]),
+            }
+        ]
+        for end in game["ends"]:
+            ids = end["evidence_ids"]
+            rows.append(
+                {
+                    **base,
+                    "row_type": "end",
+                    "acceptance": end["acceptance"],
+                    "observed_index": end["observed_index"],
+                    "official_number": end["official_number"],
+                    "end_state": end["state"],
+                    "red_points": end["red_points"],
+                    "yellow_points": end["yellow_points"],
+                    "evidence_ids": "|".join(ids),
+                    "youtube_links": "|".join(evidence[i].get("youtube_url") or "" for i in ids),
+                }
+            )
+        for row in rows:
+            # Text from source metadata/reviewers must not become spreadsheet formulas.
+            writer.writerow(
+                {
+                    k: "'" + str(v) if isinstance(v, str) and v.startswith(("=", "+", "-", "@")) else v
+                    for k, v in row.items()
+                }
+            )
+    return out.getvalue()
