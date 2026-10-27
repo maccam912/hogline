@@ -335,6 +335,7 @@ h1 {
   min-height: 610px;
 }
 .recording-panel {
+  min-width: 0;
   padding: 22px 18px;
   border-right: 1px solid var(--line);
   background: #f9faf5;
