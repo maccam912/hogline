@@ -87,95 +87,99 @@ def curated_metadata(raw):
 
 
 def upsert_source(db: Database, key: str, metadata: dict, platform: str, metadata_kind="full"):
+    with db.snapshot_session(write=True) as session:
+        return upsert_source_in_session(session, key, metadata, platform, metadata_kind)
+
+
+def upsert_source_in_session(session, key, metadata, platform, metadata_kind="full"):
     fingerprint = digest(metadata)
-    with db.session() as session:
-        row = session.scalar(select(Source).where(Source.source_key == key))
-        if row is None:
-            row = Source(source_key=key, document={})
-            session.add(row)
-            session.flush()
-        old = row.document
-        prior = (
-            session.scalar(
-                select(MetadataSnapshot).where(
-                    MetadataSnapshot.source_id == row.id,
-                    MetadataSnapshot.sha256 == old.get("metadata_sha256"),
-                )
+    row = session.scalar(select(Source).where(Source.source_key == key))
+    if row is None:
+        row = Source(source_key=key, document={})
+        session.add(row)
+        session.flush()
+    old = row.document
+    prior = (
+        session.scalar(
+            select(MetadataSnapshot).where(
+                MetadataSnapshot.source_id == row.id,
+                MetadataSnapshot.sha256 == old.get("metadata_sha256"),
             )
-            if old
-            else None
         )
-        completeness = old.get("metadata_completeness") or (
-            "full" if prior and (prior.document.get("formats") or prior.document.get("probe")) else "unknown"
-        )
-        incoming = metadata
-        if metadata_kind == "listing" and old and completeness == "listing" and prior:
-            # A sparse later listing must not erase an already-known duration/date.
-            metadata = {**prior.document, **{k: v for k, v in metadata.items() if v is not None and v != []}}
-            fingerprint = digest(metadata)
-        title = metadata.get("title") or old.get("title") or "Untitled source"
-        row.document = {
-            "recording_clock_date": None,
-            "event_date": None,
-            "timezone": "America/Chicago",
-            "clock_status": "unresolved",
-            **old,
-            "id": row.id,
-            "platform": platform,
-            "platform_id": metadata.get("id"),
-            "title": title,
-            "duration_seconds": metadata.get("duration"),
-            **title_hints(title),
-            "upload_date": metadata.get("upload_date"),
-            "availability": metadata.get("availability") or "unknown",
-            "metadata_sha256": fingerprint,
-            "last_checked_at": now(),
-            "metadata_completeness": metadata_kind,
-            "metadata_refresh_needed": metadata_kind == "listing",
+        if old
+        else None
+    )
+    completeness = old.get("metadata_completeness") or (
+        "full" if prior and (prior.document.get("formats") or prior.document.get("probe")) else "unknown"
+    )
+    incoming = metadata
+    if metadata_kind == "listing" and old and completeness == "listing" and prior:
+        # A sparse later listing must not erase an already-known duration/date.
+        metadata = {**prior.document, **{k: v for k, v in metadata.items() if v is not None and v != []}}
+        fingerprint = digest(metadata)
+    title = metadata.get("title") or old.get("title") or "Untitled source"
+    row.document = {
+        "recording_clock_date": None,
+        "event_date": None,
+        "timezone": "America/Chicago",
+        "clock_status": "unresolved",
+        **old,
+        "id": row.id,
+        "platform": platform,
+        "platform_id": metadata.get("id"),
+        "title": title,
+        "duration_seconds": metadata.get("duration"),
+        **title_hints(title),
+        "upload_date": metadata.get("upload_date"),
+        "availability": metadata.get("availability") or "unknown",
+        "metadata_sha256": fingerprint,
+        "last_checked_at": now(),
+        "metadata_completeness": metadata_kind,
+        "metadata_refresh_needed": metadata_kind == "listing",
+    }
+    if metadata_kind == "listing":
+        hints = {
+            k: incoming[k]
+            for k in ("title", "duration", "live_status", "availability")
+            if incoming.get(k) is not None
         }
-        if metadata_kind == "listing":
-            hints = {
-                k: incoming[k]
-                for k in ("title", "duration", "live_status", "availability")
-                if incoming.get(k) is not None
-            }
-            if old and completeness != "listing":
-                # Channel discovery is a different observation from a full video
-                # manifest. Retain the manifest hash and all interpretation fields.
-                changed = not prior or any(prior.document.get(k) != v for k, v in hints.items())
-                row.document = {
-                    **old,
-                    "metadata_completeness": completeness,
-                    "metadata_refresh_needed": old.get("metadata_refresh_needed", False) or changed,
-                }
+        if old and completeness != "listing":
+            # Channel discovery is a different observation from a full video
+            # manifest. Retain the manifest hash and all interpretation fields.
+            changed = not prior or any(prior.document.get(k) != v for k, v in hints.items())
             row.document = {
-                **row.document,
-                "listing_metadata_sha256": digest(incoming),
-                "listing_hints": hints,
-                "last_discovered_at": now(),
+                **old,
+                "metadata_completeness": completeness,
+                "metadata_refresh_needed": old.get("metadata_refresh_needed", False) or changed,
             }
-        else:
-            row.document = {**row.document, "last_full_metadata_at": now(), "metadata_refresh_needed": False}
-        if platform == "youtube":
-            row.document = {**row.document, "url": video_link(row.document)}
-        else:
-            row.document = {
-                **row.document,
-                "local_path": metadata["local_path"],
-                "media_sha256": metadata["sha256"],
-                "probe": metadata["probe"],
-            }
-        for snapshot in (incoming, metadata):
-            sha = digest(snapshot)
-            existing = session.scalar(
-                select(MetadataSnapshot).where(
-                    MetadataSnapshot.source_id == row.id, MetadataSnapshot.sha256 == sha
-                )
+        row.document = {
+            **row.document,
+            "listing_metadata_sha256": digest(incoming),
+            "listing_hints": hints,
+            "last_discovered_at": now(),
+        }
+    else:
+        row.document = {**row.document, "last_full_metadata_at": now(), "metadata_refresh_needed": False}
+    if platform == "youtube":
+        row.document = {**row.document, "url": video_link(row.document)}
+    else:
+        row.document = {
+            **row.document,
+            "local_path": metadata["local_path"],
+            "media_sha256": metadata["sha256"],
+            "probe": metadata["probe"],
+        }
+    for snapshot in (incoming, metadata):
+        sha = digest(snapshot)
+        existing = session.scalar(
+            select(MetadataSnapshot).where(
+                MetadataSnapshot.source_id == row.id, MetadataSnapshot.sha256 == sha
             )
-            if existing is None:
-                session.add(MetadataSnapshot(source_id=row.id, sha256=sha, document=snapshot))
-                session.flush()
-        return row.document
+        )
+        if existing is None:
+            session.add(MetadataSnapshot(source_id=row.id, sha256=sha, document=snapshot))
+            session.flush()
+    return row.document
 
 
 def import_youtube(db: Database, url: str, metadata: dict | None = None, *, metadata_kind="full"):

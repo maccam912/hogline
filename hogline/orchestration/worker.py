@@ -188,7 +188,11 @@ def cached_frame(db, source, seconds, layout=None, acquisition_tier="evidence"):
                     Job.document["source_hash"].as_string() == source["metadata_sha256"],
                 )
             )
-            variants = {(j.document["profile_sha256"], j.document["stage_version"]) for j in old_jobs}
+            variants = {
+                (j.document["profile_sha256"], j.document["stage_version"])
+                for j in old_jobs
+                if j.document.get("kind", "scan") == "scan" and "profile_sha256" in j.document
+            }
         for profile_hash, stage_version in variants:
             legacy_key = digest(
                 {
@@ -246,6 +250,10 @@ def vectors_from_doc(db, doc):
 
 
 def execute(db, job):
+    if job.get("kind") == "metadata_refresh":
+        from hogline.orchestration.metadata import execute_metadata
+
+        return execute_metadata(db, job)
     if job.get("kind") == "broadcast_ocr":
         from hogline.orchestration.ocr_jobs import execute_ocr
 

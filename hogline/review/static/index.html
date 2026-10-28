@@ -619,6 +619,16 @@
           Add feed and queue metadata →
         </button>
       </form>
+      <section class="batch-card">
+        <h3>Complete recording metadata</h3>
+        <p>Upgrade incomplete or changed listings in the background. Earlier manifests and evidence remain retained. No video is fetched.</p>
+        <form id="metadata-refresh-form" class="form-grid">
+          <label>Recordings per request<input name="limit" type="number" min="1" max="16" value="4" required /></label>
+          <label>Timeout per recording (seconds)<input name="timeout" type="number" min="5" max="60" value="30" required /></label>
+          <button class="button secondary" type="submit">Queue metadata refresh</button>
+        </form>
+        <div id="metadata-refresh-status" aria-live="polite"></div>
+      </section>
       <div id="discovery-feeds" aria-live="polite"></div>
     </dialog>
     <dialog id="batch-resume-dialog">

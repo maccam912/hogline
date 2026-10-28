@@ -38,6 +38,7 @@ from hogline.orchestration.discovery import (
     feeds,
     run_discovery_once,
 )
+from hogline.orchestration.metadata import MetadataRefreshRequest, enqueue_refresh, metadata_queue
 from hogline.orchestration.plans import (
     BatchControl,
     PlanRequest,
@@ -84,6 +85,12 @@ def main():
         "discovery-work", help="Process bounded metadata pages; never fetch media"
     )
     discovery_work.add_argument("--once", action="store_true")
+    refresh = commands.add_parser(
+        "refresh-metadata", help="Queue bounded full metadata requests; never media"
+    )
+    refresh.add_argument("--limit", type=int, default=4)
+    refresh.add_argument("--timeout", type=int, default=30)
+    refresh.add_argument("--preview", action="store_true")
     commands.add_parser("catalog")
     commands.add_parser("analyze", help="Run OpenCV on cached evidence; never downloads video")
     broadcast = commands.add_parser("analyze-broadcast", help="Resume OCR on pending detailed frames")
@@ -214,6 +221,14 @@ def main():
                     if args.once:
                         break
                 return
+            case "refresh-metadata":
+                if args.preview:
+                    with db.snapshot_session() as session:
+                        result = metadata_queue(session)
+                else:
+                    result = enqueue_refresh(
+                        db, MetadataRefreshRequest(limit=args.limit, timeout_seconds=args.timeout)
+                    )
             case "catalog":
                 result = catalog(db)
             case "analyze":

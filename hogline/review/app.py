@@ -75,6 +75,7 @@ from hogline.orchestration.discovery import (
     feeds,
     run_discovery_once,
 )
+from hogline.orchestration.metadata import MetadataRefreshRequest, enqueue_refresh, metadata_queue
 from hogline.orchestration.plans import (
     BatchControl,
     BatchStart,
@@ -144,7 +145,10 @@ def create_app(settings: Settings | None = None, start_worker=False):
         if request.method not in ("GET", "HEAD", "OPTIONS") and origin:
             if origin != str(request.base_url).rstrip("/"):
                 return JSONResponse({"detail": "Mutations require the same local origin"}, status_code=403)
-        return await call_next(request)
+        response = await call_next(request)
+        if request.url.path == "/" or request.url.path.startswith("/static/"):
+            response.headers["Cache-Control"] = "no-cache"
+        return response
 
     @app.exception_handler(ValueError)
     async def invalid(_, exc):
@@ -356,6 +360,15 @@ def create_app(settings: Settings | None = None, start_worker=False):
     def add_source(body: SourceImport):
         return import_youtube(db, body.url)
 
+    @app.get("/api/metadata-refresh")
+    def get_metadata_refresh():
+        with db.snapshot_session() as session:
+            return metadata_queue(session)
+
+    @app.post("/api/metadata-refresh")
+    def refresh_metadata(body: MetadataRefreshRequest):
+        return enqueue_refresh(db, body)
+
     @app.get("/api/discovery")
     def get_discovery():
         return {"feeds": feeds(db)}
@@ -512,6 +525,13 @@ def create_app(settings: Settings | None = None, start_worker=False):
 
     @app.get("/")
     def index():
-        return FileResponse(static / "index.html")
+        page = (static / "index.html").read_text()
+        # An old browser cache may have seen these URLs before revalidation was
+        # enabled. Content hashes also support editable local workbench builds.
+        for asset in static.iterdir():
+            if asset.suffix in (".js", ".css"):
+                version = hashlib.sha256(asset.read_bytes()).hexdigest()[:16]
+                page = page.replace(f'"/static/{asset.name}"', f'"/static/{asset.name}?v={version}"')
+        return Response(page, media_type="text/html")
 
     return app

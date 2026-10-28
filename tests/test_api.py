@@ -6,7 +6,11 @@ from hogline.review.app import create_app
 def test_empty_workbench_and_origin_guard(db):
     app = create_app(db.settings)
     with TestClient(app) as client:
-        assert client.get("/").status_code == 200
+        page = client.get("/")
+        assert page.status_code == 200
+        assert page.headers["cache-control"] == "no-cache"
+        assert "/static/discovery.js?v=" in page.text
+        assert client.get("/static/discovery.js").headers["cache-control"] == "no-cache"
         assert client.get("/api/catalog").json()["sources"] == []
         assert client.get("/api/health").json()["status"] == "ok"
         assert (

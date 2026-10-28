@@ -7,6 +7,8 @@
     loading = true;
     try {
       current = (await api("/discovery")).feeds;
+      const metadata = await api("/metadata-refresh");
+      $("#metadata-refresh-status").innerHTML = `<p class="fine-print">${metadata.pending_sources.length} recordings need full metadata · ${metadata.total_jobs} refresh jobs</p>` + metadata.jobs.slice(0, 12).map(j => `<p class="fine-print">${escapeHTML(state.data?.sources.find(s => s.id === j.request.source_id)?.title || j.request.source_id)} · ${status(j.state)} · ${j.attempts} attempts${j.manifest_changed != null ? ` · ${j.manifest_changed ? "manifest updated" : "manifest unchanged"}` : ""}${j.error ? `<br><span class="job-error">${escapeHTML(j.error)}</span>` : ""}${j.state === "failed" && j.attempts < 3 ? `<button class="button quiet" data-metadata-retry="${j.id}">Retry metadata</button>` : ""}</p>`).join("");
       const expanded = new Set(
         $$("#discovery-feeds details[open]").map((d) => d.dataset.feedRuns),
       );
@@ -38,6 +40,14 @@
     if (button.id === "discovery-button") {
       $("#discovery-dialog").showModal();
       await load();
+      return;
+    }
+    if (button.dataset.metadataRetry) {
+      button.disabled = true;
+      try {
+        await api(`/jobs/${button.dataset.metadataRetry}/retry`, "POST", {});
+        await load();
+      } catch (error) { toast(error.message, true); button.disabled = false; }
       return;
     }
     if (!button.dataset.feedAction) return;
@@ -79,6 +89,19 @@
     } finally {
       button.disabled = false;
     }
+  });
+  $("#metadata-refresh-form").addEventListener("submit", async event => {
+    event.preventDefault();
+    const form = new FormData(event.target), button = event.submitter;
+    button.disabled = true;
+    try {
+      const result = await api("/metadata-refresh", "POST", {
+        limit: Number(form.get("limit")), timeout_seconds: Number(form.get("timeout"))
+      });
+      toast(`${result.jobs.length} metadata jobs selected. No media requested.`);
+      await load();
+    } catch (error) { toast(error.message, true); }
+    finally { button.disabled = false; }
   });
   setInterval(() => {
     if ($("#discovery-dialog").open && !document.hidden) load();
