@@ -23,6 +23,7 @@ reports/
 *.webm
 *.mov
 *.avi
+*.nut
 *.parquet
 *.onnx
 *.pt

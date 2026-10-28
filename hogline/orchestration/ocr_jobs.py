@@ -51,7 +51,7 @@ def execute_ocr(db, job):
         raise ValueError("One frame exceeded its OCR time allowance") from exc
     check_execution(db, token, time.monotonic() - started)
     update_owned(db, job["id"], token, progress=1, completed_frames=1, observation_id=observation["id"])
-    with db.session() as session:
+    with db.snapshot_session(write=True) as session:
         row = session.get(Job, job["id"])
         if row.state != "running" or row.document.get("lease_token") != token:
             raise WorkStopped("OCR lease was reclaimed")

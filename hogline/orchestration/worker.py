@@ -13,6 +13,7 @@ from hogline.config import profile
 from hogline.db import Evidence, Job, JobExecution, ProcessingBatch, Scan, now
 from hogline.domain.catalog import propose_games, source_or_error
 from hogline.domain.models import ScanRequest, uid
+from hogline.media.chunks import VideoChunk
 from hogline.media.frames import (
     EvidenceBudget,
     EvidenceLimitError,
@@ -83,7 +84,7 @@ def claim(db):
 
 
 def claim_transaction(db):
-    with db.session() as session:
+    with db.snapshot_session(write=True) as session:
         expired = (Job.state == "running") & (Job.lease_until < now())
         for old in session.scalars(select(Job).where(expired)):
             execution = session.get(JobExecution, old.document.get("lease_token", ""))
@@ -168,7 +169,7 @@ def claim_transaction(db):
 
 
 def update_owned(db, job_id, token, **changes):
-    with db.session() as session:
+    with db.snapshot_session(write=True) as session:
         job = session.get(Job, job_id)
         if job.state != "running" or job.document.get("lease_token") != token:
             raise ValueError("Work lease was reclaimed; this worker cannot publish")
@@ -276,6 +277,12 @@ def execute(db, job):
         from hogline.orchestration.windows import execute_window
 
         return execute_window(db, job)
+    root = db.settings.working_video_dir or db.settings.data_dir / "working-video"
+    with VideoChunk(root, db.settings.working_video_mb) as chunk:
+        return execute_scan(db, job, chunk)
+
+
+def execute_scan(db, job, chunk):
     request = ScanRequest.model_validate(job["request"])
     with db.session() as session:
         source = source_or_error(session, request.source_id)
@@ -322,7 +329,26 @@ def execute(db, job):
                     )
                     media = handle["uri"]
                     media_selection = {key: value for key, value in handle.items() if key != "uri"}
-                image, timing = capture(media, seconds)
+                    if count - index > 1:
+
+                        def tick():
+                            elapsed = time.monotonic() - started
+                            check_execution(db, token, elapsed)
+                            if elapsed > request.max_worker_seconds:
+                                raise WorkStopped("Worker time budget reached during video acquisition")
+
+                        update_owned(db, job["id"], token, acquisition="downloading_temporary_section")
+                        chunk.prepare(
+                            media,
+                            seconds,
+                            request.end_seconds,
+                            tick,
+                            seek_seconds=max(5, (count - index) * 1.5),
+                        )
+                        update_owned(
+                            db, job["id"], token, acquisition="local_section" if chunk.path else "remote_seek"
+                        )
+                image, timing = chunk.capture(capture, media, seconds)
                 decoded_size = list(image.size)
                 if request.acquisition_tier == "coarse":
                     image.thumbnail((640, 360))
@@ -410,7 +436,7 @@ def execute(db, job):
         "evidence_bytes": logical_bytes,
     }
     check_execution(db, token, time.monotonic() - started)
-    with db.session() as session:
+    with db.snapshot_session(write=True) as session:
         row = session.get(Job, job["id"])
         if row.state != "running" or row.document.get("lease_token") != token:
             raise ValueError("Work lease expired before publication")
@@ -447,7 +473,7 @@ def run_one(db):
     try:
         execute(db, job)
     except Exception as exc:
-        with db.session() as session:
+        with db.snapshot_session(write=True) as session:
             row = session.get(Job, job["id"])
             if row.document.get("lease_token") == job["lease_token"]:
                 batch = (

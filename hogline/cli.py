@@ -237,9 +237,10 @@ def main():
     worker.add_argument("--once", action="store_true")
     retry_parser = commands.add_parser("retry")
     retry_parser.add_argument("job_id")
-    serve = commands.add_parser("serve", help="Start the local review app and one worker")
+    serve = commands.add_parser("serve", help="Start the local review app and parallel processing workers")
     serve.add_argument("--port", type=int, default=8765)
     serve.add_argument("--no-worker", action="store_true")
+    serve.add_argument("--workers", type=int, choices=range(1, 33), metavar="1-32")
     export = commands.add_parser("export", help="Create an immutable dataset release")
     export.add_argument("path")
     export.add_argument("--mode", choices=["confirmed", "exploratory"], default="confirmed")
@@ -448,10 +449,14 @@ def main():
             case "retry":
                 result = retry(db, args.job_id)
             case "serve":
+                from dataclasses import replace
+
                 import uvicorn
 
                 from hogline.review.app import create_app
 
+                if args.workers is not None:
+                    settings = replace(settings, workers=args.workers)
                 uvicorn.run(
                     create_app(settings, start_worker=not args.no_worker), host="127.0.0.1", port=args.port
                 )

@@ -11,6 +11,24 @@ from PIL import Image
 from hogline.adapters.sources import digest, video_link
 from hogline.config import profile
 
+_shared_cache_usage = {}
+
+
+def cache_size(root):
+    return sum(
+        p.stat().st_size
+        for folder, pattern in (("evidence", "*.png"), ("dense", "*.parquet"))
+        for p in (root / folder).rglob(pattern)
+    )
+
+
+def share_cache_usage(root, counter):
+    key = str(root.resolve())
+    if counter is None:
+        _shared_cache_usage.pop(key, None)
+    else:
+        _shared_cache_usage[key] = counter
+
 
 def resolve_media(source, max_height=1080):
     if source["platform"] == "local":
@@ -106,11 +124,20 @@ class EvidenceBudget:
     def __init__(self, root, job_mb, cache_mb):
         self.job_limit, self.cache_limit = job_mb * 1024**2, cache_mb * 1024**2
         self.logical_bytes = 0
-        self.cache_bytes = sum(p.stat().st_size for p in (root / "evidence").rglob("*.png"))
-        self.cache_bytes += sum(p.stat().st_size for p in (root / "dense").rglob("*.parquet"))
+        self.shared_usage = _shared_cache_usage.get(str(root.resolve()))
+        self.cache_bytes = self.shared_usage.value if self.shared_usage is not None else cache_size(root)
         self.reserve_growth = None
 
     def consume(self, size, additional_bytes=0):
+        if self.shared_usage is not None:
+            with self.shared_usage.get_lock():
+                self.cache_bytes = self.shared_usage.value
+                self._consume(size, additional_bytes)
+                self.shared_usage.value += max(0, additional_bytes)
+        else:
+            self._consume(size, additional_bytes)
+
+    def _consume(self, size, additional_bytes):
         if self.logical_bytes + size > self.job_limit:
             raise EvidenceLimitError(
                 "Evidence budget reached. Shorten the scan or explicitly raise its budget.", "job"

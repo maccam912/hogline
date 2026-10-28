@@ -18,6 +18,7 @@ PRIVATE_SUFFIXES = {
     ".webm",
     ".mov",
     ".avi",
+    ".nut",
     ".sqlite",
     ".sqlite3",
     ".db",

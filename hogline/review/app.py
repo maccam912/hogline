@@ -96,8 +96,9 @@ from hogline.orchestration.plans import (
     create_batch,
     preview_plan,
 )
+from hogline.orchestration.pool import WorkerPool
 from hogline.orchestration.windows import RETENTION_VERSION, WindowRequest, enqueue_window
-from hogline.orchestration.worker import enqueue, jobs_in_session, retry, run_one
+from hogline.orchestration.worker import enqueue, jobs_in_session, retry
 from hogline.perception.actors import VERSION as ACTOR_VERSION
 from hogline.perception.board_locator import board_locations_in_session
 from hogline.perception.broadcast import analyze_broadcast, broadcast_catalog_in_session
@@ -135,12 +136,12 @@ def create_app(settings: Settings | None = None, start_worker=False):
     db = Database(settings or Settings.load())
     stop = threading.Event()
     worker_state = {"enabled": start_worker, "thread": None, "error": None}
+    pool = None
 
     def worker_loop():
         try:
             while not stop.is_set():
-                discovered = run_discovery_once(db)
-                if run_one(db) is None and discovered is None:
+                if run_discovery_once(db) is None:
                     stop.wait(1)
         except Exception as exc:
             worker_state["error"] = str(exc)
@@ -148,15 +149,22 @@ def create_app(settings: Settings | None = None, start_worker=False):
 
     @asynccontextmanager
     async def lifespan(_):
+        nonlocal pool
         thread = None
         if start_worker:
+            pool = WorkerPool(db.settings)
+            pool.start()
             thread = threading.Thread(target=worker_loop, daemon=True, name="hogline-worker")
             worker_state["thread"] = thread
             thread.start()
-        yield
-        stop.set()
-        if thread:
-            thread.join(timeout=1)
+        try:
+            yield
+        finally:
+            stop.set()
+            if thread:
+                thread.join(timeout=1)
+            if pool:
+                pool.close()
 
     app = FastAPI(title="Hogline", version=__version__, lifespan=lifespan)
     app.state.db = db
@@ -200,6 +208,11 @@ def create_app(settings: Settings | None = None, start_worker=False):
                     "enabled": worker_state["enabled"],
                     "running": bool(worker_state["thread"] and worker_state["thread"].is_alive()),
                     "error": worker_state["error"],
+                    **(
+                        pool.status()
+                        if pool
+                        else {"configured_workers": db.settings.workers, "alive_workers": 0}
+                    ),
                 },
                 "jobs": jobs_in_session(session),
                 "batches": batches_in_session(session),

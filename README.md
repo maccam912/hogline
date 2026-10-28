@@ -15,7 +15,9 @@ uv sync --group dev
 uv run hogline serve
 ```
 
-Open **http://127.0.0.1:8765**. The server starts one bounded worker. Data is kept in `data/`, which is excluded from version control. The web app is a local operator tool; leave it bound to loopback.
+Open **http://127.0.0.1:8765**. The server starts four worker processes. Use `uv run hogline serve --workers 8` (or `HOGLINE_WORKERS=8`) to advance more recordings together. Each recording's tasks remain ordered. Data is kept in `data/`, which is excluded from version control. The web app is a local operator tool; leave it bound to loopback.
+
+Sparse remote scans temporarily download their requested video section once, without re-encoding, and seek locally. Each worker can use up to 512 MiB of temporary compressed video (`HOGLINE_WORKING_VIDEO_MB`, set to `0` to disable); eight workers allow about 4 GiB. Sections are removed after the task, including failures, and on server shutdown. This working space is separate from retained evidence and its cache limit. Jobs reports the number of online workers and when a task is downloading its section. See [processing and resource limits](docs/PROCESSING.md).
 
 For the main workflow, **Add recording**, select it, and choose **Analyze recording**. The entire recording receives a sparse survey, board reading, selected detailed inspection, and game/end reconstruction in one resumable pipeline. **Jobs** shows running/queued/paused work, stage progress, elapsed processing time, limits, failures and retry/resume controls. **Results** shows candidate games, ends and score evidence; **Video & evidence** and **Advanced tools** keep the detailed inspection controls available. See [recording analysis and progress](docs/RECORDING_ANALYSIS.md) for scope and limits. Pipeline completion does not mean every game or score has been verified.
 

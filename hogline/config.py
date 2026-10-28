@@ -9,13 +9,28 @@ class Settings:
     data_dir: Path
     database_url: str
     max_cache_mb: int = 2048
+    workers: int = 4
+    working_video_mb: int = 512
+    working_video_dir: Path | None = None
+
+    def __post_init__(self):
+        if not 1 <= self.workers <= 32:
+            raise ValueError("Worker count must be between 1 and 32")
+        if not 0 <= self.working_video_mb <= 4096:
+            raise ValueError("Working video allowance must be between 0 and 4096 MiB per worker")
 
     @classmethod
     def load(cls, data_dir: str | Path | None = None):
         root = Path(data_dir or os.getenv("HOGLINE_DATA_DIR", "data")).resolve()
         root.mkdir(parents=True, exist_ok=True)
         url = os.getenv("HOGLINE_DATABASE_URL", f"sqlite:///{root / 'catalog.sqlite3'}")
-        return cls(root, url, int(os.getenv("HOGLINE_MAX_CACHE_MB", "2048")))
+        return cls(
+            root,
+            url,
+            int(os.getenv("HOGLINE_MAX_CACHE_MB", "2048")),
+            int(os.getenv("HOGLINE_WORKERS", "4")),
+            int(os.getenv("HOGLINE_WORKING_VIDEO_MB", "512")),
+        )
 
 
 def profile():

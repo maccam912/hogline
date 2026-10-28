@@ -275,7 +275,7 @@ def freeze_outcomes(session, batch):
 
 
 def control_batch(db, identifier, control):
-    with db.session() as session:
+    with db.snapshot_session(write=True) as session:
         batch = session.get(ProcessingBatch, identifier)
         if batch is None:
             raise ValueError("Batch not found")
@@ -380,7 +380,7 @@ def check_execution_in_session(session, token, elapsed, reserve_bytes=0):
 
 
 def check_execution(db, token, elapsed, reserve_bytes=0):
-    with db.session() as session:
+    with db.snapshot_session(write=True) as session:
         stopped = check_execution_in_session(session, token, elapsed, reserve_bytes)
     if stopped:
         raise WorkStopped(stopped)
