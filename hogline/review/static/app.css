@@ -1587,3 +1587,4 @@ dialog .primary {
 .house-score-image { position: relative; width: min(100%, 480px); }
 .house-score-image img { width: 100%; height: auto; display: block; }
 .house-score-image svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+#end-timeline-dialog { width: min(1100px, calc(100vw - 48px)); max-width: none; }

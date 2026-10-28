@@ -9,7 +9,8 @@
     ? `<a class="evidence-link" target="_blank" rel="noopener" href="${text(anchor.youtube_url)}">${title} · ${stamp(anchor.source_seconds)} ↗</a>` : "";
   const range = (a, b) => `${stamp(a)}–${stamp(b)}`;
   function renderTimeline(result) {
-    $("#end-timeline-content").innerHTML = `<p>${text(result.notice)}</p>
+    $("#end-timeline-content").innerHTML = `<p>Compare score histories, arrivals and possible clearings. Board posting is separate from play; unknowns remain explicit.</p>
+      <details><summary>Interpretation limits and evidence</summary><p>${text(result.notice)}</p></details>
       <p>${result.coverage.board_observation_frames} board frames · ${result.coverage.paired_row_epochs} repeated two-row readings · ${result.end_candidates.length} possible clearings</p>
       <p><a class="evidence-link" href="/api/sources/${encodeURIComponent(selectedSource)}/end-timeline" target="_blank" rel="noopener">Open complete end timeline JSON ↗</a></p>
       <h3>End and score histories</h3>
