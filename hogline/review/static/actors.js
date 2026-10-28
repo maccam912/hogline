@@ -3,7 +3,7 @@
     time(n) +
     (Number.isInteger(n) ? "" : (n % 1).toFixed(3).slice(1).replace(/0+$/, ""));
   const label = (s) => escapeHTML(s.replaceAll("_", " "));
-  function renderActors(result, focusId) {
+  function renderActors(result, focusId, players) {
     const source = state.data.sources.find((s) => s.id === result.source_id);
     const sourceLink = (point, title) => {
       const url =
@@ -33,6 +33,8 @@
         tracks
           .slice(0, 40)
           .map((track, i) => {
+            const group = players.groups.find((g) => g.members.some((m) => m.actor_result_id === result.id && m.track_id === track.id));
+            const playerLabel = group ? (group.name || `Player ${group.id.slice(0, 8)}`) : "Anonymous · not yet indexed";
             const first = track.points[0],
               last = track.points.at(-1);
             const exact = context
@@ -53,7 +55,7 @@
                   frame.crops[track.view].height === track.crop_height,
               )
               .slice(0, 2);
-            return `<article class="batch-card"><div class="batch-heading"><strong>${track.id === focusId ? "Selected fragment" : `Body fragment ${i + 1}`} · ${track.view === "perspective_left" ? "Left" : "Right"} perspective</strong><span class="pill amber">proposed</span></div><p>${stamp(track.start_seconds)}–${stamp(track.end_seconds)} · ${track.points.length} samples</p><p class="fine-print">${label(track.motion_class)} · ${track.low_posture_candidate_samples} low-posture cues · ends at ${label(track.termination_reason)}. Sheet membership remains unverified.</p><div class="batch-actions">${sourceLink(first, "Check start")}${sourceLink(last, "Check end")}</div>
+            return `<article class="batch-card"><div class="batch-heading"><strong>${track.id === focusId ? "Selected fragment" : `Body fragment ${i + 1}`} · ${track.view === "perspective_left" ? "Left" : "Right"} perspective</strong><span class="pill amber">${escapeHTML(playerLabel)} · proposed</span></div><p>${stamp(track.start_seconds)}–${stamp(track.end_seconds)} · ${track.points.length} samples</p><p class="fine-print">${label(track.motion_class)} · ${track.low_posture_candidate_samples} low-posture cues · ends at ${label(track.termination_reason)}. Sheet membership remains unverified.</p><div class="batch-actions">${sourceLink(first, "Check start")}${sourceLink(last, "Check end")}</div>
           <details><summary>Exact retained frame matches · ${exact.length}</summary>${exact.map(({ frame, point }) => `<figure class="boundary-frame"><figcaption>Body proposal at ${stamp(point.source_seconds)} · same original frame</figcaption><div class="actor-evidence"><img loading="lazy" src="/api/evidence/${encodeURIComponent(frame.id)}/${track.view}" width="${track.crop_width}" height="${track.crop_height}" alt="Exact perspective context for anonymous body fragment"><svg viewBox="0 0 ${track.crop_width} ${track.crop_height}" role="img" aria-label="Proposed person bounding box"><rect x="${point.bbox_px[0]}" y="${point.bbox_px[1]}" width="${point.bbox_px[2]}" height="${point.bbox_px[3]}" fill="none" stroke="#52ef89" stroke-width="3"/></svg></div></figure>`).join("") || "<p>No retained frame exactly matches these samples. Use the original source links.</p>"}</details>
           <details><summary>Original sample timestamps</summary><ol class="track-samples">${track.points.map((p) => `<li>${stamp(p.source_seconds)} · PTS ${p.pts} × ${p.time_base_num}/${p.time_base_den} · box (${p.bbox_px.map((v) => v.toFixed(1)).join(", ")}) px</li>`).join("")}</ol></details></article>`;
           })
@@ -82,7 +84,8 @@
         : await api(`/windows/${encodeURIComponent(windowId)}/actors`, "POST");
       if (focusId && !result.tracks.some((t) => t.id === focusId))
         throw Error("The selected body fragment is unavailable. Search again.");
-      renderActors(result, focusId);
+      const players = await api("/players");
+      renderActors(result, focusId, players);
       await refresh();
     } catch (error) {
       $("#actors-content").textContent = error.message;

@@ -440,6 +440,7 @@ def execute_window(db, job):
         save_house_states_in_session(session, result, rows)
         actors = save_actors_in_session(session, result, actor_rows)
         save_deliveries_in_session(session, result, actors, actor_rows)
+        tick()
         row.state, row.lease_until = "succeeded", None
         row.document = {
             **row.document,

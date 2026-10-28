@@ -9,7 +9,7 @@ from scipy.optimize import linear_sum_assignment
 
 from hogline.adapters.sources import digest
 
-VERSION = "perspective-actor-fragments-v2"
+VERSION = "perspective-actor-fragments-v3"
 
 
 def actor_point(row, detection):
@@ -23,6 +23,7 @@ def actor_point(row, detection):
                 "time_base_num",
                 "time_base_den",
                 "youtube_url",
+                "decoded_rgb_sha256",
             )
         },
         "person_index": row["people"].index(detection),

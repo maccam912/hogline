@@ -35,6 +35,8 @@ The [house-state benchmark](docs/HOUSE_EVALUATION.md) freezes independently revi
 
 **Automatic person fragments** add perspective-camera body observations to new detailed windows when the pinned local model is available. This is the first stage toward automatic thrower attribution; fragments remain anonymous until delivery and participant evidence establish the association. See [person processing and limits](docs/ACTORS.md).
 
+**Anonymous players** keep persistent group IDs with optional names, exact-frame body previews and reversible fragment links. Naming is optional; automatic overlap links require identical source-frame evidence. See [player groups](docs/PLAYERS.md).
+
 **Delivery evidence** adds optional limb poses, perspective handle motion and conservative hand-control/separation hypotheses automatically. Missing control or ambiguous actors remain explicit; see [release associations and validation](docs/DELIVERIES.md). Physical timing and named player statistics still need reliable stone, geometry and identity evidence.
 
 **Local model training** learns a small context classifier from frozen corrected handle labels, with checksummed weights and recording/day leakage checks. It stays an experimental benchmark until independent validation; see [training experiments](docs/TRAINING.md).

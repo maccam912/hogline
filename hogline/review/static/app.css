@@ -1566,3 +1566,13 @@ dialog .primary {
   font-size: 12px;
   line-height: 1.8;
 }
+
+.players-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 18px; }
+.player-preview { display: flex; align-items: center; gap: 12px; min-height: 120px; margin: 12px 0; }
+.player-preview img { max-height: 180px; max-width: 130px; object-fit: contain; border-radius: 8px; }
+.player-member { border-top: 1px solid var(--line); padding: 12px 0; }
+.players-grid form { display: grid; gap: 10px; margin: 12px 0; }
+#players-dialog { width: min(1120px, 96vw); max-width: 96vw; }
+#players-dialog .players-grid { align-items: start; }
+#players-dialog .batch-card { min-width: 0; }
+#players-dialog .fine-print { overflow-wrap: anywhere; }

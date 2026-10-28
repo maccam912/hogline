@@ -286,6 +286,8 @@ def checked_actor_result(row):
 
 def save_actors_in_session(session, window, rows):
     identifier = str(uuid5(NAMESPACE_URL, f"window-actors:{window['id']}:{VERSION}"))
+    from hogline.domain.players import register_fragments
+
     existing = session.get(WindowActors, identifier)
     if existing:
         result = checked_actor_result(existing)
@@ -298,6 +300,7 @@ def save_actors_in_session(session, window, rows):
             )
         ):
             raise ValueError("Stored actor fragments disagree with their immutable input")
+        register_fragments(session, result)
         return result
     info = window["actor_input"]
     result = {"version": VERSION, "tracks": [], "diagnostics": {}, "notice": "Person analysis unavailable."}
@@ -327,7 +330,9 @@ def save_actors_in_session(session, window, rows):
     )
     session.add(row)
     session.flush()
-    return checked_actor_result(row)
+    result = checked_actor_result(row)
+    register_fragments(session, result)
+    return result
 
 
 def derive_window_actors(db, window_id):

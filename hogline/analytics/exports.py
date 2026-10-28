@@ -10,6 +10,7 @@ from hogline.analytics.lineage import source_lineage, validate_references
 from hogline.analytics.tracks import tracks_in_session
 from hogline.db import Release, now
 from hogline.domain.catalog import catalog_in_session
+from hogline.domain.players import players_in_session
 from hogline.perception.board_locator import board_locations_in_session
 from hogline.perception.broadcast import broadcast_catalog_in_session
 from hogline.perception.pipeline import observations_in_session
@@ -55,6 +56,7 @@ def snapshot_in_session(session, mode, root):
         "window_house_states": house_states_in_session(session, full=True),
         "window_actors": actors_in_session(session, full=True),
         "window_deliveries": deliveries_in_session(session, full=True),
+        "players": players_in_session(session, history=True),
         "evidence": data["evidence"],
         "observations": observations_in_session(session),
         "broadcast": broadcast,

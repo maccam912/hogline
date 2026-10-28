@@ -15,6 +15,7 @@
     <script src="/static/tracks.js" defer></script>
     <script src="/static/house-states.js" defer></script>
     <script src="/static/actors.js" defer></script>
+    <script src="/static/players.js" defer></script>
     <script src="/static/house-evaluation.js" defer></script>
     <script src="/static/moments.js" defer></script>
     <script src="/static/score-conflicts.js" defer></script>
@@ -50,6 +51,7 @@
         <button class="nav-item" id="score-disagreements-button">
           Score disagreements <b id="score-disagreement-count">0</b>
         </button>
+        <button class="nav-item" id="players-button">Players · optional names</button>
         <div class="sidebar-rule"></div>
         <div class="nav-label">FILTER BY SHEET</div>
         <div class="sheet-grid" id="sheet-filters"></div>
@@ -1080,6 +1082,11 @@
           </button>
         </div>
       </form>
+    </dialog>
+    <dialog id="players-dialog" class="wide-dialog">
+      <div class="dialog-heading"><h2>Players</h2><button class="close-dialog" aria-label="Close players">×</button></div>
+      <p class="muted">Anonymous groups keep a stable ID. Add a name whenever you want.</p>
+      <p id="players-status" role="status"></p><div id="players-content"></div>
     </dialog>
     <dialog id="actors-dialog" class="wide-dialog">
       <button

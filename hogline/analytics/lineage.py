@@ -138,6 +138,22 @@ def validate_references(payload):
             ):
                 raise ValueError("Release actor fragment timestamps disagree with their source window")
     actor_results = {r["id"]: r for r in payload.get("window_actors", [])}
+    memberships = set()
+    for group in payload.get("players", {}).get("groups", []):
+        for member in group["members"]:
+            require([member["actor_result_id"]], actor_results, "player fragment")
+            parent = actor_results[member["actor_result_id"]]
+            track = next((t for t in parent["tracks"] if t["id"] == member["track_id"]), None)
+            if (
+                member["id"] in memberships
+                or member["group_id"] != group["id"]
+                or track is None
+                or member["actor_result_sha256"] != parent["sha256"]
+                or member["source_id"] != parent["source_id"]
+                or any(member[k] != track[k] for k in ("view", "start_seconds", "end_seconds"))
+            ):
+                raise ValueError("Release player grouping disagrees with its original body evidence")
+            memberships.add(member["id"])
     for result in payload.get("window_deliveries", []):
         require([result["window_id"]], windows, "release associations")
         require([result["actor_result_id"]], actor_results, "release actor analysis")

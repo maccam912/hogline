@@ -1,7 +1,7 @@
 from contextlib import contextmanager
 from datetime import UTC, datetime
 
-from sqlalchemy import JSON, ForeignKey, Integer, String, UniqueConstraint, create_engine, event
+from sqlalchemy import JSON, Float, ForeignKey, Index, Integer, String, UniqueConstraint, create_engine, event
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
 from hogline.config import Settings
@@ -293,6 +293,51 @@ class WindowDeliveries(Base):
     document: Mapped[dict] = mapped_column(JSON)
     created_at: Mapped[str] = mapped_column(String, default=now)
     __table_args__ = (UniqueConstraint("window_id", "version", "actor_result_id"),)
+
+
+class PlayerGroup(Base):
+    __tablename__ = "player_group"
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=uid)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    sha256: Mapped[str] = mapped_column(String)
+    document: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[str] = mapped_column(String, default=now)
+    __mapper_args__ = {"version_id_col": revision}
+
+
+class ActorIdentity(Base):
+    __tablename__ = "actor_identity"
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    actor_result_id: Mapped[str] = mapped_column(ForeignKey("window_actors.id"))
+    track_id: Mapped[str] = mapped_column(String)
+    source_id: Mapped[str] = mapped_column(ForeignKey("source_video.id"))
+    view: Mapped[str] = mapped_column(String)
+    start_seconds: Mapped[float] = mapped_column(Float)
+    end_seconds: Mapped[float] = mapped_column(Float)
+    group_id: Mapped[str] = mapped_column(ForeignKey("player_group.id"))
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    sha256: Mapped[str] = mapped_column(String)
+    document: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[str] = mapped_column(String, default=now)
+    __mapper_args__ = {"version_id_col": revision}
+    __table_args__ = (
+        UniqueConstraint("actor_result_id", "track_id"),
+        Index("actor_identity_overlap", "source_id", "view", "start_seconds", "end_seconds"),
+    )
+
+
+class PlayerRevision(Base):
+    __tablename__ = "player_revision"
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=uid)
+    kind: Mapped[str] = mapped_column(String)
+    entity_id: Mapped[str] = mapped_column(String)
+    number: Mapped[int] = mapped_column(Integer)
+    author: Mapped[str] = mapped_column(String)
+    reason: Mapped[str] = mapped_column(String)
+    sha256: Mapped[str] = mapped_column(String)
+    document: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[str] = mapped_column(String, default=now)
+    __table_args__ = (UniqueConstraint("kind", "entity_id", "number"),)
 
 
 class HandleModel(Base):
