@@ -9,28 +9,35 @@
     const radius = Math.max(2, track.crop_width / 100);
     return `<svg class="track-plot" viewBox="0 0 ${track.crop_width} ${track.crop_height}" role="img" aria-label="${track.color} handle fragment in original crop pixels"><rect width="100%" height="100%" fill="#f5f3ed"/><path d="M0 ${track.crop_height / 2}H${track.crop_width} M${track.crop_width / 2} 0V${track.crop_height}" stroke="#d5d3cd" stroke-width="1"/><polyline points="${points}" fill="none" stroke="${color}" stroke-width="${radius}" stroke-opacity=".65"/>${track.points.map((p, i) => `<circle cx="${p.center_px[0]}" cy="${p.center_px[1]}" r="${radius}" fill="${color}"><title>${i + 1}: ${stamp(p.source_seconds)}</title></circle>`).join("")}<text x="8" y="20" font-size="14" fill="#555">Image coordinates · ${track.crop_width} × ${track.crop_height}</text></svg>`;
   }
-  function renderResult(result) {
+  function renderResult(result, focusId = null) {
     const moving = result.tracks.filter(
       (t) => t.motion_class === "position_change_observed",
     ).length;
     const sorted = [...result.tracks].sort(
       (a, b) =>
+        Number(b.id === focusId) - Number(a.id === focusId) ||
         Number(b.motion_class === "position_change_observed") -
           Number(a.motion_class === "position_change_observed") ||
         a.start_seconds - b.start_seconds,
     );
+    const context = result.context_anchor_evidence_ids
+      .map((id) => state.data.evidence.find((e) => e.id === id))
+      .filter(Boolean)
+      .sort((a, b) => a.source_seconds - b.source_seconds);
+    const view = sorted[0]?.view || "composite";
+    const contextHTML = `<details><summary>Retained window context · ${context.length} frames</summary><p class="fine-print">These are window anchors, not necessarily the fragment's first or last sample. Each caption gives its own source time; paths are not overlaid on images from a different instant.</p>${context.map((e) => `<figure class="boundary-frame"><figcaption>${stamp(e.source_seconds)} · ${label(view)}</figcaption><img loading="lazy" src="/api/evidence/${encodeURIComponent(e.id)}/${view}" alt="Window context at ${stamp(e.source_seconds)}">${e.youtube_url ? `<a href="${escapeHTML(e.youtube_url)}" target="_blank" rel="noopener">Check this frame on YouTube ↗</a>` : ""}</figure>`).join("")}</details>`;
     $("#tracks-content").innerHTML =
       `<p>${escapeHTML(result.notice)}</p><p><strong>${result.tracks.length} fragments · ${moving} with net position change</strong></p><p class="fine-print">Lines connect discrete observations; they do not establish the path between samples. Coordinates are pixels in each overhead crop. YouTube seeks use whole seconds; the sample list preserves precise timestamps.</p><a class="evidence-link" href="/api/window-tracks/${encodeURIComponent(result.id)}">Download all fragments and original timestamps · JSON ↓</a><details><summary>Why observations were excluded</summary>${Object.entries(
         result.diagnostics,
       )
         .map(([k, v]) => `<p class="fine-print">${label(k)}: ${v}</p>`)
-        .join("")}</details>${
+        .join("")}</details>${contextHTML}${
         sorted.length
           ? sorted
               .slice(0, 50)
               .map(
                 (track, i) =>
-                  `<article class="batch-card"><div class="batch-heading"><strong>Fragment ${i + 1} · ${label(track.color)} · ${track.view === "house_top" ? "Top" : "Bottom"} overhead</strong><span class="pill amber">proposed</span></div><p>${stamp(track.start_seconds)}–${stamp(track.end_seconds)} · ${track.points.length} samples · ${track.net_displacement_px.toFixed(1)} px net displacement</p>${pathPlot(track)}<p class="fine-print">${label(track.motion_class)} · ends at ${label(track.termination_reason)}</p><div class="batch-actions">${[
+                  `<article class="batch-card"><div class="batch-heading"><strong>${track.id === focusId ? "Selected fragment" : `Fragment ${i + 1}`} · ${label(track.color)} · ${track.view === "house_top" ? "Top" : "Bottom"} overhead</strong><span class="pill amber">proposed</span></div><p>${stamp(track.start_seconds)}–${stamp(track.end_seconds)} · ${track.points.length} samples · ${track.net_displacement_px.toFixed(1)} px net displacement</p>${pathPlot(track)}<p class="fine-print">${label(track.motion_class)} · ends at ${label(track.termination_reason)}</p><div class="batch-actions">${[
                     ["Check start", track.points[0]],
                     ["Check end", track.points.at(-1)],
                   ]
@@ -47,30 +54,38 @@
           : "<p>No fragments passed the continuity and visibility checks. This does not establish that no stones moved.</p>"
       }${sorted.length > 50 ? `<p>Showing 50 of ${sorted.length} fragments; the download includes all fragments.</p>` : ""}`;
   }
+  async function openTracks(windowId, focusId = null, resultId = null) {
+    $("#tracks-content").textContent = "Reading cached observations…";
+    if (!$("#tracks-dialog").open) $("#tracks-dialog").showModal();
+    try {
+      const existing = state.data.window_tracks?.find(
+        (t) =>
+          t.window_id === windowId &&
+          t.version === state.data.window_tracking_version,
+      );
+      const identifier = resultId || existing?.id;
+      const result = identifier
+        ? await api(`/window-tracks/${encodeURIComponent(identifier)}`)
+        : await api(`/windows/${encodeURIComponent(windowId)}/tracks`, "POST");
+      if (focusId && !result.tracks.some((t) => t.id === focusId))
+        throw Error(
+          "The selected fragment is unavailable. Run the moment search again.",
+        );
+      renderResult(result, focusId);
+      await refresh();
+    } catch (error) {
+      $("#tracks-content").textContent = error.message;
+    }
+  }
   document.addEventListener("click", async (event) => {
     const button = event.target.closest("[data-window-tracks]");
     if (!button) return;
     button.disabled = true;
-    $("#tracks-content").textContent = "Reading cached observations…";
-    $("#tracks-dialog").showModal();
     try {
-      const existing = state.data.window_tracks?.find(
-        (t) =>
-          t.window_id === button.dataset.windowTracks &&
-          t.version === state.data.window_tracking_version,
-      );
-      const result = existing
-        ? await api(`/window-tracks/${encodeURIComponent(existing.id)}`)
-        : await api(
-            `/windows/${encodeURIComponent(button.dataset.windowTracks)}/tracks`,
-            "POST",
-          );
-      renderResult(result);
-      await refresh();
-    } catch (error) {
-      $("#tracks-content").textContent = error.message;
+      await openTracks(button.dataset.windowTracks);
     } finally {
       button.disabled = false;
     }
   });
+  window.hoglineTracks = { open: openTracks };
 })();

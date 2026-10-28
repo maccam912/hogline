@@ -79,6 +79,12 @@
     const button = event.target.closest("button");
     if (!button) return;
     if (button.id === "moments-button") {
+      try {
+        await refresh();
+      } catch (error) {
+        toast(error.message, true);
+        return;
+      }
       const previous = form().elements.source.value;
       form().elements.source.innerHTML =
         '<option value="">All recordings</option>' +
@@ -131,11 +137,11 @@
           )
           ?.click();
       else if (moment.reference.track_result_id)
-        document
-          .querySelector(
-            `[data-window-tracks="${CSS.escape(moment.reference.window_id)}"]`,
-          )
-          ?.click();
+        await window.hoglineTracks.open(
+          moment.reference.window_id,
+          moment.reference.track_id,
+          moment.reference.track_result_id,
+        );
       else
         $("#frame-stage").scrollIntoView({
           block: "center",
