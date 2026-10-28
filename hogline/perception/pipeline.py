@@ -7,6 +7,7 @@ from PIL import Image
 from sqlalchemy import select
 
 from hogline.db import Evidence, FrameObservation
+from hogline.perception.board_locator import analyze_board_location
 from hogline.perception.house import house_ring
 from hogline.perception.stones import VERSION, HSVHandleDetector, StoneDetector
 
@@ -16,6 +17,7 @@ def analyze_frame(session, evidence, root, detector: StoneDetector | None = None
         raise ValueError(
             "Coarse scans only support activity; acquire a detailed evidence frame for perception"
         )
+    analyze_board_location(session, evidence, root)
     detector = detector or HSVHandleDetector()
     observation_id = str(uuid5(NAMESPACE_URL, f"{evidence.id}:{detector.version}"))
     existing = session.get(FrameObservation, observation_id)

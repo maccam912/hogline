@@ -1448,3 +1448,20 @@ dialog .primary {
 .rejected-candidates {
   flex-basis: 100%;
 }
+
+.board-location-crops {
+  max-width: 500px;
+}
+.board-location-crops figure {
+  margin: 10px 0;
+}
+.board-location-crops img {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+.board-location-crops figcaption {
+  font-size: 10px;
+  margin-top: 6px;
+  color: var(--muted);
+}

@@ -91,7 +91,11 @@ def validate_references(payload):
             evidence,
             "score",
         )
-    for observation in [*payload["observations"], *payload["broadcast"]["observations"]]:
+    for observation in [
+        *payload["observations"],
+        *payload["broadcast"]["observations"],
+        *payload.get("board_locations", []),
+    ]:
         require([observation["evidence_id"]], evidence, "observation")
         if (
             observation.get("source_id")

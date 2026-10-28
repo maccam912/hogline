@@ -42,7 +42,9 @@ def test_reanalyze_cached_frames_without_media_fetch_preserves_observations(db, 
     assert first[0]["id"] == second[0]["id"]
     assert first[0]["score"] is None
     with db.session() as session:
-        assert session.scalar(select(func.count()).select_from(FrameObservation)) == 1
+        assert (
+            session.scalar(select(func.count()).select_from(FrameObservation)) == 2
+        )  # Handles + board location.
     assert len(catalog(db)["games"]) == 0
 
 

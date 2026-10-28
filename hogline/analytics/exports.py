@@ -6,6 +6,7 @@ from hogline.adapters.sources import digest
 from hogline.analytics.lineage import source_lineage, validate_references
 from hogline.db import Release, now
 from hogline.domain.catalog import catalog_in_session
+from hogline.perception.board_locator import board_locations_in_session
 from hogline.perception.broadcast import broadcast_catalog_in_session
 from hogline.perception.pipeline import observations_in_session
 from hogline.reconstruction.boundaries import boundary_links
@@ -46,6 +47,7 @@ def snapshot_in_session(session, mode):
         "evidence": data["evidence"],
         "observations": observations_in_session(session),
         "broadcast": broadcast,
+        "board_locations": board_locations_in_session(session),
         "source_boundary_links": boundary_links(
             data["sources"],
             broadcast["observations"],

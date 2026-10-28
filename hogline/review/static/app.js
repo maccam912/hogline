@@ -252,6 +252,12 @@ function renderBroadcast(frame) {
       '<p class="fine-print">Clock and scoreboard reading need a detailed frame. This coarse image is retained for activity screening.</p>';
     return;
   }
+  const boardLocation = state.data.board_locations?.find(
+    (o) => o.evidence_id === frame?.id,
+  );
+  const locationPanel = boardLocation
+    ? `<section class="board-location"><h4>Automatic board location</h4><p class="fine-print">${boardLocation.location.status === "proposed" ? "Red, blue-header, and yellow bands form a board candidate. Point columns and card meanings still need verification." : boardLocation.location.status === "ambiguous" ? "Multiple boards fit the color layout. No board has been selected." : "Board color bands could not be located in this frame; obstruction, lighting, or a different layout may be responsible."}</p><div class="board-location-crops">${boardLocation.crops.map((c, i) => `<figure><img src="/api/board-locations/${encodeURIComponent(boardLocation.id)}/${i}.png" alt="Automatically located scoreboard candidate ${i + 1}"><figcaption>${c.width} × ${c.height} original source pixels · unverified location</figcaption></figure>`).join("")}</div></section>`
+    : "";
   const observation = data?.observations.find(
     (o) => o.evidence_id === frame?.id,
   );
@@ -260,8 +266,11 @@ function renderBroadcast(frame) {
   const width = frame?.image.width,
     height = frame?.image.height;
   if (!observation) {
-    $("#broadcast-summary").textContent = "Not analyzed";
-    panel.innerHTML = `<p class="fine-print">${width ? `${width} × ${height} source pixels. ` : ""}Clock and board templates are checked per sheet. Read the retained frames to generate evidence-linked proposals.</p>`;
+    $("#broadcast-summary").textContent =
+      boardLocation?.location.status === "proposed"
+        ? "Board location proposed"
+        : "Not analyzed";
+    panel.innerHTML = `${locationPanel}<p class="fine-print">${width ? `${width} × ${height} source pixels. ` : ""}Clock and board templates are checked per sheet. Read the retained frames to generate evidence-linked proposals.</p>`;
     return;
   }
   const clock = observation.clock,
@@ -288,7 +297,7 @@ function renderBroadcast(frame) {
         `<span class="board-card ${c.color}">End ${c.end_number ?? "?"} → ${c.cumulative_points} cumulative</span>`,
     )
     .join("");
-  panel.innerHTML = `${diagnostics}<p class="fine-print">${width} × ${height} source pixels · seed views uncalibrated · sheet ${observation.sheet}</p><div class="broadcast-crops">${crops}</div><h4>Observed clock</h4><p>${escapeHTML(clock.date_text || (clock.candidates.length ? "Date alternatives unresolved" : "Date unreadable"))} · ${escapeHTML(clock.time_text || (clock.candidates.length ? "Time alternatives unresolved" : "Time unreadable"))}</p><p class="fine-print">${clock.candidates.length ? `${clock.candidates.length} wall-time alternative${clock.candidates.length === 1 ? "" : "s"} · ${clock.ambiguous ? "OCR, AM/PM or DST alternatives remain" : "mapping still proposed"}` : escapeHTML(clock.missing_reason || "Clock not resolved")}. The recording title is not substituted for an unreadable overlay.</p><h4>Traditional board</h4>${board.status === "unconfigured" ? '<p class="fine-print">Board reading is unavailable for this recording, time, or alignment. Its source crop and missing reason remain available.</p>' : `<div class="board-cards">${cards || '<p class="fine-print">No legible scoring cards.</p>'}</div><p class="fine-print">Numbers on movable cards identify ends; board position is cumulative points. ${board.unreadable_slots?.length || 0} occupied slots unreadable. Storage and blank markers remain uninterpreted.</p>`}${proposals.length ? `<h4>Score proposals from this recording</h4>${proposals.map((p) => `<div class="score-proposal"><span>End ${p.official_number}: ${p.color} +${p.points}</span><a class="evidence-link" target="_blank" rel="noopener" href="${escapeHTML(p.youtube_links[0])}">${p.evidence_ids.length} frames · ${time(p.source_start_seconds)} ↗</a><button class="button quiet" data-score-proposal="${p.id}">Add to game review →</button></div>`).join("")}` : '<p class="fine-print">No score proposal has passed the temporal consistency checks.</p>'}`;
+  panel.innerHTML = `${locationPanel}${diagnostics}<p class="fine-print">${width} × ${height} source pixels · seed views uncalibrated · sheet ${observation.sheet}</p><div class="broadcast-crops">${crops}</div><h4>Observed clock</h4><p>${escapeHTML(clock.date_text || (clock.candidates.length ? "Date alternatives unresolved" : "Date unreadable"))} · ${escapeHTML(clock.time_text || (clock.candidates.length ? "Time alternatives unresolved" : "Time unreadable"))}</p><p class="fine-print">${clock.candidates.length ? `${clock.candidates.length} wall-time alternative${clock.candidates.length === 1 ? "" : "s"} · ${clock.ambiguous ? "OCR, AM/PM or DST alternatives remain" : "mapping still proposed"}` : escapeHTML(clock.missing_reason || "Clock not resolved")}. The recording title is not substituted for an unreadable overlay.</p><h4>Traditional board</h4>${board.status === "unconfigured" ? '<p class="fine-print">Board reading is unavailable for this recording, time, or alignment. Its source crop and missing reason remain available.</p>' : `<div class="board-cards">${cards || '<p class="fine-print">No legible scoring cards.</p>'}</div><p class="fine-print">Numbers on movable cards identify ends; board position is cumulative points. ${board.unreadable_slots?.length || 0} occupied slots unreadable. Storage and blank markers remain uninterpreted.</p>`}${proposals.length ? `<h4>Score proposals from this recording</h4>${proposals.map((p) => `<div class="score-proposal"><span>End ${p.official_number}: ${p.color} +${p.points}</span><a class="evidence-link" target="_blank" rel="noopener" href="${escapeHTML(p.youtube_links[0])}">${p.evidence_ids.length} frames · ${time(p.source_start_seconds)} ↗</a><button class="button quiet" data-score-proposal="${p.id}">Add to game review →</button></div>`).join("")}` : '<p class="fine-print">No score proposal has passed the temporal consistency checks.</p>'}`;
 }
 
 function useScoreProposal(id) {

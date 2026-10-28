@@ -1,4 +1,5 @@
 import hashlib
+import io
 import shutil
 import threading
 from contextlib import asynccontextmanager
@@ -7,6 +8,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
+from PIL import Image
 from pydantic import Field
 from sqlalchemy import select
 from starlette.middleware.trustedhost import TrustedHostMiddleware
@@ -61,7 +63,9 @@ from hogline.orchestration.plans import (
 )
 from hogline.orchestration.windows import WindowRequest, enqueue_window
 from hogline.orchestration.worker import enqueue, jobs_in_session, retry, run_one
+from hogline.perception.board_locator import board_locations_in_session
 from hogline.perception.broadcast import analyze_broadcast, broadcast_catalog_in_session
+from hogline.perception.ocr import normalized_crop
 from hogline.perception.pipeline import analyze_cached, observations_in_session
 from hogline.perception.stones import VERSION as DETECTOR_VERSION
 from hogline.perception.temporal import VERSION as WINDOW_VERSION
@@ -128,6 +132,7 @@ def create_app(settings: Settings | None = None, start_worker=False):
                 "jobs": jobs_in_session(session),
                 "batches": batches_in_session(session),
                 "observations": observations_in_session(session),
+                "board_locations": board_locations_in_session(session),
                 "window_version": WINDOW_VERSION,
                 "window_detector_version": DETECTOR_VERSION,
                 "window_visibility_version": VISIBILITY_VERSION,
@@ -247,6 +252,31 @@ def create_app(settings: Settings | None = None, start_worker=False):
         if not shutil.which("tesseract"):
             raise ValueError("Install Tesseract OCR to read retained clock/scoreboard frames locally")
         return {"observations": analyze_broadcast(db, ids)}
+
+    @app.get("/api/board-locations/{observation_id}/{index}.png")
+    def board_location_image(observation_id: str, index: int):
+        with db.session() as session:
+            row = session.get(FrameObservation, observation_id)
+            if row is None or row.document.get("kind") != "board_location_observation":
+                raise HTTPException(404, "Board location not found")
+            crops = row.document["crops"]
+            if not 0 <= index < len(crops):
+                raise HTTPException(404, "Board location crop not found")
+            frame = session.get(Evidence, row.evidence_id)
+            asset = frame.document["image"] if frame else None
+            path = db.settings.data_dir / asset["path"] if asset else None
+            if (
+                path is None
+                or not path.is_file()
+                or hashlib.sha256(path.read_bytes()).hexdigest() != row.document["source_image_sha256"]
+            ):
+                raise HTTPException(410, "Original board evidence missing or corrupt; use its YouTube link")
+            image = normalized_crop(Image.open(path).convert("RGB"), crops[index]["normalized_bounds"])
+            if hashlib.sha256(image.tobytes()).hexdigest() != crops[index]["rgb_sha256"]:
+                raise HTTPException(410, "Derived board crop checksum mismatch")
+            buffer = io.BytesIO()
+            image.save(buffer, format="PNG")
+            return Response(buffer.getvalue(), media_type="image/png")
 
     @app.get("/api/broadcast/{observation_id}/{crop}")
     def broadcast_image(observation_id: str, crop: str):
