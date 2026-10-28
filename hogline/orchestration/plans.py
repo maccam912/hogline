@@ -157,7 +157,7 @@ def plan_in_session(session, request):
 
 
 def preview_plan(db, request):
-    with db.session() as session:
+    with db.snapshot_session() as session:
         return plan_in_session(session, request)
 
 
@@ -167,37 +167,41 @@ class BatchStart(Model):
 
 
 def create_batch(db, request, expected_plan_sha256=None):
-    with db.session() as session:
+    with db.snapshot_session(write=True) as session:
         plan = plan_in_session(session, request)
         if expected_plan_sha256 is not None and plan["sha256"] != expected_plan_sha256:
             raise Conflict("The source or matching work changed since preview. Preview the plan again.")
-        if any(u["disposition"] == "existing_needs_attention" for u in plan["units"]):
-            raise ValueError(
-                "Matching unfinished work already exists. Resume/retry its owner before creating this plan."
-            )
-        batch = ProcessingBatch(
-            document={
-                **plan,
-                "spent_worker_seconds": 0,
-                "reserved_image_bytes": 0,
-                "pause_reason": None,
-                "active_execution": None,
-                "limits": {k: getattr(request, k) for k in ("max_image_growth_mb", "max_worker_seconds")},
-                "control_history": [],
-            }
+        return publish_batch(session, plan)
+
+
+def publish_batch(session, plan):
+    if any(u["disposition"] == "existing_needs_attention" for u in plan["units"]):
+        raise ValueError(
+            "Matching unfinished work already exists. Resume/retry its owner before creating this plan."
         )
-        session.add(batch)
-        session.flush()
-        units = []
-        for unit in plan["units"]:
-            job = enqueue_in_session(session, unit["payload"], batch.id)
-            units.append({**unit, "job_id": job.id})
-        batch.document = {**batch.document, "units": units}
-        if all(session.get(Job, u["job_id"]).state == "succeeded" for u in units):
-            batch.state = "completed"
-            freeze_outcomes(session, batch)
-        session.flush()
-        return batch_view(session, batch)
+    batch = ProcessingBatch(
+        document={
+            **plan,
+            "spent_worker_seconds": 0,
+            "reserved_image_bytes": 0,
+            "pause_reason": None,
+            "active_execution": None,
+            "limits": {k: plan["request"][k] for k in ("max_image_growth_mb", "max_worker_seconds")},
+            "control_history": [],
+        }
+    )
+    session.add(batch)
+    session.flush()
+    units = []
+    for unit in plan["units"]:
+        job = enqueue_in_session(session, unit["payload"], batch.id)
+        units.append({**unit, "job_id": job.id})
+    batch.document = {**batch.document, "units": units}
+    if all(session.get(Job, u["job_id"]).state == "succeeded" for u in units):
+        batch.state = "completed"
+        freeze_outcomes(session, batch)
+    session.flush()
+    return batch_view(session, batch)
 
 
 def batch_view(session, batch):
@@ -219,6 +223,7 @@ def batch_view(session, batch):
                 "state": states[u["job_id"]],
                 "request": u["payload"]["request"],
                 "disposition": u["disposition"],
+                **({"selection": u["selection"]} if "selection" in u else {}),
             }
             for u in doc["units"]
         ],

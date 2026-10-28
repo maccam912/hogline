@@ -35,6 +35,12 @@ from hogline.evaluation.datasets import dataset_catalog, freeze_dataset
 from hogline.evaluation.labels import label_id, labels_catalog, save_labels
 from hogline.evaluation.metrics import evaluate_dataset, run_catalog
 from hogline.evaluation.models import DatasetCreate, EvaluationRequest, LabelEdit
+from hogline.orchestration.adaptive import (
+    AdaptiveRequest,
+    AdaptiveStart,
+    create_adaptive_batch,
+    preview_adaptive,
+)
 from hogline.orchestration.discovery import (
     FeedControl,
     FeedCreate,
@@ -281,6 +287,14 @@ def create_app(settings: Settings | None = None, start_worker=False):
     @app.post("/api/scans")
     def add_scan(body: ScanRequest):
         return enqueue(db, body)
+
+    @app.post("/api/adaptive/preview")
+    def adaptive_preview(body: AdaptiveRequest):
+        return preview_adaptive(db, body)
+
+    @app.post("/api/adaptive/batches")
+    def adaptive_start(body: AdaptiveStart):
+        return create_adaptive_batch(db, body.request, body.expected_plan_sha256)
 
     @app.post("/api/plans/preview")
     def preview_processing_plan(body: PlanRequest):

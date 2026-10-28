@@ -896,6 +896,7 @@ document.addEventListener("submit", async (event) => {
       "batch-resume-form",
       "discovery-form",
       "window-form",
+      "adaptive-form",
     ].includes(event.target.id)
   )
     return;

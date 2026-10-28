@@ -13,6 +13,7 @@ from hogline.evaluation.datasets import freeze_dataset
 from hogline.evaluation.labels import labels_catalog, save_labels
 from hogline.evaluation.metrics import evaluate_dataset
 from hogline.evaluation.models import DatasetCreate, EvaluationRequest, LabelEdit
+from hogline.orchestration.adaptive import AdaptiveRequest, create_adaptive_batch, preview_adaptive
 from hogline.orchestration.discovery import (
     FeedControl,
     FeedCreate,
@@ -106,6 +107,11 @@ def main():
     plan = commands.add_parser("plan", help="Preview bounded recording chunks; no video is fetched")
     plan.add_argument("path", help="PlanRequest JSON file")
     plan.add_argument("--enqueue", action="store_true", help="Create a durable batch from the plan")
+    adaptive = commands.add_parser(
+        "adaptive-plan", help="Select short windows from activity, with quiet audits"
+    )
+    adaptive.add_argument("path", help="AdaptiveRequest JSON file")
+    adaptive.add_argument("--enqueue", action="store_true")
     commands.add_parser("batches", help="Inspect durable plans and actual execution costs")
     control = commands.add_parser("batch-control", help="Pause, resume, or cancel a batch")
     control.add_argument("batch_id")
@@ -203,6 +209,9 @@ def main():
             case "plan":
                 request = PlanRequest.model_validate_json(Path(args.path).read_text())
                 result = create_batch(db, request) if args.enqueue else preview_plan(db, request)
+            case "adaptive-plan":
+                request = AdaptiveRequest.model_validate_json(Path(args.path).read_text())
+                result = create_adaptive_batch(db, request) if args.enqueue else preview_adaptive(db, request)
             case "window":
                 result = enqueue_window(
                     db,

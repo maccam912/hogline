@@ -29,4 +29,5 @@ jobs:
       - run: node --check hogline/review/static/discovery.js
       - run: node --check hogline/review/static/boundaries.js
       - run: node --check hogline/review/static/windows.js
+      - run: node --check hogline/review/static/adaptive.js
       - run: uv build

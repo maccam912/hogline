@@ -43,29 +43,28 @@ class WindowRequest(Model):
         return self
 
 
+def window_payload(source, request, layout=None):
+    if source.get("duration_seconds") and request.end_seconds > source["duration_seconds"]:
+        raise ValueError("Detailed window exceeds source duration")
+    layout = layout or profile()
+    return {
+        "kind": "dense_window",
+        "request": request.model_dump(),
+        "source_hash": source["metadata_sha256"],
+        "profile": layout,
+        "profile_sha256": digest(layout),
+        "stage_version": VERSION,
+        "decoder_version": DECODER_VERSION,
+        "perception_version": HSVHandleDetector.version,
+    }
+
+
 def enqueue_window(db, request):
     from hogline.orchestration.worker import job_view
 
     with db.session() as session:
         source = source_or_error(session, request.source_id)
-        if source.get("duration_seconds") and request.end_seconds > source["duration_seconds"]:
-            raise ValueError("Detailed window exceeds source duration")
-        layout = profile()
-        return job_view(
-            enqueue_in_session(
-                session,
-                {
-                    "kind": "dense_window",
-                    "request": request.model_dump(),
-                    "source_hash": source["metadata_sha256"],
-                    "profile": layout,
-                    "profile_sha256": digest(layout),
-                    "stage_version": VERSION,
-                    "decoder_version": DECODER_VERSION,
-                    "perception_version": HSVHandleDetector.version,
-                },
-            )
-        )
+        return job_view(enqueue_in_session(session, window_payload(source, request)))
 
 
 def execute_window(db, job):

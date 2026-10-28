@@ -58,14 +58,21 @@
       .filter((b) => b.request.source_ids.includes(state.source))
       .map((b) => {
         const mb = b.reserved_image_bytes / 1024 ** 2;
-        return `<article class="batch-card"><div class="batch-heading"><strong>Recording batch</strong><span class="pill ${b.state === "paused" ? "amber" : ""}">${escapeHTML(b.state)}</span></div>
+        return `<article class="batch-card"><div class="batch-heading"><strong>${b.kind === "adaptive_windows" ? "Selected detail windows" : "Recording batch"}</strong><span class="pill ${b.state === "paused" ? "amber" : ""}">${escapeHTML(b.state)}</span></div>
         <p>${b.succeeded_units} / ${b.units.length} chunks complete · ${b.deferred_units} deferred to a later plan</p>
         <p class="fine-print">${mb.toFixed(2)} / ${b.limits.max_image_growth_mb} MB reserved · ${Math.ceil(b.spent_worker_seconds)} / ${b.limits.max_worker_seconds} worker seconds · ${b.executions.length} attempts</p>
         ${b.pause_reason ? `<p class="job-error">${escapeHTML(b.pause_reason)}</p>` : ""}
         <div class="batch-actions">${b.state === "active" ? `<button class="button quiet" data-batch-action="pause" data-batch="${b.id}">Pause</button>` : ""}
         ${b.state === "paused" ? `<button class="button secondary" data-batch-action="resume" data-batch="${b.id}">Resume / budgets →</button>` : ""}
         ${["active", "paused"].includes(b.state) ? `<button class="button quiet" data-batch-action="cancel" data-batch="${b.id}">Cancel remaining</button>` : `<button class="button quiet" data-next-plan="${b.id}">Preview remaining →</button>`}</div>
-        <details><summary>Chunk status and source spans</summary>${b.units.map((u) => `<p class="fine-print">${time(u.request.ownership_start_seconds)}–${time(u.request.ownership_end_seconds)} · ${escapeHTML(u.state)} · ${u.disposition === "reuse_succeeded" ? "previously completed" : escapeHTML(u.request.acquisition_tier)}</p>`).join("")}</details></article>`;
+        <details><summary>Chunk status and source spans</summary>${b.units
+          .map((u) => {
+            const src = state.data.sources.find(
+              (s) => s.id === u.request.source_id,
+            );
+            return `<p class="fine-print"><strong>${escapeHTML(src?.title || u.request.source_id)}${src?.duration_seconds ? ` · ${time(src.duration_seconds)} recording` : ""}</strong><br>${time(u.request.ownership_start_seconds ?? u.request.start_seconds)}–${time(u.request.ownership_end_seconds ?? u.request.end_seconds)} · ${escapeHTML(u.state)} · ${u.disposition === "reuse_succeeded" ? "previously completed" : escapeHTML(u.selection?.reason?.replaceAll("_", " ") || u.request.acquisition_tier || "detailed window")}${u.selection?.youtube_url ? ` · <a href="${escapeHTML(u.selection.youtube_url)}" target="_blank" rel="noopener">Selection evidence ↗</a>` : ""}</p>`;
+          })
+          .join("")}</details></article>`;
       })
       .join("");
   }
@@ -107,11 +114,14 @@
     const button = event.target.closest("button");
     if (!button) return;
     if (button.id === "plan-button") return open();
-    if (button.dataset.nextPlan)
-      return open(
-        state.data.batches.find((b) => b.id === button.dataset.nextPlan)
-          .request,
+    if (button.dataset.nextPlan) {
+      const batch = state.data.batches.find(
+        (b) => b.id === button.dataset.nextPlan,
       );
+      return batch.kind === "adaptive_windows"
+        ? window.hoglineAdaptive.open(batch.request)
+        : open(batch.request);
+    }
     if (button.id === "start-batch" && preview) {
       button.disabled = true;
       try {

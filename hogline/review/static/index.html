@@ -11,6 +11,7 @@
     <script src="/static/discovery.js" defer></script>
     <script src="/static/boundaries.js" defer></script>
     <script src="/static/windows.js" defer></script>
+    <script src="/static/adaptive.js" defer></script>
   </head>
   <body>
     <header>
@@ -233,6 +234,9 @@
                 <span class="fine-print">Motion does not establish a game</span>
               </div>
               <div id="activity-list"></div>
+              <button class="button secondary" id="adaptive-button">
+                Choose detail windows automatically →
+              </button>
               <section id="window-panel">
                 <div class="section-heading">
                   <h2>House configurations</h2>
@@ -642,6 +646,91 @@
         </p>
         <button class="button primary" type="submit">
           Queue detailed window →
+        </button>
+      </form>
+    </dialog>
+    <dialog id="adaptive-dialog">
+      <button class="close-dialog" type="button" aria-label="Close">×</button>
+      <span class="eyebrow">FOLLOW ACTIVITY · AUDIT QUIET FOOTAGE</span>
+      <h2>Choose detailed windows</h2>
+      <p>
+        Use retained sparse observations to select short intervals. Unknown gaps
+        stay unknown. Previewing fetches no media.
+      </p>
+      <form id="adaptive-form">
+        <div class="form-grid">
+          <label
+            >Recordings<select name="scope">
+              <option value="current">Current recording</option>
+              <option value="all">All imported recordings (up to 16)</option>
+            </select></label
+          >
+          <label
+            >Maximum windows<input
+              name="jobs"
+              type="number"
+              min="1"
+              max="64"
+              value="4"
+              required
+          /></label>
+          <label
+            >Start (HH:MM:SS)<input name="start" value="00:00:00" required
+          /></label>
+          <label
+            >End (optional)<input name="end" placeholder="Recording end"
+          /></label>
+          <label
+            >Window duration (seconds)<input
+              name="duration"
+              type="number"
+              min="4"
+              max="60"
+              value="10"
+              required
+          /></label>
+          <label
+            >Quiet audit share<select name="audit">
+              <option value="0.2">20%</option>
+              <option value="0.5">50%</option>
+              <option value="0">None</option>
+            </select></label
+          >
+          <label
+            >Retained data budget (MB)<input
+              name="growth"
+              type="number"
+              min="1"
+              max="4096"
+              value="64"
+              required
+          /></label>
+          <label
+            >Worker budget (seconds)<input
+              name="worker"
+              type="number"
+              min="10"
+              max="86400"
+              value="300"
+              required
+          /></label>
+        </div>
+        <p class="fine-print">
+          Activity transitions, motion, and uncertain samples guide selection.
+          Quiet audits help reveal missed activity. Both overhead views are
+          sampled every half second; no accepted game or score is created.
+        </p>
+        <button class="button secondary" type="submit">
+          Preview selected windows →
+        </button>
+        <div id="adaptive-preview" aria-live="polite"></div>
+        <button
+          class="button primary"
+          id="start-adaptive"
+          type="button"
+          disabled
+        >
+          Start bounded detail batch →
         </button>
       </form>
     </dialog>

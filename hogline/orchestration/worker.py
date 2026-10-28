@@ -106,6 +106,21 @@ def claim_transaction(db):
             )
             if owner and (owner.state != "active" or owner.document.get("active_execution")):
                 continue
+            if owner:
+                # A bounded plan's order encodes its priorities (including quiet
+                # audits). Random UUID ordering must not decide what fits its budget.
+                next_unit = next(
+                    (
+                        unit["job_id"]
+                        for unit in owner.document["units"]
+                        if (planned := session.get(Job, unit["job_id"])).state == "queued"
+                        and planned.attempts < 3
+                        and planned.document.get("batch_id") == owner.id
+                    ),
+                    None,
+                )
+                if candidate.id != next_unit:
+                    continue
             job, batch = candidate, owner
             break
         if job is None:
