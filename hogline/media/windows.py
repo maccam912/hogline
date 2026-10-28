@@ -12,7 +12,7 @@ from collections import deque
 
 from PIL import Image
 
-VERSION = "original-pts-window-v1"
+VERSION = "original-pts-source-grid-v2"
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 MAX_FRAME_BYTES = 32 * 1024**2
 MAX_PIXELS = 4096 * 2160
@@ -40,15 +40,18 @@ def pop_png(buffer):
     return None
 
 
-def decode_window(media, start, end, interval=0.5, max_frames=120, timeout=90, tick=None):
+def decode_window(
+    media, start, end, interval=0.5, max_frames=120, timeout=90, tick=None, source_time_origin=0
+):
     """Yield selected PNGs and showinfo PTS from one FFmpeg process.
 
-    The interval is a minimum separation between source frames, not a promise
-    of constant frame rate. No fps/setpts filter or inferred frame-number time.
+    Pick the first available native frame in each source-aligned time bucket.
+    Skip a partial initial bucket so overlapping windows share a sampling grid.
+    No fps/setpts filter or inferred frame-number time.
     Closing the generator, cancellation, and timeouts all terminate the decoder.
     """
     if (
-        not all(math.isfinite(v) for v in (start, end, interval, timeout))
+        not all(math.isfinite(v) for v in (start, end, interval, timeout, source_time_origin))
         or not 0 <= start < end <= start + 60
         or not 0.25 <= interval <= 2
         or not 1 <= max_frames <= 240
@@ -56,6 +59,18 @@ def decode_window(media, start, end, interval=0.5, max_frames=120, timeout=90, t
         or not 1 <= timeout <= 120
     ):
         raise ValueError("Invalid bounded decoding window or frame/time budget")
+    epsilon = 1e-7
+    first_target = math.ceil((start - epsilon) / interval) * interval
+    if first_target >= end - epsilon:
+        raise ValueError("Window contains no source-aligned sample time; enlarge it or shorten the interval")
+    source_time = f"(t-({source_time_origin:.12f}))"
+    previous_time = f"(prev_t-({source_time_origin:.12f}))"
+    selection = (
+        f"gte({source_time},{first_target - epsilon:.12f})*"
+        f"lt({source_time},{end - epsilon:.12f})*"
+        f"(isnan(prev_t)+gt(floor(({source_time}+{epsilon:.9f})/{interval:.12f}),"
+        f"floor(({previous_time}+{epsilon:.9f})/{interval:.12f})))"
+    )
     command = ["ffmpeg", "-hide_banner", "-nostdin", "-loglevel", "info"]
     if media.startswith("https://"):
         command += ["-rw_timeout", "15000000"]
@@ -70,7 +85,7 @@ def decode_window(media, start, end, interval=0.5, max_frames=120, timeout=90, t
         "-map",
         "0:v:0",
         "-vf",
-        f"select='isnan(prev_selected_t)+gte(t-prev_selected_t,{interval - 1e-7:.9f})',showinfo",
+        f"select='{selection}',showinfo",
         "-frames:v",
         str(max_frames + 1),
         "-an",

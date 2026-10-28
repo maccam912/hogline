@@ -57,6 +57,13 @@ class WindowRequest(Model):
         duration = self.end_seconds - self.start_seconds
         if not 0 < duration <= 60 or math.ceil(duration / self.interval_seconds) > self.max_frames:
             raise ValueError("Detailed windows require 0–60 seconds within the declared frame budget")
+        if (
+            math.ceil((self.start_seconds - 1e-7) / self.interval_seconds) * self.interval_seconds
+            >= self.end_seconds - 1e-7
+        ):
+            raise ValueError(
+                "Window contains no source-aligned sample time; enlarge it or shorten the interval"
+            )
         return self
 
 
@@ -168,6 +175,7 @@ def execute_window(db, job):
         max_frames=request.max_frames,
         timeout=min(120, max(1, request.max_worker_seconds - (time.monotonic() - started))),
         tick=tick,
+        source_time_origin=-source_seconds({"pts": 0, "time_base_num": 1, "time_base_den": 1}, source),
     )
     try:
         for index, (image, timing) in enumerate(with_decoder):

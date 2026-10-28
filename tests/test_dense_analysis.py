@@ -143,7 +143,7 @@ def test_real_window_worker_decodes_the_declared_source_window(db, video):
     window = catalog(db)["analysis_windows"][0]
     rows = pq.read_table(db.settings.data_dir / window["parquet"]["path"]).to_pylist()
     assert [r["source_seconds"] for r in rows if r["view"] == "house_top"] == pytest.approx(
-        [0.4, 0.9, 1.4, 1.9, 2.4]
+        [0.5, 1.0, 1.5, 2.0]
     )
 
 
