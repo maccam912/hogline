@@ -44,7 +44,7 @@
                   .join("")}</details>`
               : ""
           }
-          <div class="batch-actions">${w.parquet.schema === "hogline-dense-observations-v4" ? `<button class="button secondary" data-window-tracks="${escapeHTML(w.id)}">Trace handles from cached observations →</button><button class="button secondary" data-window-house-states="${escapeHTML(w.id)}">Inspect sampled house states →</button>` : ""}<a class="evidence-link" href="/api/windows/${encodeURIComponent(w.id)}/observations.parquet">Download observations · Parquet ↓</a><button class="button quiet" data-window-rerun="${escapeHTML(w.id)}">Reanalyze this window →</button></div></article>`;
+          <div class="batch-actions">${w.parquet.schema === "hogline-dense-observations-v4" ? `<button class="button secondary" data-window-tracks="${escapeHTML(w.id)}">Trace handles from cached observations →</button><button class="button secondary" data-window-house-states="${escapeHTML(w.id)}">Inspect sampled house states →</button><button class="button quiet" data-house-label-window="${escapeHTML(w.id)}" data-house-label-view="house_top">Label top interval →</button><button class="button quiet" data-house-label-window="${escapeHTML(w.id)}" data-house-label-view="house_bottom">Label bottom interval →</button>` : ""}<a class="evidence-link" href="/api/windows/${encodeURIComponent(w.id)}/observations.parquet">Download observations · Parquet ↓</a><button class="button quiet" data-window-rerun="${escapeHTML(w.id)}">Reanalyze this window →</button></div></article>`;
           })
           .join("")
       : '<p class="fine-print">No detailed windows yet. Pick a source time to inspect repeated observations around a moment.</p>';

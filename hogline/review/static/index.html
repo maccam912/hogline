@@ -14,6 +14,7 @@
     <script src="/static/windows.js" defer></script>
     <script src="/static/tracks.js" defer></script>
     <script src="/static/house-states.js" defer></script>
+    <script src="/static/house-evaluation.js" defer></script>
     <script src="/static/moments.js" defer></script>
     <script src="/static/score-conflicts.js" defer></script>
     <script src="/static/adaptive.js" defer></script>
@@ -80,6 +81,9 @@
             </button>
             <button class="button secondary" id="board-evaluation-button">
               Board benchmark
+            </button>
+            <button class="button secondary" id="house-benchmark-button">
+              House benchmark
             </button>
             <button class="button secondary" id="discovery-button">
               Discover sources
@@ -1075,6 +1079,163 @@
           </button>
         </div>
       </form>
+    </dialog>
+    <dialog id="house-label-dialog" class="wide-dialog">
+      <button
+        class="close-dialog"
+        type="button"
+        aria-label="Close house interval labels"
+      >
+        ×
+      </button>
+      <h2>Label the original interval</h2>
+      <p id="house-label-context"></p>
+      <p class="fine-print">
+        Inspect the source interval independently. Label the whole overhead
+        crop, including parked handles. Retained anchors alone cannot establish
+        stability between samples.
+      </p>
+      <div id="house-label-source"></div>
+      <form id="house-label-form">
+        <div class="form-grid">
+          <label
+            >Reviewer<input name="author" required maxlength="120"
+          /></label>
+          <label
+            >Recording/day group<input
+              name="group"
+              required
+              maxlength="200"
+              placeholder="wausau-2026-03-17"
+          /></label>
+          <label
+            >Label provenance<select name="provenance">
+              <option value="human">Human inspection</option>
+              <option value="assistant_visual">
+                Assistant visual inspection
+              </option>
+              <option value="synthetic">Synthetic fixture</option>
+              <option value="model_seeded">Unverified model seed</option>
+            </select></label
+          >
+          <label
+            >What was inspected<select name="basis">
+              <option value="retained_frames_only">Retained frames only</option>
+              <option value="source_interval">Original source interval</option>
+              <option value="synthetic">Synthetic fixture</option>
+            </select></label
+          >
+          <label
+            >Review status<select name="status">
+              <option value="draft">Draft</option>
+              <option value="reviewed">Reviewed</option>
+            </select></label
+          >
+        </div>
+        <h3>Inclusive sample ranges</h3>
+        <p class="fine-print">
+          Gaps remain unknown. Use unobservable where visibility prevents
+          assessment; leave counts blank outside stable ranges.
+        </p>
+        <div id="house-label-segments"></div>
+        <button class="button quiet" type="button" id="house-add-segment">
+          ＋ Add range
+        </button>
+        <label
+          >Reason for this revision<input
+            name="reason"
+            required
+            maxlength="2000"
+        /></label>
+        <label>Notes<textarea name="note" maxlength="5000"></textarea></label>
+        <p id="house-label-status" role="status"></p>
+        <button class="button primary" type="submit">
+          Save interval labels →
+        </button>
+      </form>
+      <details>
+        <summary>Original sample timestamps</summary>
+        <div id="house-label-samples"></div>
+      </details>
+      <details>
+        <summary>Retained context frames</summary>
+        <div id="house-label-frames"></div>
+      </details>
+      <details>
+        <summary>Label revision history</summary>
+        <div id="house-label-history"></div>
+      </details>
+    </dialog>
+    <dialog id="house-benchmark-dialog" class="wide-dialog">
+      <button
+        class="close-dialog"
+        type="button"
+        aria-label="Close house benchmark"
+      >
+        ×
+      </button>
+      <h2>House-state benchmark</h2>
+      <p>
+        Compare stable-state proposals with independent interval labels. Reports
+        separate errors, abstentions, unknown samples and duplicate exclusions.
+      </p>
+      <p class="fine-print">
+        Counts concern visible handles in the whole crop. These checks do not
+        validate scoring or played-end boundaries. Keep related recordings and
+        known recording days together.
+      </p>
+      <p id="house-benchmark-status" role="status"></p>
+      <h3>Saved interval labels</h3>
+      <div id="house-benchmark-labels"></div>
+      <details>
+        <summary>Freeze a labeled cohort</summary>
+        <form id="house-freeze-form">
+          <label
+            >Dataset name<input name="name" required maxlength="200"
+          /></label>
+          <div class="form-grid">
+            <label
+              >Reviewer<input name="author" required maxlength="120"
+            /></label>
+            <label
+              >Label mode<select name="mode">
+                <option value="confirmed">Reviewed human intervals only</option>
+                <option value="exploratory">
+                  Exploratory, with provenance shown
+                </option>
+              </select></label
+            >
+          </div>
+          <div id="house-group-partitions"></div>
+          <label>Reason<input name="reason" required maxlength="2000" /></label>
+          <button class="button primary" type="submit">
+            Freeze exact label revisions →
+          </button>
+        </form>
+      </details>
+      <h3>Evaluate a frozen cohort</h3>
+      <form id="house-evaluate-form">
+        <label>Dataset<select name="dataset" required></select></label>
+        <div class="form-grid">
+          <label
+            >Partition<select name="partition">
+              <option value="test">Test</option>
+              <option value="validation">Validation</option>
+              <option value="train">Training / development</option>
+            </select></label
+          >
+          <label
+            >House-state method<input name="method" required maxlength="200"
+          /></label>
+        </div>
+        <button class="button secondary" type="submit">
+          Evaluate cached observations →
+        </button>
+      </form>
+      <h3>Frozen datasets</h3>
+      <div id="house-benchmark-datasets"></div>
+      <h3>Evaluation reports</h3>
+      <div id="house-benchmark-runs"></div>
     </dialog>
     <dialog id="house-states-dialog" class="wide-dialog">
       <button

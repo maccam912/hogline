@@ -4,6 +4,8 @@ House-state labels describe **visible handle configurations in a particular over
 
 ## Annotate original intervals
 
+Choose **Label top interval** or **Label bottom interval** on a detailed window. The form starts with unknown labels, keeps retained frames separate from source-interval inspection, exposes original sample timestamps, and saves revision history. **House benchmark** opens group assignments, cohort freezing, cached evaluation and report downloads. The default cohort mode admits reviewed human source intervals; use exploratory mode explicitly for synthetic or assistant inspection.
+
 `GET /api/house-labels/WINDOW_ID/house_top` (or `house_bottom`) returns original sample indices/timestamps, retained context references, saved labels, and revision history. It supplies no detector predictions. Inspect the source interval and label inclusive sample ranges as:
 
 - `stable_handles`: an unchanged, observable configuration, with independently inspected red/yellow visible-handle counts.
@@ -46,3 +48,5 @@ Each report separates evaluated samples, stable truth, stable predictions, exact
 These are descriptive sample-level checks. Count agreement does not validate the predicted handle positions or a geometric score. A held-out independent corpus and separate change/end-boundary labels are still required before automatic end reconstruction. No score-acceptance gate is enabled by these reports.
 
 `GET /api/house-evaluation` lists labels, datasets and reports. Full immutable artifacts are available at `/api/house-evaluation/datasets/ID.json` and `/api/house-evaluation/runs/ID.json` with verified checksums. Keep the local catalog and dense/evidence files together; these data are not committed to the public repository.
+
+The save → freeze → evaluate workflow was exercised in the browser against an isolated synthetic local-video catalog. Its 28 changing samples produced 28 abstentions, zero stable predictions, null precision/recall denominators and 0% prediction coverage. The fixture and reports remain under ignored local data; this is a UI/pipeline check, not real-footage accuracy.
