@@ -195,7 +195,11 @@ def validate_references(payload):
                 raise ValueError(
                     "Release delivery timing disagrees with supporting person/object observations"
                 )
-    for result in payload.get("window_house_states", []):
+    for result in [*payload.get("window_house_states", []), *payload.get("window_play_evidence", [])]:
+        if result.get("version") == "house-focused-play-cues-v1" and (
+            digest({k: v for k, v in result.items() if k != "sha256"}) != result["sha256"]
+        ):
+            raise ValueError("Release house-focused play checksum mismatch")
         require([result["window_id"]], windows, "house states")
         window = windows[result["window_id"]]
         if any(
@@ -343,3 +347,36 @@ def validate_references(payload):
         require(
             proposal["left"]["evidence_ids"] + proposal["right"]["evidence_ids"], evidence, "recording link"
         )
+
+    for score in payload.get("house_score_observations", []):
+        require([score["evidence_id"]], evidence, "house-score observation")
+        frame = evidence[score["evidence_id"]]
+        detector = next(
+            (o for o in payload["observations"] if o["id"] == score["detector_observation_id"]), None
+        )
+        if (
+            digest({k: v for k, v in score.items() if k != "sha256"}) != score["sha256"]
+            or frame["source_id"] != score["source_id"]
+            or frame.get("profile_sha256") != score["profile_sha256"]
+            or score["source_metadata_sha256"]
+            not in {r["metadata_sha256"] for r in acquisition_refs.get(frame["id"], [])}
+            or any(score[k] != frame[k] for k in ("source_seconds", "pts", "time_base_num", "time_base_den"))
+            or score["input_crops"] != {v: frame["crops"][v] for v in score["views"]}
+            or detector is None
+            or digest(detector) != score["detector_observation_sha256"]
+        ):
+            raise ValueError("Release house-score provenance disagrees with source evidence")
+    if "end_timelines" in payload:
+        from hogline.reconstruction.ends import reconstruct_ends
+
+        expected = [
+            reconstruct_ends(
+                source["id"],
+                payload["broadcast"]["observations"],
+                payload.get("window_house_states", []) + payload.get("window_play_evidence", []),
+                payload.get("house_score_observations", []),
+            )
+            for source in payload["sources"]
+        ]
+        if payload["end_timelines"] != expected:
+            raise ValueError("Release end timelines disagree with their pinned observations")

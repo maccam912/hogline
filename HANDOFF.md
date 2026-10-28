@@ -1,5 +1,22 @@
 # Hogline handoff
 
+## Latest checkpoint: 0.31.0 end reconstruction
+
+October 28, 2026. The latest work adds [end timelines and house-score comparisons](docs/END_TIMELINE.md). Version 0.31.0 has 316 passing local tests, clean Ruff checks, checked browser scripts and successful wheel/sdist builds. The earlier 0.30.1 material below remains historical context; current data counts have increased.
+
+The user specifically wants complete games: start/end of each end, ends played, score after every end, first throw through final stone settling, delayed board posting, and eventual CV house-score/board comparison. This remains unfinished. The new source/game timeline API, CLI and **Reconstruct ends** dialog expose these independently. First/last physical throws, score agreement, scheduled ends and complete-game acceptance remain unresolved when evidence is insufficient. Do not present the new ledgers as completed games.
+
+A new bounded survey covered the full 7,455-second March 17 Sheet 4 recording (`969bbec9-f7fe-47d7-8bc6-06b65a0e459a`) at roughly one-minute spacing. Batch `8512987e-b2e1-459a-8cb0-690946ad15f0` completed eight chunks/139 sample requests, spent 557.74 worker seconds and retained 292,722,734 evidence bytes. The new OCR pass processed 103 pending frames. The assembled report has 158 current-reader frames, four paired row epochs, red +1 in end 2 and red +2 in end 5 proposals, and a 5–3 cumulative state after end 5. End 3, initial baselines, final result and number of ends played remain unknown. This is more coverage of development footage, not held-out validation.
+
+Three 60-second, 0.5-second-cadence windows at 2520/2580/2640 source seconds completed without actor inference. They spent about 109 worker seconds and retained about 39 MiB. House-focused cues found a first-visible bottom-house handle bracket at 2667.5–2683.5s; it is not a verified first throw or official end. The preceding top-house state was not reliably observable before clearing. Preserve this failure rather than loosening acceptance thresholds to force an end result.
+
+The experimental granite scorer fits local edges beyond the colored component and compares distance intervals in affine-normalized house coordinates. Earlier fits sometimes followed handle boundaries; version v3 tightens this and preserves older observations. On 120 development frames / 240 views it returned only two provisional numeric house scores; all others abstained, predominantly for no handles, uncertain granite edges or obstruction. These are not measured accuracy or final-end scores. 74 source frames remained pending at the recorded snapshot. Use **Analyze cached houses** to continue bounded cached work. No score/name/game is accepted automatically.
+
+Ignored evidence pointers: `data/complete-game-reconstruction-validation.json`, `data/full-recording-end-timeline.json`, `data/full-recording-house-score-development.json`, and `data/checkpoint-0.31.0-exploratory.json`. The release ID is `3f0679ee-97ec-43f4-9a4b-a892c90f7657`, SHA `a10c6073c4372e573a9274a572ffdcadacad4000aa855a863ac12a6af6cc0398`. It contains 12 source end timelines, 38 derived play-window records and 120 current house-score observations. Local data is now larger and remains outside Git; preserve it separately.
+
+Next: independently annotate complete original game/end intervals on untouched days, validate board baselines/blank-marker conventions, improve granite/body rejection, and acquire contiguous end coverage before claiming first/final throw timing. The current bounded play reconstruction accepts at most 128 windows and rejects eligible corrupt/missing dense inputs. Source clocks and continuation spans remain separate. The local server was restarted on port 8765 for this version; verify it is still running.
+
+
 Checkpoint: October 28, 2026. The implementation is a working local pilot, not the completed system in [DESIGN.md](DESIGN.md). Version **0.30.1**, implementation commit `2d3f75e`, has 303 passing local tests, clean Ruff checks, checked browser scripts and a successful wheel/sdist build. Linux CI also passed that implementation commit. Check CI and current Git state again before continuing.
 
 ## Current instructions and priorities

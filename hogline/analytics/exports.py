@@ -5,8 +5,10 @@ import json
 from hogline.adapters.sources import digest
 from hogline.analytics.actors import actors_in_session
 from hogline.analytics.deliveries import deliveries_in_session
+from hogline.analytics.end_timeline import house_scores_in_session
 from hogline.analytics.house_states import house_states_in_session
 from hogline.analytics.lineage import source_lineage, validate_references
+from hogline.analytics.play import play_in_windows
 from hogline.analytics.tracks import tracks_in_session
 from hogline.db import Release, now
 from hogline.domain.catalog import catalog_in_session
@@ -15,6 +17,7 @@ from hogline.perception.board_locator import board_locations_in_session
 from hogline.perception.broadcast import broadcast_catalog_in_session
 from hogline.perception.pipeline import observations_in_session
 from hogline.reconstruction.boundaries import boundary_links
+from hogline.reconstruction.ends import reconstruct_ends
 from hogline.review.score_conflicts import conflicts_in_session
 
 
@@ -85,6 +88,21 @@ def snapshot_in_session(session, mode, root):
             "unknown": "excluded from decided-game counts; null is not zero",
         },
     }
+    # Validate existing interpretation/observation lineage before opening optional dense inputs.
+    validate_references(payload)
+    payload["house_score_observations"] = house_scores_in_session(session)
+    play = play_in_windows(root, data["analysis_windows"])
+    payload["window_play_evidence"] = play["results"]
+    payload["play_input_exclusions"] = play["exclusions"]
+    payload["end_timelines"] = [
+        reconstruct_ends(
+            source["id"],
+            broadcast["observations"],
+            payload["window_house_states"] + payload["window_play_evidence"],
+            payload["house_score_observations"],
+        )
+        for source in data["sources"]
+    ]
     validate_references(payload)
     # Use the same rows that were serialized, even if a review is saved during export.
     payload["interpretation_revisions"] = {

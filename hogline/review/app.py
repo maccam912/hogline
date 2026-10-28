@@ -110,6 +110,7 @@ from hogline.reconstruction.boundaries import boundary_links
 from hogline.reconstruction.deliveries import VERSION as DELIVERY_VERSION
 from hogline.reconstruction.house_states import VERSION as HOUSE_STATES_VERSION
 from hogline.review.board_evaluation import register_board_evaluation
+from hogline.review.ends import register_ends
 from hogline.review.house_evaluation import register_house_evaluation
 from hogline.review.learning import model_catalog, register_learning
 from hogline.review.players import register_players
@@ -156,6 +157,7 @@ def create_app(settings: Settings | None = None, start_worker=False):
     register_learning(app, db)
     register_players(app, db)
     register_score_conflicts(app, db)
+    register_ends(app, db)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "testserver"])
 
     @app.middleware("http")

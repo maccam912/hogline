@@ -23,6 +23,7 @@
     <script src="/static/reconciliation.js" defer></script>
     <script src="/static/automatic.js" defer></script>
     <script src="/static/board-timeline.js" defer></script>
+    <script src="/static/ends.js" defer></script>
     <script src="/static/board-refinement.js" defer></script>
   </head>
   <body>
@@ -263,6 +264,12 @@
               <button class="button secondary" id="adaptive-button">
                 Choose detail windows automatically →
               </button>
+              <section id="end-timeline-panel">
+                <div class="section-heading"><h2>Games, ends and scores</h2>
+                  <button class="button secondary" id="end-timeline-button">Reconstruct ends →</button>
+                </div>
+                <p class="fine-print">Follow numbered ends and score histories. Inspect play and clearing candidates, later board updates and experimental house scores.</p>
+              </section>
               <section id="board-timeline-panel">
                 <div class="section-heading">
                   <h2>Posted board changes</h2>
@@ -996,6 +1003,14 @@
           </button>
         </div>
       </form>
+    </dialog>
+    <dialog id="end-timeline-dialog" class="wide-dialog">
+      <div class="dialog-heading"><h2>End timeline and score evidence</h2>
+        <button class="close-dialog" aria-label="Close end timeline">×</button></div>
+      <div id="end-timeline-content"></div>
+      <button class="button secondary" id="house-score-analyze">Analyze cached houses</button>
+      <p id="end-analysis-status" aria-live="polite"></p>
+      <div id="house-score-content"></div>
     </dialog>
     <dialog id="board-change-dialog" class="wide-dialog">
       <button

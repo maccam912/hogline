@@ -439,7 +439,7 @@ function renderGames() {
     sourceGames()
       .map((g) => {
         const span = g.spans.find((s) => s.source_id === state.source);
-        return `<article class="game-card"><span class="game-icon">◎</span><div><h3>${escapeHTML(g.label)}</h3><p>${time(span.start_seconds)}—${time(span.end_seconds)} · ${g.coverage.toUpperCase()} · ${g.ends.length} ENDS</p></div><span class="pill ${g.acceptance === "human_confirmed" ? "green" : "amber"}">${g.acceptance === "human_confirmed" ? "Reviewed" : "Needs review"}</span><button class="button quiet" data-edit="${g.id}">Review →</button></article>`;
+        return `<article class="game-card"><span class="game-icon">◎</span><div><h3>${escapeHTML(g.label)}</h3><p>${time(span.start_seconds)}—${time(span.end_seconds)} · ${g.coverage.toUpperCase()} · ${g.ends.length} SAVED ENDS</p></div><span class="pill ${g.acceptance === "human_confirmed" ? "green" : "amber"}">${g.acceptance === "human_confirmed" ? "Reviewed" : "Needs review"}</span><button class="button quiet" data-edit="${g.id}">Review →</button></article>`;
       })
       .join("") ||
     '<p class="no-data">No game intervals yet. Mark one from the recording, or scan a section to propose activity.</p>';

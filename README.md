@@ -29,6 +29,8 @@ Open **http://127.0.0.1:8765**. The server starts one bounded worker. Data is ke
 
 **Find moments** searches across recordings by sheet, title date, evidence kind, and review state. Results retain original YouTube links and distinguish observation intervals from event times; see [moment search](docs/MOMENTS.md).
 
+**End timeline and score histories** combine repeated board rows with house-focused arrival/clearing candidates, preserve delayed posting separately from play, and compare experimental granite-edge scores with board proposals. Open **Reconstruct ends** on a recording; see [end reconstruction and current evidence](docs/END_TIMELINE.md). Complete-game accuracy, first/last delivery timing and automatic score acceptance remain unvalidated.
+
 **Sampled house states** derive stable handle configurations and uncertain change brackets from cached detailed windows, with original timestamp links and explicit visibility/gap abstentions. Zero detections remain distinct from an empty house; see [house states](docs/HOUSE_STATES.md).
 
 The [house-state benchmark](docs/HOUSE_EVALUATION.md) freezes independently reviewed interval labels and whole recording/day groups, then reports stability errors, abstentions, overlap exclusions and coverage from cached observations. Retained context frames alone cannot label an entire interval.

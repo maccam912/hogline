@@ -1580,3 +1580,10 @@ dialog .primary {
 #players-dialog .check-row { display: flex; align-items: center; gap: 8px; margin: 12px 0; }
 #players-dialog .check-row input { width: 18px; height: 18px; margin: 0; }
 #actors-dialog { width: min(920px, 95vw); max-width: 95vw; }
+
+.end-table-wrap { overflow-x: auto; }
+.end-table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+.end-table th, .end-table td { text-align: left; padding: .65rem; border-bottom: 1px solid #deded7; vertical-align: top; }
+.house-score-image { position: relative; width: min(100%, 480px); }
+.house-score-image img { width: 100%; height: auto; display: block; }
+.house-score-image svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }

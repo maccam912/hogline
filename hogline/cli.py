@@ -6,6 +6,7 @@ from uuid import uuid4
 from hogline.adapters.sources import import_local, import_youtube, inventory
 from hogline.analytics.actors import derive_window_actors
 from hogline.analytics.deliveries import derive_window_deliveries
+from hogline.analytics.end_timeline import analyze_house_scores, game_end_timeline, source_end_timeline
 from hogline.analytics.exports import csv_export, snapshot
 from hogline.analytics.house_states import derive_house_states
 from hogline.analytics.moments import MomentQuery, search_moments
@@ -155,6 +156,21 @@ def main():
     house_freeze.add_argument("path", help="DatasetCreate JSON file")
     house_evaluate = commands.add_parser("evaluate-house", help="Evaluate frozen sampled house-state labels")
     house_evaluate.add_argument("path", help="HouseEvaluationRequest JSON file")
+    end_timeline = commands.add_parser(
+        "end-timeline", help="Reconstruct end/score evidence from cached inputs"
+    )
+    end_timeline.add_argument("source_id")
+    end_timeline.add_argument("--start", type=float)
+    end_timeline.add_argument("--end", type=float)
+    end_timeline.add_argument("--output")
+    game_timeline = commands.add_parser("game-end-timeline", help="Reconstruct ends inside saved game spans")
+    game_timeline.add_argument("game_id")
+    house_scores = commands.add_parser(
+        "score-houses", help="Inspect cached granite edges; experimental scores"
+    )
+    house_scores.add_argument("source_id")
+    house_scores.add_argument("--limit", type=int, default=24)
+    house_scores.add_argument("--max-seconds", type=float, default=30)
     commands.add_parser("labels", help="List saved label views and recording/day groups")
     label_import = commands.add_parser("label-import", help="Import a revisioned label-edit JSON document")
     label_import.add_argument("path")
@@ -304,6 +320,15 @@ def main():
                 )
             case "trace-window":
                 result = derive_window_tracks(db, args.window_id)
+            case "end-timeline":
+                result = source_end_timeline(db, args.source_id, args.start, args.end)
+                if args.output:
+                    Path(args.output).write_text(json.dumps(result, indent=2))
+                    result = {"sha256": result["sha256"], "path": str(Path(args.output).resolve())}
+            case "game-end-timeline":
+                result = game_end_timeline(db, args.game_id)
+            case "score-houses":
+                result = analyze_house_scores(db, args.source_id, args.limit, args.max_seconds)
             case "house-states":
                 result = derive_house_states(db, args.window_id)
             case "trace-actors":
