@@ -9,11 +9,46 @@ import numpy as np
 from hogline.adapters.sources import digest
 from hogline.perception.ocr import normalized_crop
 
+CARD_VISIBILITY_VERSION = "row-color-and-card-height-v1"
+
+
+def card_visibility(cell, color):
+    hsv = cv2.cvtColor(np.asarray(cell.convert("RGB")), cv2.COLOR_RGB2HSV)
+    white = cv2.inRange(hsv, (0, 0, 140), (179, 80, 255))
+    background = (
+        cv2.inRange(hsv, (17, 90, 70), (42, 255, 255))
+        if color == "yellow"
+        else cv2.inRange(hsv, (0, 85, 50), (13, 255, 255)) | cv2.inRange(hsv, (165, 85, 50), (179, 255, 255))
+    )
+    occupancy = float(np.mean(white > 0))
+    top_fraction = float(np.mean(white[: max(1, round(cell.height * 0.3))] > 0))
+    background_fraction = float(np.mean(background > 0))
+    bounds = cv2.boundingRect(cv2.findNonZero(white)) if occupancy else (0, 0, 0, 0)
+    height_fraction = bounds[3] / cell.height
+    reason = None
+    if occupancy >= 0.2:
+        if height_fraction < 0.65 or top_fraction < 0.12:
+            reason = "white_patch_not_full_height_card"
+        status = "unreadable" if reason else "card_candidate"
+    else:
+        reason = "row_background_obstructed_or_uncertain" if background_fraction < 0.65 else None
+        status = "unreadable" if reason else "no_card_candidate"
+    return white, {
+        "method": CARD_VISIBILITY_VERSION,
+        "status": status,
+        "reason": reason,
+        "white_card_fraction": occupancy,
+        "top_white_fraction": top_fraction,
+        "white_height_fraction": height_fraction,
+        "row_background_fraction": background_fraction,
+        "calibrated_probability": None,
+    }
+
 
 def read_board(image, template, reader):
     board = normalized_crop(image, template["bounds"])
     centers = template["point_centers"]
-    cards, unreadable = [], []
+    cards, unreadable, visibility = [], [], []
     for color, row in template["rows"].items():
         band = normalized_crop(board, [0, row[0], 1, row[1]])
         for index, center in enumerate(centers):
@@ -24,10 +59,12 @@ def read_board(image, template, reader):
                 else center + (center - centers[-2]) / 2
             )
             cell = normalized_crop(band, [left, 0, right, 1])
-            hsv = cv2.cvtColor(np.asarray(cell.convert("RGB")), cv2.COLOR_RGB2HSV)
-            white = cv2.inRange(hsv, (0, 0, 140), (179, 80, 255))
-            occupancy = float(np.mean(white > 0))
-            if occupancy < 0.2:
+            white, check = card_visibility(cell, color)
+            visibility.append({"color": color, "cumulative_points": index + 1, **check})
+            if check["status"] == "unreadable":
+                unreadable.append({"color": color, "cumulative_points": index + 1, "reason": check["reason"]})
+                continue
+            if check["status"] == "no_card_candidate":
                 continue
             # Strip colored board background and dark card borders before recognizing
             # an isolated end numeral; neither belongs to the printed glyph.
@@ -48,7 +85,7 @@ def read_board(image, template, reader):
                 "raw_text": ocr["text"],
                 "ocr_alternatives": alternatives,
                 "engine_confidence": ocr["engine_confidence"],
-                "white_card_fraction": occupancy,
+                "white_card_fraction": check["white_card_fraction"],
                 "acceptance": "proposed",
                 "normalized_board_bounds": [left, row[0], right, row[1]],
             }
@@ -59,6 +96,8 @@ def read_board(image, template, reader):
     return {
         "cards": cards,
         "unreadable_slots": unreadable,
+        "slot_visibility": visibility,
+        "card_visibility_version": CARD_VISIBILITY_VERSION,
         "conflicting_end_numbers": sorted({n for n in numbers if numbers.count(n) > 1}),
         "acceptance": "proposed",
         "template_status": template.get("status", "unverified_seed"),
