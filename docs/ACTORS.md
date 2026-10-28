@@ -12,6 +12,8 @@ Each fragment keeps source-linked samples, pixel displacements and low-posture c
 
 `hogline trace-actors WINDOW_ID` or `POST /api/windows/{id}/actors` re-derives fragments from cached perspective observations without loading the model or fetching video. Earlier overhead-only windows need explicit reanalysis to acquire perspective observations. `analyze_actors=false` disables the optional stage for an individual window. Immutable JSON releases include actor results and input references; the API exposes summaries in the catalog and full results at `/api/window-actors/ID`.
 
+Use **Inspect automatic person fragments** on a compatible window, or filter **Find moments** to **Anonymous person fragments**. Search opens the selected fragment first. Person boxes are drawn only when a retained frame matches the sample's exact source time, PTS/timebase and crop dimensions. Other sample times keep their original source links, with no box painted onto a different instant. The selected fragment and exact-frame overlay were checked in the browser on the Sheet 3 example below.
+
 ## Development check, October 28, 2026
 
 A cached-image trial on 14 perspective crops across Sheets 1, 3, 4, 5, 7 and 8 proposed 32 people and none on the inspected quiet views. This is a selected feasibility check, not measured precision/recall. A new twelve-second Sheet 3 window at source 01:30:00 then ran the actual decoder, model, fragment association and export pipeline: 24 samples per view, 21 anonymous fragments, 8.76 MiB retained/reserved and 15.19 measured worker seconds, within a 32-MiB/120-second allowance. Twenty-one fragments do not mean twenty-one people; interrupted associations intentionally create multiple fragments. No game, named identity, delivery or score was accepted.

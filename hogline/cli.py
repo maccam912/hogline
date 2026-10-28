@@ -128,6 +128,7 @@ def main():
             "reviewed_end",
             "sampled_house_state",
             "house_change",
+            "person_fragment",
         ],
     )
     moments.add_argument("--limit", type=int, default=25)

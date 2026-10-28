@@ -191,6 +191,10 @@ def test_automatic_actor_pipeline_cached_api_and_release_lineage(db, sources, mo
     assert client.post(f"/api/windows/{window['id']}/actors").json() == result
     assert client.get(f"/api/window-actors/{result['id']}").json() == result
     assert client.get("/api/catalog").json()["window_actors"][0]["track_count"] == 2
+    moments = client.post("/api/moments/search", json={"kinds": ["person_fragment"]}).json()
+    assert moments["total"] == 2
+    assert moments["moments"][0]["reference"]["actor_result_id"] == result["id"]
+    assert moments["moments"][0]["start_youtube_url"].endswith("&t=100s")
     assert snapshot(db, "exploratory")["window_actors"][0] == result
     with db.session() as s:
         assert len(list(s.scalars(select(WindowActors)))) == 1

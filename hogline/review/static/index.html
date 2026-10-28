@@ -14,6 +14,7 @@
     <script src="/static/windows.js" defer></script>
     <script src="/static/tracks.js" defer></script>
     <script src="/static/house-states.js" defer></script>
+    <script src="/static/actors.js" defer></script>
     <script src="/static/house-evaluation.js" defer></script>
     <script src="/static/moments.js" defer></script>
     <script src="/static/score-conflicts.js" defer></script>
@@ -1080,6 +1081,17 @@
         </div>
       </form>
     </dialog>
+    <dialog id="actors-dialog" class="wide-dialog">
+      <button
+        class="close-dialog"
+        type="button"
+        aria-label="Close person fragments"
+      >
+        ×
+      </button>
+      <h2>People through a short window</h2>
+      <div id="actors-content" aria-live="polite"></div>
+    </dialog>
     <dialog id="house-label-dialog" class="wide-dialog">
       <button
         class="close-dialog"
@@ -1303,6 +1315,9 @@
               <option value="reviewed_end">Saved end reviews</option>
               <option value="sampled_house_state">Sampled house states</option>
               <option value="house_change">House configuration changes</option>
+              <option value="person_fragment">
+                Anonymous person fragments
+              </option>
             </select></label
           >
           <label

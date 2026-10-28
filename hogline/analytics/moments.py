@@ -7,20 +7,23 @@ from typing import Literal
 from pydantic import Field, model_validator
 
 from hogline.adapters.sources import digest, video_link
+from hogline.analytics.actors import actors_in_session
 from hogline.analytics.house_states import house_states_in_session
 from hogline.analytics.tracks import tracks_in_session
 from hogline.config import profile
 from hogline.domain.catalog import Conflict, catalog_in_session
 from hogline.domain.models import Acceptance, Model
 from hogline.media.windows import VERSION as DECODER_VERSION
+from hogline.perception.actors import VERSION as ACTOR_VERSION
 from hogline.perception.broadcast import broadcast_catalog_in_session
+from hogline.perception.people import VERSION as PERSON_VERSION
 from hogline.perception.stones import VERSION as DETECTOR_VERSION
 from hogline.perception.temporal import VERSION as WINDOW_VERSION
 from hogline.perception.tracking import VERSION as TRACKING_VERSION
 from hogline.perception.visibility import VERSION as VISIBILITY_VERSION
 from hogline.reconstruction.house_states import VERSION as HOUSE_STATES_VERSION
 
-VERSION = "evidence-moment-search-v2"
+VERSION = "evidence-moment-search-v3"
 Kind = Literal[
     "board_change",
     "score_proposal",
@@ -29,6 +32,7 @@ Kind = Literal[
     "reviewed_end",
     "sampled_house_state",
     "house_change",
+    "person_fragment",
 ]
 
 
@@ -38,7 +42,7 @@ class MomentQuery(Model):
     source_id: str | None = None
     title_date_from: date | None = None
     title_date_to: date | None = None
-    kinds: list[Kind] = Field(default_factory=list, max_length=7)
+    kinds: list[Kind] = Field(default_factory=list, max_length=8)
     acceptance: Acceptance | None = None
     include_earlier_inputs: bool = False
     offset: int = Field(default=0, ge=0, le=1000000)
@@ -52,7 +56,7 @@ class MomentQuery(Model):
         return self
 
 
-def build_moments(data, broadcast, track_results, house_results=()):
+def build_moments(data, broadcast, track_results, house_results=(), actor_results=()):
     profile_sha256 = digest(profile())
     sources = {s["id"]: s for s in data["sources"]}
     evidence = {e["id"]: e for e in data["evidence"]}
@@ -234,6 +238,33 @@ def build_moments(data, broadcast, track_results, house_results=()):
                     "house_item_id": item["id"],
                 },
             )
+    for result in actor_results:
+        current = (
+            result["version"] == ACTOR_VERSION
+            and result["detector_version"] == PERSON_VERSION
+            and result["profile_sha256"] == profile_sha256
+        )
+        for track in result["tracks"]:
+            add(
+                "person_fragment",
+                f"{result['id']}:{track['id']}",
+                result["source_id"],
+                track["start_seconds"],
+                track["end_seconds"],
+                f"Anonymous body fragment · {track['view'].replace('_', ' ')}",
+                "One person may have several fragments. "
+                "Thrower, delivery, sheet membership and name are unresolved.",
+                result["context_anchor_evidence_ids"],
+                manifest=result["source_metadata_sha256"],
+                model=result["version"],
+                current_method=current,
+                view=track["view"],
+                reference={
+                    "window_id": result["window_id"],
+                    "actor_result_id": result["id"],
+                    "actor_track_id": track["id"],
+                },
+            )
     for game in data["games"]:
         if game.get("retired_into"):
             continue
@@ -331,4 +362,5 @@ def search_moments(db, query):
         broadcast = broadcast_catalog_in_session(session, db.settings.data_dir)
         tracks = tracks_in_session(session, full=True)
         houses = house_states_in_session(session, full=True)
-        return search_index(data, build_moments(data, broadcast, tracks, houses), query)
+        actors = actors_in_session(session, full=True)
+        return search_index(data, build_moments(data, broadcast, tracks, houses, actors), query)

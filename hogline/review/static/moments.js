@@ -14,6 +14,7 @@
     reviewed_end: "Saved end review",
     sampled_house_state: "Sampled house state",
     house_change: "House configuration change",
+    person_fragment: "Anonymous person fragment",
   };
   async function search(offset = 0) {
     if (pending) return;
@@ -143,6 +144,12 @@
           moment.reference.window_id,
           moment.reference.track_id,
           moment.reference.track_result_id,
+        );
+      else if (moment.reference.actor_result_id)
+        await window.hoglineActors.open(
+          moment.reference.window_id,
+          moment.reference.actor_track_id,
+          moment.reference.actor_result_id,
         );
       else if (moment.reference.house_result_id)
         await window.hoglineHouseStates.open(
