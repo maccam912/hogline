@@ -135,50 +135,32 @@ def score_deltas(cards):
     return claims
 
 
+SCORE_CLAIMS_VERSION = "pinned-repeated-board-score-deltas-v2"
+
+
 def persistent_board_claims(observations, minimum_frames=3, maximum_gap_seconds=90):
-    # Each row has its own cumulative ledger. An occluded yellow row must not
-    # erase readable red evidence, and no vote spans an interruption or reset.
-    states = []
-    current = {}
-    for observation in sorted(observations, key=lambda o: (o["source_id"], o["source_seconds"])):
-        board = observation.get("scoreboard", {})
-        for color in ("red", "yellow"):
-            row_key = (observation["source_id"], color)
-            cards = [c for c in board.get("cards", []) if c["color"] == color]
-            invalid = any(s["color"] == color for s in board.get("unreadable_slots", []))
-            invalid |= any(c["end_number"] in board.get("conflicting_end_numbers", []) for c in cards)
-            if not cards or invalid or any(c["end_number"] is None for c in cards):
-                current.pop(row_key, None)
-                continue
-            key = (
-                observation["source_id"],
-                color,
-                tuple(sorted((c["end_number"], c["cumulative_points"]) for c in cards)),
-            )
-            group = current.get(row_key)
-            if (
-                group is None
-                or group["key"] != key
-                or observation["source_seconds"] - group["times"][-1] > maximum_gap_seconds
-            ):
-                group = {"key": key, "cards": cards, "evidence": {}, "times": []}
-                current[row_key] = group
-                states.append(group)
-            group["evidence"][observation["evidence_id"]] = observation.get("youtube_url")
-            group["times"].append(observation["source_seconds"])
+    from hogline.reconstruction.board_events import board_timeline
+
+    timeline = board_timeline(
+        observations, minimum_frames=minimum_frames, maximum_gap_seconds=maximum_gap_seconds
+    )
+    by_id = {o["id"]: o for o in observations if o.get("id")}
     output = []
-    for state in states:
-        source_id = state["key"][0]
-        if len(state["evidence"]) < minimum_frames or len(set(state["times"])) < minimum_frames:
-            continue
-        for claim in score_deltas(state["cards"]):
+    for epoch in timeline["epochs"]:
+        cards = [{**c, "color": epoch["color"]} for c in epoch["cards"]]
+        for claim in score_deltas(cards):
             document = {
                 **claim,
-                "source_id": source_id,
-                "evidence_ids": list(state["evidence"]),
-                "youtube_links": list(state["evidence"].values()),
-                "source_start_seconds": min(state["times"]),
-                "source_end_seconds": max(state["times"]),
+                "version": SCORE_CLAIMS_VERSION,
+                "source_id": epoch["source_id"],
+                "source_metadata_sha256": epoch["source_metadata_sha256"],
+                "model_version": epoch["model_version"],
+                "board_epoch_id": epoch["id"],
+                "evidence_ids": epoch["evidence_ids"],
+                "observation_ids": epoch["observation_ids"],
+                "youtube_links": [by_id[i].get("youtube_url") for i in epoch["observation_ids"]],
+                "source_start_seconds": epoch["first"]["source_seconds"],
+                "source_end_seconds": epoch["last"]["source_seconds"],
                 "review_reason": "board_delta_requires_game_end_and_template_review",
             }
             document["id"] = str(uuid5(NAMESPACE_URL, digest(document)))

@@ -52,10 +52,14 @@ CARDS = [
 def board(index, seconds=None, cards=None):
     return {
         "source_id": "s",
+        "id": f"board-{index}",
+        "source_metadata_sha256": "manifest",
+        "model_version": "reader",
         "evidence_id": str(index),
         "source_seconds": index * 10 if seconds is None else seconds,
         "youtube_url": f"https://www.youtube.com/watch?v=AAAAAAAAAAA&t={index * 10}s",
         "scoreboard": {
+            "status": "observed",
             "cards": CARDS if cards is None else cards,
             "unreadable_slots": [],
             "conflicting_end_numbers": [],
@@ -87,3 +91,31 @@ def test_unreadable_opponent_row_does_not_erase_a_readable_row():
         frame["scoreboard"]["unreadable_slots"] = [{"color": "yellow", "cumulative_points": 2}]
     claims = persistent_board_claims(frames)
     assert len(claims) == 1 and claims[0]["color"] == "red"
+
+
+def test_score_proposals_require_one_pinned_model_and_unambiguous_distinct_times():
+    for field in ("source_metadata_sha256", "model_version"):
+        frames = [board(i) for i in range(3)]
+        frames[1][field] = "other"
+        assert not persistent_board_claims(frames)
+        frames[1][field] = None
+        assert not persistent_board_claims(frames)
+    assert not persistent_board_claims([board(i, seconds=i * 0.1) for i in range(3)])
+    assert not persistent_board_claims([board(0), board(1), board(2), board(3, seconds=10, cards=[])])
+    result = persistent_board_claims([board(i) for i in range(3)])[0]
+    assert result["source_metadata_sha256"] == "manifest"
+    assert result["model_version"] == "reader"
+    assert result["board_epoch_id"]
+    assert result["observation_ids"] == ["board-0", "board-1", "board-2"]
+
+
+def test_release_rejects_score_proposals_without_matching_observations(db, sources):
+    import pytest
+
+    from hogline.analytics.exports import snapshot
+    from hogline.analytics.lineage import validate_references
+
+    release = snapshot(db, "exploratory")
+    release["broadcast"]["score_proposals"] = [{"points": 8, "acceptance": "proposed"}]
+    with pytest.raises(ValueError, match="score proposals disagree"):
+        validate_references(release)

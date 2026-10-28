@@ -198,6 +198,12 @@ def validate_references(payload):
             for i in (change["before_epoch_id"], change["after_epoch_id"])
         ):
             raise ValueError("Release board change/source mismatch")
+    if "score_proposals" in payload["broadcast"]:
+        from hogline.perception.scoreboard import persistent_board_claims
+
+        expected_scores = persistent_board_claims(payload["broadcast"]["observations"])
+        if payload["broadcast"]["score_proposals"] != expected_scores:
+            raise ValueError("Release score proposals disagree with pinned repeated board readings")
     for proposal in payload["source_boundary_links"]:
         require([proposal["left_source_id"], proposal["right_source_id"]], sources, "recording link")
         require(

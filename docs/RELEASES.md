@@ -19,3 +19,5 @@ Before inserting the immutable release row, publication verifies manifest checks
 New frame identities include the source manifest hash. Reacquiring identical pixels after a metadata change therefore creates a new evidence identity while reusing the same content-addressed PNG. Existing evidence, labels, and interpretations keep their IDs.
 
 Tests use coordinated concurrent transactions to verify that a release cannot mix old game revisions with new observations, and that a catalog read remains stable while a WAL writer commits. These checks establish local database consistency, not archive accuracy or PostgreSQL behavior.
+
+Score proposals now derive from the same pinned repeated row epochs as the board timeline. Three distinct frames spanning at least two seconds must share a source manifest and reader version, with no ambiguous same-time readings. Releases recompute these proposals from their included observations and reject inconsistent score/epoch lineage. This prevents a metadata refresh or reader change from combining votes. Proposed cumulative differences still require game/end review; no automatic acceptance was added.
