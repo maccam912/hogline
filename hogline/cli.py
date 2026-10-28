@@ -5,6 +5,7 @@ from uuid import uuid4
 
 from hogline.adapters.sources import import_local, import_youtube, inventory
 from hogline.analytics.exports import csv_export, snapshot
+from hogline.analytics.moments import MomentQuery, search_moments
 from hogline.analytics.tracks import derive_window_tracks
 from hogline.config import Settings
 from hogline.db import Database
@@ -98,6 +99,15 @@ def main():
     board_freeze.add_argument("path", help="DatasetCreate JSON file")
     board_evaluate = commands.add_parser("evaluate-board", help="Evaluate cached board reader outputs")
     board_evaluate.add_argument("path", help="BoardEvaluationRequest JSON file")
+    moments = commands.add_parser("find-moments", help="Search retained evidence without fetching media")
+    moments.add_argument("--text", default="")
+    moments.add_argument("--sheet", type=int)
+    moments.add_argument(
+        "--kind",
+        choices=["board_change", "score_proposal", "handle_motion", "house_configuration", "reviewed_end"],
+    )
+    moments.add_argument("--limit", type=int, default=25)
+    moments.add_argument("--include-earlier-inputs", action="store_true")
     trace = commands.add_parser("trace-window", help="Associate handles using cached dense observations only")
     trace.add_argument("window_id")
     commands.add_parser("labels", help="List saved label views and recording/day groups")
@@ -223,6 +233,17 @@ def main():
             case "evaluate-board":
                 result = evaluate_board_dataset(
                     db, BoardEvaluationRequest.model_validate_json(Path(args.path).read_text())
+                )
+            case "find-moments":
+                result = search_moments(
+                    db,
+                    MomentQuery(
+                        text=args.text,
+                        sheet=args.sheet,
+                        kinds=[args.kind] if args.kind else [],
+                        limit=args.limit,
+                        include_earlier_inputs=args.include_earlier_inputs,
+                    ),
                 )
             case "trace-window":
                 result = derive_window_tracks(db, args.window_id)

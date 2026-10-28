@@ -31,7 +31,7 @@
           .map(
             (change) =>
               `<article class="activity-card"><div><strong>${escapeHTML(change.color)} · ${titles[change.change_type]}</strong>
-      <p class="fine-print">Between ${stamp(change.before.source_seconds)} and ${stamp(change.after.source_seconds)} · ${time(change.bracket_seconds)} uncertainty interval${change.unusable_intervening_readings ? ` · ${change.unusable_intervening_readings} unreadable intervening samples` : ""}</p></div>
+      <p class="fine-print">Between ${stamp(change.before.source_seconds)} and ${stamp(change.after.source_seconds)} · ${stamp(change.bracket_seconds)} uncertainty interval${change.unusable_intervening_readings ? ` · ${change.unusable_intervening_readings} unreadable intervening samples` : ""}</p></div>
       <button class="button secondary" data-board-change="${change.id}">Compare board evidence →</button></article>`,
           )
           .join("")
@@ -59,7 +59,7 @@
       after = timeline.epochs.find((e) => e.id === change.after_epoch_id);
     $("#board-change-comparison").innerHTML =
       `<h3>${escapeHTML(change.color)} · ${titles[change.change_type]}</h3>
-      <p>The last repeated earlier reading was at <strong>${stamp(change.before.source_seconds)}</strong>; the first repeated later reading was at <strong>${stamp(change.after.source_seconds)}</strong>. The change could be anywhere inside that ${time(change.bracket_seconds)} interval.</p>
+      <p>The last repeated earlier reading was at <strong>${stamp(change.before.source_seconds)}</strong>; the first repeated later reading was at <strong>${stamp(change.after.source_seconds)}</strong>. The change could be anywhere inside that ${stamp(change.bracket_seconds)} interval.</p>
       <p class="fine-print">Posted cards can lag play, be obscured, be corrected, or be reset. This does not identify an end completion, a final result, or a new game.${change.continuity !== "sampled_only" ? ` Evidence continuity: ${escapeHTML(change.continuity.replaceAll("_", " "))}.` : " Frames are discrete samples, not continuous coverage."}</p>
       ${[
         ["Last earlier reading", change.before, before],

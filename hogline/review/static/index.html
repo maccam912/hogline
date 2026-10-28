@@ -13,6 +13,7 @@
     <script src="/static/boundaries.js" defer></script>
     <script src="/static/windows.js" defer></script>
     <script src="/static/tracks.js" defer></script>
+    <script src="/static/moments.js" defer></script>
     <script src="/static/adaptive.js" defer></script>
     <script src="/static/reconciliation.js" defer></script>
     <script src="/static/automatic.js" defer></script>
@@ -61,6 +62,9 @@
             </p>
           </div>
           <div class="heading-actions">
+            <button class="button secondary" id="moments-button">
+              Find moments
+            </button>
             <button class="button secondary" id="export-button">
               Export dataset ↗</button
             ><button class="button primary" id="import-button">
@@ -1047,6 +1051,95 @@
       <span class="eyebrow">CACHED OBSERVATIONS · PROPOSED ASSOCIATIONS</span>
       <h2>Trace visible handle fragments</h2>
       <div id="tracks-content" aria-live="polite"></div>
+    </dialog>
+    <dialog id="moments-dialog" class="wide-dialog">
+      <button
+        type="button"
+        class="close-dialog"
+        aria-label="Close moment search"
+      >
+        ×
+      </button>
+      <span class="eyebrow">ACROSS RECORDINGS · SOURCE EVIDENCE</span>
+      <h2>Find a moment worth checking</h2>
+      <form id="moments-form">
+        <label
+          >Search descriptions<input
+            name="text"
+            maxlength="200"
+            placeholder="Red, end 5, sheet…"
+        /></label>
+        <div class="form-grid">
+          <label
+            >Sheet<select name="sheet">
+              <option value="">All sheets</option>
+              <option>1</option>
+              <option>2</option>
+              <option>3</option>
+              <option>4</option>
+              <option>5</option>
+              <option>6</option>
+              <option>7</option>
+              <option>8</option>
+            </select></label
+          >
+          <label
+            >Kind<select name="kind">
+              <option value="">All kinds</option>
+              <option value="board_change">Posted board changes</option>
+              <option value="score_proposal">Proposed end scores</option>
+              <option value="handle_motion">Handle position changes</option>
+              <option value="house_configuration">
+                Persistent configurations
+              </option>
+              <option value="reviewed_end">Saved end reviews</option>
+            </select></label
+          >
+          <label
+            >Review<select name="acceptance">
+              <option value="">All review states</option>
+              <option value="proposed">Proposed</option>
+              <option value="human_confirmed">Human confirmed</option>
+              <option value="disputed">Disputed</option>
+              <option value="unknown">Unknown</option>
+            </select></label
+          >
+          <label
+            >Recording<select name="source">
+              <option value="">All recordings</option>
+            </select></label
+          >
+          <label>Title date from<input type="date" name="from" /></label>
+          <label>Title date through<input type="date" name="to" /></label>
+        </div>
+        <label class="check-label"
+          ><input type="checkbox" name="earlier" />Include earlier source or
+          analysis inputs</label
+        >
+        <button class="button primary" type="submit" id="moment-submit">
+          Search evidence
+        </button>
+      </form>
+      <p id="moments-status" class="fine-print" aria-live="polite"></p>
+      <div id="moments-results"></div>
+      <p id="moment-page" class="fine-print"></p>
+      <div class="batch-actions">
+        <button
+          class="button secondary"
+          type="button"
+          id="moment-next"
+          disabled
+        >
+          Next 25 →</button
+        ><button
+          class="button quiet"
+          type="button"
+          id="moment-download"
+          disabled
+        >
+          Download this result page · JSON ↓
+        </button>
+      </div>
     </dialog>
   </body>
 </html>

@@ -23,6 +23,8 @@ Open **http://127.0.0.1:8765**. The server starts one bounded worker. Data is ke
 8. **Choose detail windows automatically** selects bounded intervals from activity and transitions, plus quiet audits. Preview, start, and pause a batch with shared budgets; see [adaptive selection](docs/ADAPTIVE.md).
 9. **Analyze a short window** decodes up to 60 seconds once, compares repeated overhead observations, and retains a few image anchors plus a downloadable Parquet file. Persistence, motion, clipped candidates, and possible foreground obstruction stay visible. See [detailed windows](docs/WINDOWS.md). **Trace handles from cached observations** opens conservative path fragments with per-sample YouTube timestamps; see [handle fragments](docs/TRACKLETS.md).
 
+**Find moments** searches across recordings by sheet, title date, evidence kind, and review state. Results retain original YouTube links and distinguish observation intervals from event times; see [moment search](docs/MOMENTS.md).
+
 The default catalog is SQLite for a zero-service local pilot. SQLAlchemy models support a PostgreSQL connection through `HOGLINE_DATABASE_URL`; the PostgreSQL runtime has **not** been exercised yet. Install its driver with `uv sync --extra postgres`. Schema creation currently uses `create_all`; use explicit migrations before evolving a deployed database.
 
 ## Metadata first, media on demand

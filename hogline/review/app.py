@@ -16,6 +16,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from hogline import __version__
 from hogline.adapters.sources import import_youtube
 from hogline.analytics.exports import csv_export, snapshot
+from hogline.analytics.moments import MomentQuery, search_moments
 from hogline.analytics.tracks import derive_window_tracks, tracks_in_session
 from hogline.config import Settings
 from hogline.db import (
@@ -146,6 +147,10 @@ def create_app(settings: Settings | None = None, start_worker=False):
     @app.exception_handler(ValueError)
     async def invalid(_, exc):
         return JSONResponse({"detail": str(exc)}, status_code=409 if isinstance(exc, Conflict) else 422)
+
+    @app.post("/api/moments/search")
+    def find_moments(query: MomentQuery):
+        return search_moments(db, query)
 
     @app.get("/api/catalog")
     def get_catalog():
