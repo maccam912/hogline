@@ -1,6 +1,7 @@
 """Frozen, source/day-separated checks of traditional posted-card readings."""
 
 import hashlib
+import re
 from collections import Counter, defaultdict
 from typing import Literal
 
@@ -308,6 +309,11 @@ def evaluate_board_dataset(db, request: BoardEvaluationRequest):
         return {"id": row.id, "sha256": row.sha256, **document}
 
 
+def reader_order(version):
+    match = re.search(r"-v(\d+)(?=:|$)", version)
+    return (int(match.group(1)) if match else 0, version)
+
+
 def board_evaluation_catalog(db):
     with db.session() as session:
         labels = [
@@ -341,6 +347,8 @@ def board_evaluation_catalog(db):
                             FrameObservation.model_version.like("traditional-board-clock-%")
                         )
                     )
-                )
+                ),
+                key=reader_order,
+                reverse=True,
             ),
         }
