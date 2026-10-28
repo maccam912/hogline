@@ -261,6 +261,17 @@ class WindowTracks(Base):
     __table_args__ = (UniqueConstraint("window_id", "version"),)
 
 
+class WindowHouseStates(Base):
+    __tablename__ = "window_house_states"
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    window_id: Mapped[str] = mapped_column(ForeignKey("analysis_window.id"))
+    version: Mapped[str] = mapped_column(String)
+    sha256: Mapped[str] = mapped_column(String)
+    document: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[str] = mapped_column(String, default=now)
+    __table_args__ = (UniqueConstraint("window_id", "version"),)
+
+
 class ScoreConflictReview(Base):
     __tablename__ = "score_conflict_review"
     id: Mapped[str] = mapped_column(String, primary_key=True, default=uid)

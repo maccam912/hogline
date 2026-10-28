@@ -5,6 +5,7 @@ from uuid import uuid4
 
 from hogline.adapters.sources import import_local, import_youtube, inventory
 from hogline.analytics.exports import csv_export, snapshot
+from hogline.analytics.house_states import derive_house_states
 from hogline.analytics.moments import MomentQuery, search_moments
 from hogline.analytics.tracks import derive_window_tracks
 from hogline.config import Settings
@@ -117,6 +118,8 @@ def main():
     moments.add_argument("--include-earlier-inputs", action="store_true")
     trace = commands.add_parser("trace-window", help="Associate handles using cached dense observations only")
     trace.add_argument("window_id")
+    states = commands.add_parser("house-states", help="Derive sampled house states from cached observations")
+    states.add_argument("window_id")
     commands.add_parser("labels", help="List saved label views and recording/day groups")
     label_import = commands.add_parser("label-import", help="Import a revisioned label-edit JSON document")
     label_import.add_argument("path")
@@ -262,6 +265,8 @@ def main():
                 )
             case "trace-window":
                 result = derive_window_tracks(db, args.window_id)
+            case "house-states":
+                result = derive_house_states(db, args.window_id)
             case "labels":
                 result = labels_catalog(db)
             case "label-import":

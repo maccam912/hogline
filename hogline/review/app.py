@@ -16,6 +16,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from hogline import __version__
 from hogline.adapters.sources import import_youtube
 from hogline.analytics.exports import csv_export, snapshot
+from hogline.analytics.house_states import checked_result, derive_house_states, house_states_in_session
 from hogline.analytics.moments import MomentQuery, search_moments
 from hogline.analytics.tracks import derive_window_tracks, tracks_in_session
 from hogline.config import Settings
@@ -32,6 +33,7 @@ from hogline.db import (
     Release,
     Revision,
     Source,
+    WindowHouseStates,
     WindowTracks,
 )
 from hogline.domain.catalog import Conflict, catalog_in_session, save_game
@@ -96,6 +98,7 @@ from hogline.perception.temporal import VERSION as WINDOW_VERSION
 from hogline.perception.tracking import VERSION as TRACKING_VERSION
 from hogline.perception.visibility import VERSION as VISIBILITY_VERSION
 from hogline.reconstruction.boundaries import boundary_links
+from hogline.reconstruction.house_states import VERSION as HOUSE_STATES_VERSION
 from hogline.review.board_evaluation import register_board_evaluation
 from hogline.review.score_conflicts import conflicts_in_session, register_score_conflicts
 
@@ -173,6 +176,8 @@ def create_app(settings: Settings | None = None, start_worker=False):
                 "window_version": WINDOW_VERSION,
                 "window_tracking_version": TRACKING_VERSION,
                 "window_tracks": tracks_in_session(session),
+                "window_house_states": house_states_in_session(session),
+                "house_states_version": HOUSE_STATES_VERSION,
                 "window_detector_version": DETECTOR_VERSION,
                 "window_visibility_version": VISIBILITY_VERSION,
                 "window_decoder_version": DECODER_VERSION,
@@ -214,6 +219,18 @@ def create_app(settings: Settings | None = None, start_worker=False):
     @app.post("/api/windows/{window_id}/tracks")
     def create_window_tracks(window_id: str):
         return derive_window_tracks(db, window_id)
+
+    @app.post("/api/windows/{window_id}/house-states")
+    def create_house_states(window_id: str):
+        return derive_house_states(db, window_id)
+
+    @app.get("/api/window-house-states/{identifier}")
+    def get_house_states(identifier: str):
+        with db.session() as session:
+            row = session.get(WindowHouseStates, identifier)
+            if row is None:
+                raise HTTPException(404, "House-state analysis not found")
+            return checked_result(row)
 
     @app.get("/api/window-tracks/{identifier}")
     def get_window_tracks(identifier: str):

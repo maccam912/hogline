@@ -27,6 +27,8 @@ Open **http://127.0.0.1:8765**. The server starts one bounded worker. Data is ke
 
 **Find moments** searches across recordings by sheet, title date, evidence kind, and review state. Results retain original YouTube links and distinguish observation intervals from event times; see [moment search](docs/MOMENTS.md).
 
+**Sampled house states** derive stable handle configurations and uncertain change brackets from cached detailed windows, with original timestamp links and explicit visibility/gap abstentions. Zero detections remain distinct from an empty house; see [house states](docs/HOUSE_STATES.md).
+
 **Score disagreements** flags new pinned board proposals that differ from saved numbered ends. Review both evidence sets, acknowledge a reader error, or open the game to make an explicit correction. Decisions are revisioned and never automatically overwrite saved scores; see [disagreement review](docs/SCORE_DISAGREEMENTS.md).
 
 The default catalog is SQLite for a zero-service local pilot. SQLAlchemy models support a PostgreSQL connection through `HOGLINE_DATABASE_URL`; the PostgreSQL runtime has **not** been exercised yet. Install its driver with `uv sync --extra postgres`. Schema creation currently uses `create_all`; use explicit migrations before evolving a deployed database.

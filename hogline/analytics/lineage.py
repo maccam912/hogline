@@ -107,6 +107,48 @@ def validate_references(payload):
                 )
             ):
                 raise ValueError("Release handle fragment timestamps disagree with their window")
+    for result in payload.get("window_house_states", []):
+        require([result["window_id"]], windows, "house states")
+        window = windows[result["window_id"]]
+        if any(
+            result[key] != window[other]
+            for key, other in (
+                ("source_id", "source_id"),
+                ("source_metadata_sha256", "source_metadata_sha256"),
+                ("input_parquet", "parquet"),
+                ("profile_sha256", "profile_sha256"),
+                ("detector_version", "model_version"),
+                ("visibility_version", "visibility_version"),
+            )
+        ):
+            raise ValueError("Release house states disagree with their source window")
+        require(result["context_anchor_evidence_ids"], window["anchor_evidence_ids"], "house-state context")
+        states = {s["id"]: s for s in result["states"]}
+        for state in states.values():
+            if (
+                len(state["sample_indices"]) < result["minimum_samples"]
+                or state["first"]["sample_index"] != state["sample_indices"][0]
+                or state["last"]["sample_index"] != state["sample_indices"][-1]
+                or state["first"]["source_seconds"] != state["start_seconds"]
+                or state["last"]["source_seconds"] != state["end_seconds"]
+                or not window["observed_first_seconds"]
+                <= state["start_seconds"]
+                < state["end_seconds"]
+                <= window["observed_last_seconds"]
+            ):
+                raise ValueError("Release house-state timing disagrees with its source window")
+        for change in result["transitions"]:
+            require([change["before_state_id"], change["after_state_id"]], states, "house-state change")
+            before, after = states[change["before_state_id"]], states[change["after_state_id"]]
+            if (
+                change["before"] != before["last"]
+                or change["after"] != after["first"]
+                or change["view"] != before["view"]
+                or change["view"] != after["view"]
+                or change["earliest_seconds"] != before["end_seconds"]
+                or change["latest_seconds"] != after["start_seconds"]
+            ):
+                raise ValueError("Release house-state change disagrees with its supporting states")
     for scan in payload["processing_scans"]:
         require([scan["source_id"]], sources, "processing scan")
         require([s["evidence_id"] for s in scan.get("samples", [])], evidence, "processing sample")

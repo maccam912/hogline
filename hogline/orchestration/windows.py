@@ -11,6 +11,7 @@ from pydantic import Field, model_validator
 
 from hogline.adapters.sources import digest, video_link
 from hogline.analytics.dense import save_dense
+from hogline.analytics.house_states import save_house_states_in_session
 from hogline.analytics.tracks import save_tracks_in_session
 from hogline.config import profile
 from hogline.db import AnalysisWindow, Evidence, Job, now
@@ -300,6 +301,7 @@ def execute_window(db, job):
         session.add(AnalysisWindow(id=result["id"], job_id=row.id, source_id=source["id"], document=result))
         session.flush()
         save_tracks_in_session(session, result, rows)
+        save_house_states_in_session(session, result, rows)
         row.state, row.lease_until = "succeeded", None
         row.document = {
             **row.document,
