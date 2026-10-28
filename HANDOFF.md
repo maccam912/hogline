@@ -1,12 +1,12 @@
 # Hogline handoff
 
-Checkpoint: October 28, 2026. The implementation is a working local pilot, not the completed system in [DESIGN.md](DESIGN.md). Version **0.30.0**, implementation commit `73476d2`, has 302 passing local tests, clean Ruff checks, checked browser scripts and a successful wheel/sdist build. Check CI and current Git state again before continuing.
+Checkpoint: October 28, 2026. The implementation is a working local pilot, not the completed system in [DESIGN.md](DESIGN.md). Version **0.30.1**, implementation commit `2d3f75e`, has 303 passing local tests, clean Ruff checks, checked browser scripts and a successful wheel/sdist build. Linux CI also passed that implementation commit. Check CI and current Git state again before continuing.
 
 ## Current instructions and priorities
 
 The user wants continued development according to the design, with frequent commits and pushes. Prioritize unattended scores, associating stones with throwers, and per-player weight consistency, leaving human review for uncertain cases. Names are optional: persistent anonymous groups can be named or linked later by the operator. The implemented identity workflow uses body continuity and reviewed links, without face recognition. The user is open to training club-specific CV models; an experimental local classifier and leakage-safe benchmarks now exist.
 
-Stop work if weekly remaining usage reaches **50% or less**. The last observed reading during this checkpoint was 5% used / 95% remaining; the threshold had not been reached. Recheck periodically. Do not treat this checkpoint as completion of the overall design.
+Stop work if weekly remaining usage reaches **50% or less**. The last observed reading during this checkpoint was 6% used / 94% remaining; the threshold had not been reached. Recheck periodically. Do not treat this checkpoint as completion of the overall design.
 
 ## Starting a new session
 
@@ -26,6 +26,8 @@ The ignored `data/` directory is roughly 550–600 MiB and is **not backed up by
 - [Automatic campaigns](docs/AUTOMATIC.md) now insert a finite delivery-refinement stage when supported release/control brackets exist. Default allowance: two four-second native-cadence windows; at most eight. No-control motion does not trigger acquisition. All stages share the existing cumulative budget; refinements do not recurse. Source, actor, delivery, decoder and selection versions are pinned. Board-change refinement keeps its separate bounded workflow.
 
 Earlier metadata-first ingestion, inventories/discovery, clock/board reading, game/end review, split/merge reconciliation, moment search, score-disagreement review and immutable releases remain available. See their README links for contracts and measured limits.
+
+Version 0.30.1 fixes a Linux CI timing failure: final publication budget/lease checks use the owning transaction instead of opening a second SQLite writer. Publication reserves a consistent write snapshot, rechecks both job and shared limits, and includes publication time in the reported window cost. A forced slow-publication regression test covers the heartbeat boundary.
 
 ## Local validation and useful pointers
 

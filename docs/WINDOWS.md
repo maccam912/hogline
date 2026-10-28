@@ -49,3 +49,6 @@ The October 28 Sheet 3 check at 5400–5412 seconds selected 48 quarter-second s
 
 
 Short delivery refinements may request native-frame detail up to 30 targets per second; at the 240-frame cap this limits a 1/30-second request to eight source seconds. A low-frame-rate recording is never duplicated to meet the target cadence. Configuration start images are retained directly per active view, so high sampling density cannot discard their anchors before the 1.5-second stability check. Retention method `endpoints-midpoint-and-configuration-anchors-v3` pins that behavior without a growing image ring buffer.
+
+
+Publication performs its final time, lease and shared-budget checks in the same write transaction as the window and its derived results. It does not open a second writer from inside that transaction. This avoids a timing-sensitive SQLite lock on slower workers while preserving atomic publication and budget accounting, including publication time. A forced slow-publication regression and Linux CI cover the boundary.
