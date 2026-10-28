@@ -685,6 +685,23 @@ input::placeholder {
 #plan-preview details {
   margin-bottom: 20px;
 }
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 16px 0;
+}
+.checkbox-label input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+}
+#discovery-feeds {
+  margin-top: 24px;
+}
+.discovery-card {
+  margin-top: 14px;
+}
 .time-jump {
   display: flex;
   gap: 10px;

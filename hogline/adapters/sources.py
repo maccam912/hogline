@@ -252,20 +252,44 @@ def import_local(db: Database, path: str, sheet: int):
     return upsert_source(db, f"local:{sha}", metadata, "local")
 
 
-def inventory(db: Database, url: str, limit: int = 12):
+def inventory_url(url):
+    parsed = urlparse(url)
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname not in ("www.youtube.com", "youtube.com")
+        or parsed.username
+        or parsed.password
+        or parsed.port
+    ):
+        raise ValueError("Discovery expects a public HTTPS YouTube channel or playlist URL")
+    path = parsed.path.rstrip("/")
+    listing = parse_qs(parsed.query).get("list", [""])[0]
+    if path == "/playlist" and re.fullmatch(r"[A-Za-z0-9_-]{10,100}", listing):
+        return f"https://www.youtube.com/playlist?list={listing}"
+    if re.fullmatch(r"/(?:channel/[A-Za-z0-9_-]+|@[A-Za-z0-9._-]+)(?:/(?:streams|videos))?", path):
+        if not path.endswith(("/streams", "/videos")):
+            path += "/streams"
+        return "https://www.youtube.com" + path
+    raise ValueError("Choose a channel's streams/videos listing or a playlist, not an individual recording")
+
+
+def listing_page(url, start=1, limit=12):
     if not 1 <= limit <= 50:
         raise ValueError("Inventory is bounded to 1–50 recordings per request")
-    parsed = urlparse(url)
-    if parsed.hostname not in ("www.youtube.com", "youtube.com"):
-        raise ValueError("Inventory expects a YouTube channel or playlist URL")
+    if not 1 <= start <= 10000:
+        raise ValueError("Discovery positions are bounded to 1–10,000")
+    url = inventory_url(url)
+    stop = min(10000, start + limit - 1)
+    actual_limit = stop - start + 1
     raw = run_json(
         [
             "yt-dlp",
             "--ignore-config",
             "--flat-playlist",
             "--skip-download",
-            "--playlist-end",
-            str(limit),
+            "--playlist-items",
+            f"{start}:{stop}",
+            "--lazy-playlist",
             "--socket-timeout",
             "15",
             "--retries",
@@ -275,8 +299,44 @@ def inventory(db: Database, url: str, limit: int = 12):
         ],
         timeout=120,
     )
+    if not isinstance(raw, dict) or not isinstance(raw.get("entries"), list):
+        raise ValueError("The adapter did not return a listing page; its end is not known")
+    entries, skipped = [], []
+    if len(raw["entries"]) > actual_limit:
+        raise ValueError("The adapter exceeded the requested metadata page limit")
+    for offset, entry in enumerate(raw["entries"]):
+        position = start + offset
+        if (
+            isinstance(entry, dict)
+            and isinstance(entry.get("playlist_index"), int)
+            and entry["playlist_index"] != position
+        ):
+            raise ValueError("Listing positions do not match the requested page; its cursor is not trusted")
+        if not isinstance(entry, dict) or not re.fullmatch(r"[A-Za-z0-9_-]{11}", str(entry.get("id", ""))):
+            skipped.append({"position": position, "reason": "unreadable_or_invalid_video_id"})
+            continue
+        entries.append({"position": position, "metadata": curated_metadata(entry)})
+    page = {
+        "url": url,
+        "start": start,
+        "limit": limit,
+        "raw_count": len(raw["entries"]),
+        "entries": entries,
+        "skipped": skipped,
+        "visible_end_observed": len(raw["entries"]) < actual_limit,
+        "index_limit_reached": stop == 10000 and len(raw["entries"]) == actual_limit,
+    }
+    return {**page, "sha256": digest(page)}
+
+
+def inventory(db: Database, url: str, limit: int = 12):
+    page = listing_page(url, limit=limit)
     return [
-        import_youtube(db, f"https://www.youtube.com/watch?v={entry['id']}", entry, metadata_kind="listing")
-        for entry in raw.get("entries", [])
-        if entry and entry.get("id")
+        import_youtube(
+            db,
+            f"https://www.youtube.com/watch?v={entry['metadata']['id']}",
+            entry["metadata"],
+            metadata_kind="listing",
+        )
+        for entry in page["entries"]
     ]

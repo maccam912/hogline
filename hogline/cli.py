@@ -12,6 +12,14 @@ from hogline.evaluation.datasets import freeze_dataset
 from hogline.evaluation.labels import labels_catalog, save_labels
 from hogline.evaluation.metrics import evaluate_dataset
 from hogline.evaluation.models import DatasetCreate, EvaluationRequest, LabelEdit
+from hogline.orchestration.discovery import (
+    FeedControl,
+    FeedCreate,
+    control_feed,
+    create_feed,
+    feeds,
+    run_discovery_once,
+)
 from hogline.orchestration.plans import (
     BatchControl,
     PlanRequest,
@@ -38,6 +46,25 @@ def main():
     listing = commands.add_parser("inventory", help="Bounded metadata-only channel/playlist discovery")
     listing.add_argument("url")
     listing.add_argument("--limit", type=int, default=12)
+    discovery = commands.add_parser("discover", help="Create a durable metadata-only discovery feed")
+    discovery.add_argument("url")
+    discovery.add_argument("--page-size", type=int, default=12)
+    discovery.add_argument("--overlap", type=int, default=3)
+    discovery.add_argument("--pages", type=int, default=2)
+    discovery.add_argument(
+        "--schedule", action="store_true", help="Reconcile while the local server is running"
+    )
+    commands.add_parser("discovery", help="Inspect listing checkpoints and recent page runs")
+    discovery_control = commands.add_parser("discovery-control")
+    discovery_control.add_argument("feed_id")
+    discovery_control.add_argument(
+        "action", choices=["next", "head", "restart", "pause", "resume", "configure"]
+    )
+    discovery_control.add_argument("--scheduled", action=argparse.BooleanOptionalAction, default=None)
+    discovery_work = commands.add_parser(
+        "discovery-work", help="Process bounded metadata pages; never fetch media"
+    )
+    discovery_work.add_argument("--once", action="store_true")
     commands.add_parser("catalog")
     commands.add_parser("analyze", help="Run OpenCV on cached evidence; never downloads video")
     commands.add_parser("analyze-broadcast", help="Read clock/scoreboard crops on up to 120 cached frames")
@@ -93,6 +120,29 @@ def main():
                 result = import_local(db, args.path, args.sheet)
             case "inventory":
                 result = inventory(db, args.url, args.limit)
+            case "discover":
+                result = create_feed(
+                    db,
+                    FeedCreate(
+                        url=args.url,
+                        page_size=args.page_size,
+                        overlap=args.overlap,
+                        backfill_pages_per_cycle=args.pages,
+                        scheduled=args.schedule,
+                    ),
+                )
+            case "discovery":
+                result = {"feeds": feeds(db)}
+            case "discovery-control":
+                result = control_feed(
+                    db, args.feed_id, FeedControl(action=args.action, scheduled=args.scheduled)
+                )
+            case "discovery-work":
+                while (result := run_discovery_once(db)) is not None:
+                    print(json.dumps(result))
+                    if args.once:
+                        break
+                return
             case "catalog":
                 result = catalog(db)
             case "analyze":

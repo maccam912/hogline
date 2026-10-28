@@ -1,6 +1,6 @@
 # Cross-sheet source checks — October 27, 2026
 
-Bounded metadata discovery found recordings for all eight sheets. The local corpus contains nine recordings and 49 retained detailed frames, including the older January Sheet 5 stream. Later coarse-tier checks add 11 activity-only frames, for 60 retained frames in total. No complete video was downloaded or committed. Images and OCR outputs remain in the ignored data directory.
+Bounded metadata discovery found recordings for all eight sheets. The retained-media validation corpus covers nine recordings and 49 detailed frames, including the older January Sheet 5 stream. Later coarse-tier checks add 11 activity-only frames, for 60 retained frames in total. No complete video was downloaded or committed. Images and OCR outputs remain in the ignored data directory.
 
 | Sheet | Source / title date | Selected frame resolution | Retained source seconds |
 | --- | --- | --- | --- |

@@ -26,4 +26,5 @@ jobs:
       - run: node --check hogline/review/static/app.js
       - run: node --check hogline/review/static/evaluation.js
       - run: node --check hogline/review/static/processing.js
+      - run: node --check hogline/review/static/discovery.js
       - run: uv build

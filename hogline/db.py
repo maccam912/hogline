@@ -77,6 +77,35 @@ class JobExecution(Base):
     document: Mapped[dict] = mapped_column(JSON)
 
 
+class DiscoveryFeed(Base):
+    __tablename__ = "discovery_feed"
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=uid)
+    url: Mapped[str] = mapped_column(String, unique=True)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    document: Mapped[dict] = mapped_column(JSON)
+    __mapper_args__ = {"version_id_col": revision}
+
+
+class DiscoveryRun(Base):
+    __tablename__ = "discovery_run"
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=uid)
+    request_key: Mapped[str] = mapped_column(String, unique=True)
+    feed_id: Mapped[str] = mapped_column(ForeignKey("discovery_feed.id"))
+    state: Mapped[str] = mapped_column(String, default="queued")
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    lease_until: Mapped[str | None] = mapped_column(String, nullable=True)
+    document: Mapped[dict] = mapped_column(JSON)
+
+
+class DiscoveryMembership(Base):
+    __tablename__ = "discovery_membership"
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=uid)
+    feed_id: Mapped[str] = mapped_column(ForeignKey("discovery_feed.id"))
+    source_id: Mapped[str] = mapped_column(ForeignKey("source_video.id"))
+    document: Mapped[dict] = mapped_column(JSON)
+    __table_args__ = (UniqueConstraint("feed_id", "source_id"),)
+
+
 class FrameObservation(Base):
     __tablename__ = "frame_observation"
     id: Mapped[str] = mapped_column(String, primary_key=True)

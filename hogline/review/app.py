@@ -17,6 +17,7 @@ from hogline.analytics.exports import csv_export, snapshot
 from hogline.config import Settings
 from hogline.db import (
     Database,
+    DiscoveryRun,
     EvaluationDataset,
     EvaluationRun,
     Evidence,
@@ -33,6 +34,14 @@ from hogline.evaluation.datasets import dataset_catalog, freeze_dataset
 from hogline.evaluation.labels import label_id, labels_catalog, save_labels
 from hogline.evaluation.metrics import evaluate_dataset, run_catalog
 from hogline.evaluation.models import DatasetCreate, EvaluationRequest, LabelEdit
+from hogline.orchestration.discovery import (
+    FeedControl,
+    FeedCreate,
+    control_feed,
+    create_feed,
+    feeds,
+    run_discovery_once,
+)
 from hogline.orchestration.plans import (
     BatchControl,
     BatchStart,
@@ -66,7 +75,8 @@ def create_app(settings: Settings | None = None, start_worker=False):
 
     def worker_loop():
         while not stop.is_set():
-            if run_one(db) is None:
+            discovered = run_discovery_once(db)
+            if run_one(db) is None and discovered is None:
                 stop.wait(1)
 
     @asynccontextmanager
@@ -212,6 +222,26 @@ def create_app(settings: Settings | None = None, start_worker=False):
     @app.post("/api/sources")
     def add_source(body: SourceImport):
         return import_youtube(db, body.url)
+
+    @app.get("/api/discovery")
+    def get_discovery():
+        return {"feeds": feeds(db)}
+
+    @app.get("/api/discovery/runs/{run_id}")
+    def get_discovery_run(run_id: str):
+        with db.session() as session:
+            row = session.get(DiscoveryRun, run_id)
+            if row is None:
+                raise HTTPException(404, "Discovery page not found")
+            return {"id": row.id, "state": row.state, "attempts": row.attempts, **row.document}
+
+    @app.post("/api/discovery/feeds")
+    def add_discovery_feed(body: FeedCreate):
+        return create_feed(db, body)
+
+    @app.post("/api/discovery/feeds/{feed_id}/control")
+    def change_discovery_feed(feed_id: str, body: FeedControl):
+        return control_feed(db, feed_id, body)
 
     @app.post("/api/scans")
     def add_scan(body: ScanRequest):

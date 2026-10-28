@@ -48,7 +48,7 @@ uv run hogline analyze-broadcast
 uv run hogline export /absolute/path/pilot.json --mode exploratory
 ```
 
-Inventory is bounded to 50 entries per request. It is a first page, **not** a complete seasonal backfill or a discovery checkpoint system. Video import never enqueues processing automatically.
+The `inventory` command reads a bounded first page of up to 50 entries. **Discover sources** and `hogline discover` add durable overlapping-page checkpoints, bounded backfill cycles, optional reconciliation schedules, and retrievable page snapshots. See [incremental discovery](docs/DISCOVERY.md). Video discovery/import never enqueues media processing automatically.
 
 Channel listings are tracked separately from full recording metadata. A later sparse listing cannot discard a known duration, replace a full manifest hash, or reset stored clock/event-date fields. Listing changes set `metadata_refresh_needed`; importing the recording URL again performs a full refresh. Every curated input snapshot remains content-hashed and excludes signed media URLs and request credentials.
 
@@ -76,7 +76,7 @@ To revise camera crops, copy/edit `profiles/wausau-v1.json` and set `HOGLINE_PRO
 - All source/game links are many-to-many. Job keys, stable evidence IDs, unique constraints, leases, and transactional publication prevent repeat jobs from duplicating logical output. Overlapping proposals are conservatively associated with existing games and still require review.
 - Optimistic revision checks reject stale edits. Every accepted edit keeps an author, reason, prior snapshot, and evidence references. Exports freeze the interpretation revisions and metric eligibility rules.
 
-**Still to build:** calibrated stone footprints/tracking, scoreboard templates for the remaining sheets/layout episodes, stronger game/end segmentation, automatic score reconciliation and acceptance gates, a representative independently labeled evaluation corpus, split/merge reconciliation, historical rosters, dense Parquet observations, incremental seasonal discovery, and production operations/access control. No final results, named identities, physical A/B mappings, or archive-wide accuracy rates are accepted automatically by this pilot. A confirmed real overlap/continuation pair and a fully labeled long day remain validation work; synthetic fixtures currently exercise those relationships.
+**Still to build:** calibrated stone footprints/tracking, scoreboard templates for the remaining sheets/layout episodes, stronger game/end segmentation, automatic score reconciliation and acceptance gates, a representative independently labeled evaluation corpus, split/merge reconciliation, historical rosters, dense Parquet observations, automated full-metadata refresh and season-scale discovery validation, and production operations/access control. No final results, named identities, physical A/B mappings, or archive-wide accuracy rates are accepted automatically by this pilot. A confirmed real overlap/continuation pair and a fully labeled long day remain validation work; synthetic fixtures currently exercise those relationships.
 
 The next automation milestone is **stable house states + end transitions + labeled evaluation**, followed by measured automatic acceptance. Human review should shrink to uncertain exceptions as precision improves. See [cross-sheet validation](docs/CROSS_SHEET.md), [initial pilot notes](docs/PILOT.md), and the [annotation guide](docs/ANNOTATION.md).
 

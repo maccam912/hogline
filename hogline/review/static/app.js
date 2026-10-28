@@ -874,7 +874,12 @@ $("#scrubber").addEventListener("input", (event) => {
   renderFrame();
 });
 document.addEventListener("submit", async (event) => {
-  if (["plan-form", "batch-resume-form"].includes(event.target.id)) return;
+  if (
+    ["plan-form", "batch-resume-form", "discovery-form"].includes(
+      event.target.id,
+    )
+  )
+    return;
   event.preventDefault();
   const form = event.target,
     submit = $('button[type="submit"]', form);
