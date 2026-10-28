@@ -42,6 +42,9 @@ The archive has 12 recordings across all eight sheets, about 47 hours inventorie
 
 Pinned YOLOX and MediaPipe pose weights are installed only under ignored `data/models/`; exact hashes, official sources and licenses are documented in ACTORS/DELIVERIES. The learned classifier is under `data/models/trained-handles/`. Public commits contain code/documentation/tests, not footage or models. Synthetic tests establish contracts and abstention behavior; they do not prove real game accuracy.
 
+
+A fresh version 0.30.1 campaign on March 7 Sheet 4, source 3000–3030 seconds, completed all eight admitted units: one sparse scan, two ordinary detail windows, one automatically selected native-cadence refinement, and four retained-frame OCR jobs. It spent 113.70 worker seconds and reserved 17,914,825 evidence bytes (17.1 MiB) under a shared 180-second / 64-MiB allowance. Release extraction still abstained; completion validates bounded orchestration, not score or thrower accuracy. Local batch `d7cb2dbc-b7ce-4c92-bcb6-d1fcca863583` and ignored report `data/automatic-0.30.1-real-validation.json` retain the exact selections, inputs and outcomes.
+
 ## Next work
 
 Improve the corrected stone/object and delivery corpus across independent sheets/days, including brooms, clothing, occlusions, near/far delivery and both ends. A trained instance/footprint model is likely more useful than further color-threshold tuning, but requires appropriate granite labels and representative independent evaluation. The current classifier only filters HSV proposals and cannot recover their misses.
