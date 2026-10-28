@@ -799,12 +799,12 @@ document.addEventListener("click", async (event) => {
       case "read-broadcast":
         button.disabled = true;
         try {
-          await api("/perception/broadcast", "POST", {
+          const pass = await api("/perception/broadcast", "POST", {
             source_id: state.source,
           });
           await refresh();
           toast(
-            "Clock and scoreboard observations updated from retained frames.",
+            `${pass.processed_frames} frames read. ${pass.remaining_frames ? `${pass.remaining_frames} pending; run again to continue this bounded pass.` : "All retained detailed frames are up to date."}`,
           );
         } finally {
           button.disabled = false;

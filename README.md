@@ -46,11 +46,13 @@ uv run hogline window SOURCE_ID --start 1800 --end 1820 --interval 0.5
 
 # Rerun the detector on retained evidence without accessing any video.
 uv run hogline analyze
-uv run hogline analyze-broadcast
+uv run hogline analyze-broadcast --limit 120 --max-seconds 120
 
 # Releases include source spans, exact interpretation revisions, and timestamp links.
 uv run hogline export /absolute/path/pilot.json --mode exploratory
 ```
+
+Clock/board OCR passes select pending detailed frames before applying their limit. Completed observations are preserved if the time or storage budget stops a pass; the response reports processed and remaining frames. Repeat the command or **Read cached frames on this sheet** to continue. A model/configuration change creates a new backlog without replacing earlier observations.
 
 The `inventory` command reads a bounded first page of up to 50 entries. **Discover sources** and `hogline discover` add durable overlapping-page checkpoints, bounded backfill cycles, optional reconciliation schedules, and retrievable page snapshots. See [incremental discovery](docs/DISCOVERY.md). Video discovery/import never enqueues media processing automatically.
 

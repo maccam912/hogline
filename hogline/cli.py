@@ -70,7 +70,9 @@ def main():
     discovery_work.add_argument("--once", action="store_true")
     commands.add_parser("catalog")
     commands.add_parser("analyze", help="Run OpenCV on cached evidence; never downloads video")
-    commands.add_parser("analyze-broadcast", help="Read clock/scoreboard crops on up to 120 cached frames")
+    broadcast = commands.add_parser("analyze-broadcast", help="Resume OCR on pending detailed frames")
+    broadcast.add_argument("--limit", type=int, default=120)
+    broadcast.add_argument("--max-seconds", type=float, default=120)
     commands.add_parser("labels", help="List saved label views and recording/day groups")
     label_import = commands.add_parser("label-import", help="Import a revisioned label-edit JSON document")
     label_import.add_argument("path")
@@ -169,7 +171,7 @@ def main():
             case "analyze":
                 result = analyze_cached(db)
             case "analyze-broadcast":
-                result = analyze_broadcast(db)
+                result = analyze_broadcast(db, limit=args.limit, max_seconds=args.max_seconds)
             case "labels":
                 result = labels_catalog(db)
             case "label-import":

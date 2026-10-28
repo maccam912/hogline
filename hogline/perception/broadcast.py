@@ -1,17 +1,18 @@
 import hashlib
+import math
 import time
 from uuid import NAMESPACE_URL, uuid5
 
 from PIL import Image
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from hogline.adapters.sources import digest
 from hogline.config import profile
 from hogline.db import Evidence, FrameObservation, Source
 from hogline.media.clocks import fit_clock_hypotheses, parse_overlay
-from hogline.media.frames import EvidenceBudget, save_image
+from hogline.media.frames import EvidenceBudget, EvidenceLimitError, save_image
 from hogline.perception.layout import board_alignment, reference_image
-from hogline.perception.ocr import TesseractOCR, normalized_crop
+from hogline.perception.ocr import OCRBudgetReached, TesseractOCR, normalized_crop
 from hogline.perception.overlay_clock import read_clock
 from hogline.perception.scoreboard import persistent_board_claims, read_board
 
@@ -118,22 +119,59 @@ def analyze_broadcast_frame(session, frame, root, layout, reader, budget):
 
 
 def analyze_broadcast(db, evidence_ids=None, limit=120, max_seconds=120):
+    """Process only pending detailed frames; each bounded pass resumes the backlog."""
+    if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 120:
+        raise ValueError("OCR frame limit must be between 1 and 120")
+    if not math.isfinite(max_seconds) or not 0 < max_seconds <= 120:
+        raise ValueError("OCR time budget must be greater than zero and at most 120 seconds")
     layout = profile()
+    version = broadcast_version(layout)
     budget = EvidenceBudget(db.settings.data_dir, 100, db.settings.max_cache_mb)
     reader = TesseractOCR(deadline=time.monotonic() + max_seconds)
+    if not reader.available:
+        raise ValueError("Install Tesseract OCR to read retained clock/scoreboard frames locally")
     output = []
+    processed = (
+        select(FrameObservation.id)
+        .where(FrameObservation.evidence_id == Evidence.id, FrameObservation.model_version == version)
+        .exists()
+    )
+    query = select(Evidence).where(
+        func.coalesce(Evidence.document["acquisition_tier"].as_string(), "evidence") != "coarse",
+        ~processed,
+    )
+    if evidence_ids is not None:
+        query = query.where(Evidence.id.in_(evidence_ids))
+    ordered = query.order_by(Evidence.source_id, Evidence.document["source_seconds"].as_float(), Evidence.id)
     with db.session() as session:
-        query = select(Evidence)
-        if evidence_ids is not None:
-            query = query.where(Evidence.id.in_(evidence_ids))
-        identifiers = list(session.scalars(query.limit(min(limit, 120))))
+        identifiers = list(session.scalars(ordered.limit(limit)))
+    stopped_reason = None
     # Publish each frame independently; an OCR failure cannot erase motion/stone outputs.
     for frame in identifiers:
-        with db.session() as session:
-            output.append(
-                analyze_broadcast_frame(session, frame, db.settings.data_dir, layout, reader, budget)
-            )
-    return output
+        try:
+            if time.monotonic() >= reader.deadline:
+                raise OCRBudgetReached("OCR time budget reached")
+            with db.session() as session:
+                observation = analyze_broadcast_frame(
+                    session, frame, db.settings.data_dir, layout, reader, budget
+                )
+            output.append(observation)
+        except OCRBudgetReached:
+            stopped_reason = "worker_time_budget"
+            break
+        except EvidenceLimitError:
+            stopped_reason = "evidence_storage_budget"
+            break
+    with db.session() as session:
+        remaining = session.scalar(select(func.count()).select_from(query.subquery()))
+    return {
+        "observations": output,
+        "processed_frames": len(output),
+        "remaining_frames": remaining,
+        "status": "partial" if remaining else "complete",
+        "stopped_reason": stopped_reason or ("frame_limit" if remaining else None),
+        "model_version": version,
+    }
 
 
 def broadcast_catalog(db):

@@ -251,7 +251,7 @@ def create_app(settings: Settings | None = None, start_worker=False):
             raise ValueError("Cache a source frame before reading its clock or board")
         if not shutil.which("tesseract"):
             raise ValueError("Install Tesseract OCR to read retained clock/scoreboard frames locally")
-        return {"observations": analyze_broadcast(db, ids)}
+        return analyze_broadcast(db, ids)
 
     @app.get("/api/board-locations/{observation_id}/{index}.png")
     def board_location_image(observation_id: str, index: int):

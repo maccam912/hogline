@@ -11,6 +11,10 @@ import numpy as np
 from PIL import Image
 
 
+class OCRBudgetReached(ValueError):
+    """The current bounded pass stopped; completed observations remain usable."""
+
+
 class TesseractOCR:
     def __init__(self, deadline=None):
         self.deadline = deadline
@@ -21,7 +25,7 @@ class TesseractOCR:
 
     def read(self, image: Image.Image, *, whitelist="0123456789", psm=7, preprocessing="otsu"):
         if self.deadline is not None and time.monotonic() >= self.deadline:
-            raise ValueError("OCR worker time budget reached; retained evidence can be analyzed later")
+            raise OCRBudgetReached("OCR worker time budget reached; retained evidence can be analyzed later")
         rgb = np.asarray(image.convert("RGB"))
         gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
         gray = cv2.resize(gray, None, fx=4, fy=4, interpolation=cv2.INTER_CUBIC)
@@ -51,8 +55,12 @@ class TesseractOCR:
                 input=buffer.getvalue(),
                 capture_output=True,
                 check=True,
-                timeout=5,
+                timeout=min(5, max(0.001, self.deadline - time.monotonic())) if self.deadline else 5,
             )
+        except subprocess.TimeoutExpired as exc:
+            if self.deadline is not None and time.monotonic() >= self.deadline:
+                raise OCRBudgetReached("OCR worker time budget reached; resume this pass later") from exc
+            raise ValueError("Local OCR timed out; no text was inferred") from exc
         except (OSError, subprocess.SubprocessError) as exc:
             raise ValueError("Local OCR failed or timed out; no text was inferred") from exc
         words = [
