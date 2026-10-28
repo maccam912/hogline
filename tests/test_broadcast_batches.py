@@ -26,8 +26,8 @@ def add_frames(db, source, count, *, coarse=False, processed=False, start=0):
     return ids
 
 
-def fake_read(session, frame, root, layout, reader, budget):
-    version = broadcast.broadcast_version(layout)
+def fake_read(session, frame, root, layout, reader, budget, *, context=None):
+    version = (context or broadcast.broadcast_context(session, root, layout))["version"]
     identifier = str(uuid5(NAMESPACE_URL, f"{frame.id}:{version}"))
     doc = {"id": identifier, "evidence_id": frame.id, "model_version": version}
     session.add(FrameObservation(id=identifier, evidence_id=frame.id, model_version=version, document=doc))
@@ -70,8 +70,8 @@ def test_deadline_rolls_back_partial_frame_but_preserves_completed_frames(db, so
     pending = add_frames(db, sources[0], 3)
     calls = []
 
-    def interrupted(*args):
-        result = fake_read(*args)
+    def interrupted(*args, **kwargs):
+        result = fake_read(*args, **kwargs)
         calls.append(result["evidence_id"])
         if len(calls) == 2:
             raise OCRBudgetReached("time budget")

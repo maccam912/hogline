@@ -126,7 +126,7 @@ def create_app(settings: Settings | None = None, start_worker=False):
     def get_catalog():
         with db.snapshot_session() as session:
             data = catalog_in_session(session)
-            broadcast = broadcast_catalog_in_session(session)
+            broadcast = broadcast_catalog_in_session(session, db.settings.data_dir)
             return {
                 **data,
                 "jobs": jobs_in_session(session),

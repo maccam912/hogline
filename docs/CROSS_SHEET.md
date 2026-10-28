@@ -55,3 +55,7 @@ A second acquisition tier was exercised on the same active/quiet source moments 
 Five more coarse frames from the older January Sheet 5 recording exercise bounded planning and pause/resume across adjacent central intervals. Details and actual costs are in the [processing checkpoint](PROCESSING.md).
 
 Fully label a long day and a confirmed overlapping/continuation pair. Add per-sheet board templates with dated validity episodes; independently annotate end/score truth, missed stones, people/clothing false positives, and boundary-clipped handles. Split evaluation by recording day/game and duplicate-upload family. The synthetic regression suite and these source smoke checks do not establish the design's release gates.
+
+## Automatic board/header follow-up
+
+The version 0.10 pass reuses retained detailed evidence across all eight sheets. It measures each board crop independently and can register point columns against a clear retained header before attempting card OCR. See [board location and header registration](BOARD_LOCATION.md) for sample counts, abstentions, reference provenance, new January Sheet 5 proposals, and the lack of an independent board benchmark. This supersedes the earlier implementation limit in which only the two scoped Sheet 4 recordings could be read. No game results were accepted by the new pass.

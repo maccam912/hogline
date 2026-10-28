@@ -119,7 +119,7 @@ def test_same_sheet_new_recording_does_not_inherit_board_reader(db, sources):
             EvidenceBudget(db.settings.data_dir, 100, 2048),
         )
         assert result["sheet"] == 4
-        assert result["scoreboard"]["missing_reason"] == "scoreboard_template_not_applicable_to_source_time"
+        assert result["scoreboard"]["missing_reason"] == "retained_header_reference_unavailable"
         assert reader.calls == 4  # date/time alternatives only; no board-cell OCR
 
 

@@ -97,6 +97,11 @@ def validate_references(payload):
         *payload.get("board_locations", []),
     ]:
         require([observation["evidence_id"]], evidence, "observation")
+        reference = observation.get("header_reference") or {}
+        if reference.get("evidence_id"):
+            require([reference["evidence_id"]], evidence, "board header reference")
+            if reference.get("image_sha256") != evidence[reference["evidence_id"]]["image"]["sha256"]:
+                raise ValueError("Board header reference image checksum disagrees with its evidence")
         if (
             observation.get("source_id")
             and observation["source_id"] != evidence[observation["evidence_id"]]["source_id"]

@@ -1465,3 +1465,24 @@ dialog .primary {
   margin-top: 6px;
   color: var(--muted);
 }
+
+.point-column-labels {
+  position: relative;
+  height: 16px;
+  margin-top: 3px;
+  font-family: var(--mono);
+  font-size: 9px;
+}
+.broadcast-crops figure.board-evidence {
+  flex-basis: 100%;
+  max-width: 500px;
+}
+.broadcast-crops figure.board-evidence img {
+  max-height: none;
+}
+.point-column-labels span {
+  position: absolute;
+  transform: translateX(-50%);
+  border-top: 2px solid var(--muted);
+  padding-top: 1px;
+}

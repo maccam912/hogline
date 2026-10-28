@@ -16,12 +16,12 @@ def snapshot(db, mode="confirmed"):
     if mode not in ("confirmed", "exploratory"):
         raise ValueError("Export mode must be confirmed or exploratory")
     with db.snapshot_session(write=True) as session:
-        return snapshot_in_session(session, mode)
+        return snapshot_in_session(session, mode, db.settings.data_dir)
 
 
-def snapshot_in_session(session, mode):
+def snapshot_in_session(session, mode, root):
     data = catalog_in_session(session)
-    broadcast = broadcast_catalog_in_session(session)
+    broadcast = broadcast_catalog_in_session(session, root)
     games = data["games"]
     if mode == "confirmed":
         games = [g for g in games if g["acceptance"] == "human_confirmed"]

@@ -29,7 +29,27 @@ def profile():
             raise ValueError("Crop bounds must contain four normalized coordinates")
         if bounds[0] >= bounds[2] or bounds[1] >= bounds[3]:
             raise ValueError("Crop bounds must have positive width and height")
-    for template in layout.get("broadcast", {}).get("scoreboards", {}).values():
+    broadcast = layout.get("broadcast", {})
+    templates = list(broadcast.get("scoreboards", {}).values())
+    auto = broadcast.get("automatic_board_header")
+    if auto:
+        if not isinstance(auto.get("reference"), dict):
+            raise ValueError("Automatic board reading needs an explicit retained header reference")
+        templates.append(auto["reference"])
+    for template in templates:
+        bounds, centers = template.get("bounds", []), template.get("point_centers", [])
+        if (
+            len(bounds) != 4
+            or not all(isinstance(v, (int, float)) and 0 <= v <= 1 for v in bounds)
+            or bounds[0] >= bounds[2]
+            or bounds[1] >= bounds[3]
+            or len(centers) < 2
+            or not all(isinstance(v, (int, float)) and 0 < v < 1 for v in centers)
+            or any(a >= b for a, b in zip(centers, centers[1:], strict=False))
+        ):
+            raise ValueError("Board templates need ordered crop bounds and increasing point centers")
+        if auto and template is auto["reference"] and len(centers) != 15:
+            raise ValueError("Automatic header registration currently requires fifteen point columns")
         reference = template.get("layout_reference")
         if reference:
             bounds = reference.get("header_bounds", [])

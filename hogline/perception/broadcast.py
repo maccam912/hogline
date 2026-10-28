@@ -11,16 +11,33 @@ from hogline.config import profile
 from hogline.db import Evidence, FrameObservation, Source
 from hogline.media.clocks import fit_clock_hypotheses, parse_overlay
 from hogline.media.frames import EvidenceBudget, EvidenceLimitError, save_image
+from hogline.perception.board_header import register_header
+from hogline.perception.board_locator import locate_board
 from hogline.perception.layout import board_alignment, reference_image
 from hogline.perception.ocr import OCRBudgetReached, TesseractOCR, normalized_crop
 from hogline.perception.overlay_clock import read_clock
 from hogline.perception.scoreboard import persistent_board_claims, read_board
 
-VERSION = "traditional-board-clock-v7"
+VERSION = "traditional-board-clock-v8"
 
 
-def broadcast_version(layout):
-    return f"{VERSION}:{digest(layout.get('broadcast', {}))[:16]}"
+def broadcast_version(layout, reference_manifest=None):
+    return (
+        f"{VERSION}:{digest({'config': layout.get('broadcast', {}), 'reference': reference_manifest})[:16]}"
+    )
+
+
+def broadcast_context(session, root, layout):
+    config = layout.get("broadcast", {})
+    auto = config.get("automatic_board_header", {})
+    template = auto.get("reference")
+    reference, manifest = reference_image(session, root, template) if template else (None, None)
+    return {
+        "reference": reference,
+        "reference_manifest": manifest,
+        "reference_template": template,
+        "version": broadcast_version(layout, manifest),
+    }
 
 
 def template_applies(template, source, seconds):
@@ -32,10 +49,11 @@ def template_applies(template, source, seconds):
     )
 
 
-def analyze_broadcast_frame(session, frame, root, layout, reader, budget):
+def analyze_broadcast_frame(session, frame, root, layout, reader, budget, *, context=None):
     if frame.document.get("acquisition_tier") == "coarse":
         return {"evidence_id": frame.id, "status": "skipped", "missing_reason": "coarse_scan_only"}
-    version = broadcast_version(layout)
+    context = context or broadcast_context(session, root, layout)
+    version = context["version"]
     identifier = str(uuid5(NAMESPACE_URL, f"{frame.id}:{version}"))
     existing = session.get(FrameObservation, identifier)
     if existing is not None:
@@ -94,6 +112,36 @@ def analyze_broadcast_frame(session, frame, root, layout, reader, budget):
             )
     elif board_config:
         board["missing_reason"] = "scoreboard_template_not_applicable_to_source_time"
+    if board["status"] == "unconfigured" and config.get("automatic_board_header"):
+        location = locate_board(image, frame.document["crops"]["perspective_left"]["normalized_bounds"])
+        board["automatic_location"] = location
+        if context["reference"] is None:
+            board["missing_reason"] = "retained_header_reference_unavailable"
+        elif location["status"] != "proposed":
+            board["missing_reason"] = location["missing_reason"]
+        else:
+            registration = register_header(
+                image,
+                location["selected"],
+                context["reference"],
+                context["reference_template"],
+                layout["views"]["perspective_left"],
+            )
+            board["header_registration"] = {
+                **registration,
+                "reference": context["reference_manifest"],
+            }
+            if registration["status"] == "proposed":
+                effective = registration["template"]
+                board = {**board, "status": "observed", **read_board(image, effective, reader)}
+                board["effective_bounds"] = effective["bounds"]
+                board["missing_reason"] = None
+                crops["scoreboard"] = {
+                    **save_image(normalized_crop(image, effective["bounds"]), root, budget),
+                    "normalized_bounds": effective["bounds"],
+                }
+            else:
+                board["missing_reason"] = registration["missing_reason"]
     doc = {
         "id": identifier,
         "kind": "broadcast_observation",
@@ -108,6 +156,7 @@ def analyze_broadcast_frame(session, frame, root, layout, reader, budget):
         "youtube_url": frame.document.get("youtube_url"),
         "model_version": version,
         "config": config,
+        "header_reference": context["reference_manifest"],
         "clock": clock,
         "scoreboard": board,
         "crops": crops,
@@ -125,7 +174,9 @@ def analyze_broadcast(db, evidence_ids=None, limit=120, max_seconds=120):
     if not math.isfinite(max_seconds) or not 0 < max_seconds <= 120:
         raise ValueError("OCR time budget must be greater than zero and at most 120 seconds")
     layout = profile()
-    version = broadcast_version(layout)
+    with db.session() as session:
+        context = broadcast_context(session, db.settings.data_dir, layout)
+    version = context["version"]
     budget = EvidenceBudget(db.settings.data_dir, 100, db.settings.max_cache_mb)
     reader = TesseractOCR(deadline=time.monotonic() + max_seconds)
     if not reader.available:
@@ -153,7 +204,7 @@ def analyze_broadcast(db, evidence_ids=None, limit=120, max_seconds=120):
                 raise OCRBudgetReached("OCR time budget reached")
             with db.session() as session:
                 observation = analyze_broadcast_frame(
-                    session, frame, db.settings.data_dir, layout, reader, budget
+                    session, frame, db.settings.data_dir, layout, reader, budget, context=context
                 )
             output.append(observation)
         except OCRBudgetReached:
@@ -176,11 +227,12 @@ def analyze_broadcast(db, evidence_ids=None, limit=120, max_seconds=120):
 
 def broadcast_catalog(db):
     with db.session() as session:
-        return broadcast_catalog_in_session(session)
+        return broadcast_catalog_in_session(session, db.settings.data_dir)
 
 
-def broadcast_catalog_in_session(session):
-    version = broadcast_version(profile())
+def broadcast_catalog_in_session(session, root):
+    context = broadcast_context(session, root, profile())
+    version = context["version"]
     observations = [
         r.document
         for r in session.scalars(select(FrameObservation).where(FrameObservation.model_version == version))
