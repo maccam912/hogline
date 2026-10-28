@@ -17,6 +17,11 @@ uv run hogline serve
 
 Open **http://127.0.0.1:8765**. The server starts one bounded worker. Data is kept in `data/`, which is excluded from version control. The web app is a local operator tool; leave it bound to loopback.
 
+For the main workflow, **Add recording**, select it, and choose **Analyze recording**. The entire recording receives a sparse survey, board reading, selected detailed inspection, and game/end reconstruction in one resumable pipeline. **Jobs** shows running/queued/paused work, stage progress, elapsed processing time, limits, failures and retry/resume controls. **Results** shows candidate games, ends and score evidence; **Video & evidence** and **Advanced tools** keep the detailed inspection controls available. See [recording analysis and progress](docs/RECORDING_ANALYSIS.md) for scope and limits. Pipeline completion does not mean every game or score has been verified.
+
+### Detailed and advanced workflows
+
+
 1. **Add recording** imports YouTube metadata without downloading video.
 2. **Scan a section** seeks individual source frames on demand. The UI and CLI default to coarse activity frames, up to 640×360, sampled every ten seconds. No complete stream is stored.
 3. Inspect the activity timeline, then request a **Detailed frame** for OpenCV handle candidates and scoreboard reading. Detailed acquisition uses a separate cache and the best available encode up to 1080p. Use **Check on YouTube** to verify the source timestamp. Switch between composite and overhead seed crops; toggle the detection overlay.

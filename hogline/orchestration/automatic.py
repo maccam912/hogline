@@ -276,6 +276,10 @@ def advance_automatic(db):
 
 
 def advance_ready_batch(session, root, batch):
+    if batch.document.get("campaign_purpose") == "recording_analysis":
+        from hogline.orchestration.recording import advance_recording_batch
+
+        return advance_recording_batch(session, root, batch)
     for _ in range(12):  # Maximum four refinement rounds, each detail + OCR.
         doc = batch.document
         if doc.get("active_execution") or any(

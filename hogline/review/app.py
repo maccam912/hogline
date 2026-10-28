@@ -1,5 +1,6 @@
 import hashlib
 import io
+import logging
 import shutil
 import threading
 from contextlib import asynccontextmanager
@@ -114,6 +115,7 @@ from hogline.review.ends import register_ends
 from hogline.review.house_evaluation import register_house_evaluation
 from hogline.review.learning import model_catalog, register_learning
 from hogline.review.players import register_players
+from hogline.review.recordings import register_recordings
 from hogline.review.score_conflicts import conflicts_in_session, register_score_conflicts
 
 
@@ -132,18 +134,24 @@ class BroadcastRequest(Model):
 def create_app(settings: Settings | None = None, start_worker=False):
     db = Database(settings or Settings.load())
     stop = threading.Event()
+    worker_state = {"enabled": start_worker, "thread": None, "error": None}
 
     def worker_loop():
-        while not stop.is_set():
-            discovered = run_discovery_once(db)
-            if run_one(db) is None and discovered is None:
-                stop.wait(1)
+        try:
+            while not stop.is_set():
+                discovered = run_discovery_once(db)
+                if run_one(db) is None and discovered is None:
+                    stop.wait(1)
+        except Exception as exc:
+            worker_state["error"] = str(exc)
+            logging.getLogger(__name__).exception("Local processing worker stopped")
 
     @asynccontextmanager
     async def lifespan(_):
         thread = None
         if start_worker:
             thread = threading.Thread(target=worker_loop, daemon=True, name="hogline-worker")
+            worker_state["thread"] = thread
             thread.start()
         yield
         stop.set()
@@ -158,6 +166,7 @@ def create_app(settings: Settings | None = None, start_worker=False):
     register_players(app, db)
     register_score_conflicts(app, db)
     register_ends(app, db)
+    register_recordings(app, db)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "testserver"])
 
     @app.middleware("http")
@@ -187,6 +196,11 @@ def create_app(settings: Settings | None = None, start_worker=False):
             return {
                 **data,
                 "app_version": __version__,
+                "worker": {
+                    "enabled": worker_state["enabled"],
+                    "running": bool(worker_state["thread"] and worker_state["thread"].is_alive()),
+                    "error": worker_state["error"],
+                },
                 "jobs": jobs_in_session(session),
                 "batches": batches_in_session(session),
                 "observations": observations_in_session(session),

@@ -59,7 +59,17 @@ def jobs(db):
 
 
 def jobs_in_session(session):
-    return [job_view(j) for j in session.scalars(select(Job))]
+    executions = {e.id: e for e in session.scalars(select(JobExecution))}
+    result = []
+    for job in session.scalars(select(Job)):
+        execution = executions.get(job.document.get("lease_token"))
+        result.append(
+            {
+                **job_view(job),
+                "execution": ({"state": execution.state, **execution.document} if execution else None),
+            }
+        )
+    return result
 
 
 def claim(db):
@@ -250,6 +260,10 @@ def vectors_from_doc(db, doc):
 
 
 def execute(db, job):
+    if job.get("kind") == "recording_reconstruction":
+        from hogline.orchestration.recording import execute_reconstruction
+
+        return execute_reconstruction(db, job)
     if job.get("kind") == "metadata_refresh":
         from hogline.orchestration.metadata import execute_metadata
 

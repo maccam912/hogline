@@ -219,34 +219,35 @@ def publish_batch(session, plan):
 
 
 def batch_view(session, batch):
+    from hogline.orchestration.progress import analysis_progress
+
     doc = batch.document
-    states = doc.get("unit_outcomes") or {
-        u["job_id"]: session.get(Job, u["job_id"]).state for u in doc["units"]
-    }
+    jobs = {u["job_id"]: session.get(Job, u["job_id"]) for u in doc["units"]}
+    states = doc.get("unit_outcomes") or {identifier: job.state for identifier, job in jobs.items()}
+    units = [
+        {
+            "job_id": u["job_id"],
+            "state": states[u["job_id"]],
+            "request": u["payload"]["request"],
+            "kind": u["payload"].get("kind", "scan"),
+            "disposition": u["disposition"],
+            **({"selection": u["selection"]} if "selection" in u else {}),
+        }
+        for u in doc["units"]
+    ]
+    executions = list(session.scalars(select(JobExecution).where(JobExecution.batch_id == batch.id)))
     return {
         "id": batch.id,
         "revision": batch.revision,
         "state": batch.state,
-        **{k: v for k, v in doc.items() if k != "units"},
+        **{k: v for k, v in doc.items() if k not in ("units", "analysis_result")},
         "limits": doc.get(
             "limits", {k: doc["request"][k] for k in ("max_image_growth_mb", "max_worker_seconds")}
         ),
-        "units": [
-            {
-                "job_id": u["job_id"],
-                "state": states[u["job_id"]],
-                "request": u["payload"]["request"],
-                "kind": u["payload"].get("kind", "scan"),
-                "disposition": u["disposition"],
-                **({"selection": u["selection"]} if "selection" in u else {}),
-            }
-            for u in doc["units"]
-        ],
+        "units": units,
         "succeeded_units": sum(s == "succeeded" for s in states.values()),
-        "executions": [
-            {"id": e.id, "job_id": e.job_id, "state": e.state, **e.document}
-            for e in session.scalars(select(JobExecution).where(JobExecution.batch_id == batch.id))
-        ],
+        "executions": [{"id": e.id, "job_id": e.job_id, "state": e.state, **e.document} for e in executions],
+        "progress_summary": analysis_progress(doc, units, jobs, executions, batch.state),
     }
 
 
@@ -263,6 +264,7 @@ class BatchControl(Model):
     action: Literal["pause", "resume", "cancel"]
     max_image_growth_mb: int | None = Field(default=None, ge=1, le=4096)
     max_worker_seconds: int | None = Field(default=None, ge=5, le=86400)
+    retry_failed: bool = False
 
 
 def freeze_outcomes(session, batch):
@@ -293,7 +295,12 @@ def control_batch(db, identifier, control):
             for unit in batch.document["units"]:
                 job = session.get(Job, unit["job_id"])
                 if job.state == "failed":
-                    raise ValueError("Retry failed units before resuming this batch")
+                    if not control.retry_failed:
+                        raise ValueError("Retry failed units before resuming this batch")
+                    if job.attempts >= 3:
+                        raise ValueError("A failed job reached its retry limit; start a new analysis")
+                    job.state = "queued"
+                    job.document = {**job.document, "error": None, "progress": 0}
             batch.state = "active"
         else:
             batch.state = "paused" if control.action == "pause" else "cancelled"

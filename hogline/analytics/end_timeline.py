@@ -19,6 +19,7 @@ from hogline.domain.provenance import observation_manifest, resolve_observation_
 from hogline.perception.broadcast import broadcast_catalog_in_session
 from hogline.perception.house_score import VERSION, inspect_house_score
 from hogline.perception.pipeline import analyze_frame
+from hogline.perception.scoreboard import persistent_board_claims
 from hogline.perception.stones import VERSION as DETECTOR_VERSION
 from hogline.perception.visibility import VERSION as VISIBILITY_VERSION
 from hogline.reconstruction.ends import reconstruct_ends
@@ -167,6 +168,12 @@ def source_end_timeline(db, source_id, start=None, end=None):
             house_scores_in_session(session),
             (start, end) if start is not None else None,
         )
+        eligible = [
+            o
+            for o in broadcast["observations"]
+            if o["source_id"] == source_id and (start is None or start <= o["source_seconds"] < end)
+        ]
+        result["partial_score_proposals"] = persistent_board_claims(eligible)
         result["play_input_exclusions"] = play["exclusions"]
         result["sha256"] = digest({k: v for k, v in result.items() if k != "sha256"})
         return result

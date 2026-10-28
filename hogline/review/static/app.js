@@ -34,7 +34,7 @@ const state = {
     jobs: [],
     observations: [],
   },
-  source: null,
+  source: localStorage.getItem("hogline-source") || null,
   seconds: 0,
   view: "composite",
   overlay: true,
@@ -110,7 +110,7 @@ async function refresh() {
   if (signature === catalogSignature) return;
   catalogSignature = signature;
   state.data = incoming;
-  if (!state.source && state.data.sources.length) {
+  if (!state.data.sources.some((s) => s.id === state.source) && state.data.sources.length) {
     state.source = state.data.sources[0].id;
     state.seconds = frames()[0]?.source_seconds || 0;
   }
@@ -194,6 +194,7 @@ function render() {
   window.hoglineWindows?.render();
   window.hoglineBoardTimeline?.render();
   window.hoglineReconciliation?.render();
+  window.hoglineRecordings?.render();
 }
 function renderFrame() {
   const src = source(),
@@ -1012,7 +1013,12 @@ document.addEventListener("submit", async (event) => {
     if (submit) submit.disabled = false;
   }
 });
-refresh().catch((error) => toast(error.message, true));
+function refreshFailed(error) {
+  catalogSignature = null;
+  window.hoglineRecordings?.connectionLost();
+  toast(error.message, true);
+}
+refresh().catch(refreshFailed);
 setInterval(() => {
-  if (!document.hidden) refresh().catch((error) => toast(error.message, true));
+  if (!document.hidden) refresh().catch(refreshFailed);
 }, 4000);

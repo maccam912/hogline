@@ -1,5 +1,20 @@
 # Hogline handoff
 
+## Latest checkpoint: 0.32.0 recording workspace and whole-recording jobs
+
+October 28, 2026. The user wants a clear recording → games → ends → scores workflow with one analysis launch, plus running jobs, progress and elapsed time. Version 0.32.0 adds that workflow and passes 321 local tests, Ruff checks, browser script syntax checks and wheel/sdist builds. Verify the current Git/CI state before continuing.
+
+The default screen now has **Analyze recording**, **Results**, **Video & evidence**, and **Advanced tools**. Archive tools are folded away. The global **Jobs** view shows active/paused analyses, current tasks/frames, elapsed processing, time/data budgets, failure reasons, retry/resume, and collapsed history. The selected recording persists. A stopped/unreachable worker is shown explicitly; processing clocks freeze at the last accounted value while disconnected and reconnect on successful polling.
+
+`POST /api/recordings/SOURCE_ID/analyze` starts a durable `automatic` batch with `campaign_purpose=recording_analysis`, covering the full known source duration (up to 24 hours). Stages are native one-minute survey → paged board OCR → selected 60-second/1-Hz house windows without actors → paged detail OCR → checksummed reconstruction. Pages advance automatically, no survey chunks are deferred, and every stage shares finite budgets. Selected detail is not exhaustive video analysis. Duplicate clicks return the existing active/paused recording analysis. `GET /api/analyses/ID/result` checks the stored report hash. Batch catalog responses omit the large report and include stage/time projections. Retry+resume can atomically retry failed tasks within existing attempt limits. Earlier automatic campaigns retain their behavior and are labeled as bounded runs.
+
+The real main-button check on the 2,210-second Sheet 4 recording (`f697454b-f6f7-4a95-9dc5-3a4abce90f77`) completed analysis `42c50bfa-bd13-4856-ba75-86c89fc35a2f`: 3 survey tasks, 62 OCR tasks, 6 detail windows and one report, in 479.21 processing seconds / 122,276,037 evidence bytes. Its default limits were 836 seconds / 237 MiB. It did **not** reconstruct a verified full game. The UI exposes independent repeated row proposals for red ends 2/5/8 (+1/+2/+1) and yellow ends 6/7 (+2/+1), while complete two-row scorecards, final result and game/end play times remain unresolved. The earlier 12-recording campaign `763aebc6-1d05-4051-ad73-7fb9ecbb9654` remains paused after a decoding failure; two tasks wait behind it. Do not resume or cancel it merely to improve the screenshot.
+
+See [recording analysis](docs/RECORDING_ANALYSIS.md). Proof data is ignored under `data/recording-workspace-real-validation.json`, `data/recording-ui-real-analysis.json`, and `data/recording-ui-real-result.json`. The development stored report predates the partial-row UI enrichment; source endpoint projections add it without rewriting old reports. The server was restarted on port 8765; recheck its worker health instead of assuming it remains online.
+
+Next extraction work remains temporal reconciliation of independent board rows, complete-game/continuation boundaries, first/final throw evidence, and representative held-out interval labels. A clearer UI and a finished processing pipeline do not establish game accuracy. Preserve all earlier provenance/acceptance boundaries, existing jobs and local evidence. The weekly cutoff remains 50% remaining; the last observed usage during this work was 8% used.
+
+
 ## Latest checkpoint: 0.31.0 end reconstruction
 
 October 28, 2026. The latest work adds [end timelines and house-score comparisons](docs/END_TIMELINE.md). Version 0.31.0 has 316 passing local tests, clean Ruff checks, checked browser scripts and successful wheel/sdist builds. The earlier 0.30.1 material below remains historical context; current data counts have increased.
