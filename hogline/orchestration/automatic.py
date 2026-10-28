@@ -53,6 +53,8 @@ class AutomaticStart(Model):
 
 
 def method_pin():
+    from hogline.reconstruction.board_events import VERSION as BOARD_TIMELINE_VERSION
+
     # Pin every method that can affect the automatic choices before any acquisition.
     layout = profile()
     sample = window_payload(
@@ -62,6 +64,7 @@ def method_pin():
     )
     return {
         "campaign": VERSION,
+        "board_timeline": BOARD_TIMELINE_VERSION,
         "scan": SCAN_VERSION,
         "ocr": OCR_VERSION,
         **{

@@ -1,25 +1,21 @@
 """Release input manifests and reference integrity, independent of score acceptance."""
 
-from collections import defaultdict
-
 from sqlalchemy import select
 
 from hogline.adapters.sources import digest
 from hogline.db import MetadataSnapshot
+from hogline.domain.provenance import acquisition_references, observation_manifest, resolve_manifest
 
 
 def source_lineage(session, data):
-    refs = defaultdict(set)
+    links = acquisition_references(data["evidence"], data["scans"], data["analysis_windows"])
+    refs = {
+        frame["id"]: {(r["source_id"], r["metadata_sha256"]) for r in links.get(frame["id"], [])}
+        for frame in data["evidence"]
+    }
     required = {(s["id"], s["metadata_sha256"]) for s in data["sources"]}
     required.update((w["source_id"], w["source_metadata_sha256"]) for w in data["analysis_windows"])
-    for frame in data["evidence"]:
-        if frame.get("source_metadata_sha256"):
-            refs[frame["id"]].add((frame["source_id"], frame["source_metadata_sha256"]))
-    for scan in data["scans"]:
-        source_ref = (scan["source_id"], scan["source_metadata_sha256"])
-        required.add(source_ref)
-        for sample in scan.get("samples", []):
-            refs[sample["evidence_id"]].add(source_ref)
+    required.update((s["source_id"], s["source_metadata_sha256"]) for s in data["scans"])
     for versions in refs.values():
         required.update(versions)
     rows = list(
@@ -120,12 +116,36 @@ def validate_references(payload):
             and observation["source_id"] != evidence[observation["evidence_id"]]["source_id"]
         ):
             raise ValueError("Release observation/source mismatch; publication was rolled back")
+    acquisition_refs = acquisition_references(
+        evidence.values(), payload["processing_scans"], payload["analysis_windows"]
+    )
+    manifests = {
+        (m["source_id"], m["sha256"]): digest(m["document"]) == m["sha256"]
+        for m in payload.get("source_metadata_snapshots", [])
+    }
+    for observation in payload["broadcast"]["observations"]:
+        if "source_manifest_resolution" in observation:
+            eid = observation["evidence_id"]
+            expected = resolve_manifest(
+                observation, evidence.get(eid), acquisition_refs.get(eid, []), manifests
+            )
+            if observation["source_manifest_resolution"] != expected:
+                raise ValueError("Release observation manifest resolution disagrees with acquisition records")
     timeline = payload["broadcast"].get("board_timeline", {})
     epochs = {e["id"]: e for e in timeline.get("epochs", [])}
     broadcast_observations = {o["id"]: o for o in payload["broadcast"]["observations"]}
     for epoch in epochs.values():
         require([epoch["source_id"]], sources, "board epoch")
         require(epoch["observation_ids"], broadcast_observations, "board epoch observation")
+        for oid in epoch["observation_ids"]:
+            observation = broadcast_observations[oid]
+            if (
+                observation["source_id"] != epoch["source_id"]
+                or observation_manifest(observation) != epoch["source_metadata_sha256"]
+                or observation["model_version"] != epoch["model_version"]
+                or observation["evidence_id"] not in epoch["evidence_ids"]
+            ):
+                raise ValueError("Release board epoch disagrees with observation provenance")
         for key in ("first", "last"):
             anchor = epoch[key]
             require([anchor["observation_id"]], epoch["observation_ids"], "board epoch anchor")

@@ -6,8 +6,9 @@ from itertools import groupby
 from uuid import NAMESPACE_URL, uuid5
 
 from hogline.adapters.sources import digest
+from hogline.domain.provenance import observation_manifest
 
-VERSION = "posted-board-change-brackets-v1"
+VERSION = "posted-board-change-brackets-v2"
 
 
 def row_reading(observation, color):
@@ -67,11 +68,12 @@ def board_timeline(observations, minimum_frames=3, maximum_gap_seconds=90, minim
             or not o.get("evidence_id")
         ):
             continue
-        if not o.get("source_metadata_sha256") or not o.get("model_version"):
+        metadata_sha = observation_manifest(o)
+        if not metadata_sha or not o.get("model_version"):
             excluded += 1
             continue
         # Metadata and model boundaries cannot be crossed by an event hypothesis.
-        partitions[(o["source_id"], o.get("source_metadata_sha256"), o.get("model_version"))].append(o)
+        partitions[(o["source_id"], metadata_sha, o.get("model_version"))].append(o)
     epochs, changes = [], []
     for partition, source_observations in sorted(partitions.items(), key=lambda item: str(item[0])):
         ordered = sorted(source_observations, key=lambda o: (o["source_seconds"], o["id"]))

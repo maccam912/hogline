@@ -9,6 +9,7 @@ from sqlalchemy import func, select
 from hogline.adapters.sources import digest
 from hogline.config import profile
 from hogline.db import Evidence, FrameObservation, Source
+from hogline.domain.provenance import resolve_observation_manifests
 from hogline.media.clocks import fit_clock_hypotheses, parse_overlay
 from hogline.media.frames import EvidenceBudget, EvidenceLimitError, save_image
 from hogline.perception.board_header import register_header
@@ -238,6 +239,7 @@ def broadcast_catalog_in_session(session, root):
         r.document
         for r in session.scalars(select(FrameObservation).where(FrameObservation.model_version == version))
     ]
+    observations = resolve_observation_manifests(session, observations)
     return {
         "observations": observations,
         "clock_hypotheses": fit_clock_hypotheses(observations),
