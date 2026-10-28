@@ -107,6 +107,7 @@ from hogline.perception.temporal import VERSION as WINDOW_VERSION
 from hogline.perception.tracking import VERSION as TRACKING_VERSION
 from hogline.perception.visibility import VERSION as VISIBILITY_VERSION
 from hogline.reconstruction.boundaries import boundary_links
+from hogline.reconstruction.deliveries import VERSION as DELIVERY_VERSION
 from hogline.reconstruction.house_states import VERSION as HOUSE_STATES_VERSION
 from hogline.review.board_evaluation import register_board_evaluation
 from hogline.review.house_evaluation import register_house_evaluation
@@ -199,6 +200,7 @@ def create_app(settings: Settings | None = None, start_worker=False):
                 "window_detector_version": DETECTOR_VERSION,
                 "window_visibility_version": VISIBILITY_VERSION,
                 "window_decoder_version": DECODER_VERSION,
+                "window_delivery_version": DELIVERY_VERSION,
                 "window_retention_version": RETENTION_VERSION,
                 "broadcast": broadcast,
                 "score_disagreements": conflicts_in_session(session, data, broadcast),

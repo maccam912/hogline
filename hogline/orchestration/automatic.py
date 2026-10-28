@@ -31,6 +31,7 @@ class AutomaticRequest(Model):
     scan_jobs: int = Field(default=2, ge=1, le=32)
     scan_interval_seconds: int = Field(default=30, ge=5, le=60)
     detail_jobs: int = Field(default=4, ge=1, le=32)
+    delivery_refinement_jobs: int = Field(default=2, ge=0, le=8)
     window_seconds: int = Field(default=10, ge=4, le=60)
     ocr_frames: int = Field(default=24, ge=1, le=120)
     max_image_growth_mb: int = Field(default=128, ge=1, le=4096)
@@ -53,6 +54,7 @@ class AutomaticStart(Model):
 
 
 def method_pin():
+    from hogline.orchestration.delivery_refinement import VERSION as DELIVERY_REFINEMENT_VERSION
     from hogline.reconstruction.board_events import VERSION as BOARD_TIMELINE_VERSION
 
     # Pin every method that can affect the automatic choices before any acquisition.
@@ -65,6 +67,7 @@ def method_pin():
     return {
         "campaign": VERSION,
         "board_timeline": BOARD_TIMELINE_VERSION,
+        "delivery_refinement": DELIVERY_REFINEMENT_VERSION,
         "scan": SCAN_VERSION,
         "ocr": OCR_VERSION,
         **{
@@ -82,6 +85,7 @@ def method_pin():
                 "pose_version",
                 "pose_model_sha256",
                 "perspective_handles_version",
+                "delivery_version",
             )
         },
     }
@@ -313,6 +317,19 @@ def advance_ready_batch(session, root, batch):
         ):
             raise ValueError("Shared campaign budget reached before the next stage")
         request = AutomaticRequest.model_validate(doc["request"])
+        if doc["phase"] == "detail" and not refining:
+            from hogline.orchestration.delivery_refinement import refinement_units
+
+            detailed_jobs = [u["job_id"] for u in doc["units"] if u["payload"].get("kind") == "dense_window"]
+            window_ids = list(
+                session.scalars(select(AnalysisWindow.id).where(AnalysisWindow.job_id.in_(detailed_jobs)))
+            )
+            refinement, summary = refinement_units(session, request, doc["source_hashes"], window_ids)
+            batch.document = {**doc, "delivery_refinement_summary": summary}
+            doc = batch.document
+            if refinement:
+                append_phase(session, batch, "delivery_detail", refinement, summary)
+                continue
         if next_plan is not None:
             batch.document = {**doc, "refinement_round": doc.get("refinement_round", 1) + 1}
             append_phase(

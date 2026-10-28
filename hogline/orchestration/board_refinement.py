@@ -83,6 +83,7 @@ def refinement_in_session(session, root, request):
         "pose_version",
         "pose_model_sha256",
         "perspective_handles_version",
+        "delivery_version",
     )
     intervals, units, excluded = [(left, right)], [], []
     observed = set(

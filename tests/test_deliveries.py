@@ -254,3 +254,72 @@ def test_controlled_release_survives_columnar_pipeline_and_checks_export_referen
         row.document, row.sha256 = document, digest(document)
     with pytest.raises(ValueError, match="delivery timing"):
         snapshot(db, "exploratory")
+
+
+@pytest.mark.parametrize("fps", [10, 30])
+def test_release_control_prelude_uses_elapsed_time_at_high_sample_density(fps):
+    rows, actors, tracks = control_fixture()
+    rows.clear()
+    points = []
+    for i in range(int(2.5 * fps) + 1):
+        t = i / fps
+        x = (
+            80
+            if t <= 0.5
+            else 80 + 40 * (t - 0.5)
+            if t <= 1.5
+            else 120 + 120 * (t - 1.5)
+            if t <= 1.75
+            else 150 + 60 * (t - 1.75)
+        )
+        hand = min(x, 120)
+        rows.append(
+            {
+                "view": "perspective_right",
+                "sample_index": i,
+                "people": [
+                    {
+                        "body_pose": {
+                            "status": "observed",
+                            "landmarks": [
+                                {
+                                    "index": 15,
+                                    "center_px": [hand, 300],
+                                    "inside_crop": True,
+                                    "raw_visibility": 0.99,
+                                    "raw_presence": 0.99,
+                                }
+                            ],
+                        }
+                    }
+                ],
+            }
+        )
+        points.append(
+            {
+                "sample_index": i,
+                "source_seconds": t,
+                "pts": i,
+                "time_base_num": 1,
+                "time_base_den": fps,
+                "youtube_url": None,
+                "center_px": [x, 300],
+                "candidate_bbox_px": [x - 6, 294, 13, 13],
+                "raw_detection_index": 0,
+            }
+        )
+    tracks[0]["points"] = points
+    actors[0]["points"] = [{"sample_index": i, "person_index": 0} for i in range(len(rows))]
+    result = release_associations(rows, actors, tracks, "dense-input")
+    (candidate,) = result["candidates"]
+    assert 1.5 <= candidate["earliest_release_seconds"] <= 1.75
+    assert 1.75 <= candidate["latest_release_seconds"] <= 2
+    assert candidate["latest_release_seconds"] - candidate["earliest_release_seconds"] < 0.5
+    # Dense sampling does not make a short moving prelude look stationary.
+    for i, p in enumerate(points):
+        if p["source_seconds"] <= 0.5:
+            p["center_px"][0] += p["source_seconds"] * 20
+            rows[i]["people"][0]["body_pose"]["landmarks"][0]["center_px"] = p["center_px"][:]
+    bad = release_associations(rows, actors, tracks, "moving-prelude")
+    assert not bad["candidates"]
+    assert bad["uncertain_motion"][0]["control_intervals"]

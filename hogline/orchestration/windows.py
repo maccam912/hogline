@@ -3,7 +3,6 @@
 import hashlib
 import math
 import time
-from collections import deque
 from uuid import NAMESPACE_URL, uuid5
 
 import cv2
@@ -21,8 +20,8 @@ from hogline.db import AnalysisWindow, Evidence, Job, now
 from hogline.domain.catalog import source_or_error
 from hogline.domain.models import Model
 from hogline.media.frames import EvidenceBudget, observe, resolve_media, source_seconds
+from hogline.media.windows import MIN_INTERVAL, decode_window
 from hogline.media.windows import VERSION as DECODER_VERSION
-from hogline.media.windows import decode_window
 from hogline.orchestration.plans import check_execution, enqueue_in_session, finish_execution
 from hogline.perception.actors import VERSION as ACTOR_VERSION
 from hogline.perception.people import MODEL_SHA256, optional_person_detector
@@ -37,15 +36,16 @@ from hogline.perception.stones import HSVHandleDetector
 from hogline.perception.temporal import VERSION, ConfigurationTracker
 from hogline.perception.visibility import VERSION as VISIBILITY_VERSION
 from hogline.perception.visibility import visibility_observation
+from hogline.reconstruction.deliveries import VERSION as DELIVERY_VERSION
 
-RETENTION_VERSION = "endpoints-midpoint-and-configuration-anchors-v2"
+RETENTION_VERSION = "endpoints-midpoint-and-configuration-anchors-v3"
 
 
 class WindowRequest(Model):
     source_id: str
     start_seconds: float = Field(ge=0)
     end_seconds: float = Field(gt=0)
-    interval_seconds: float = Field(default=0.5, ge=0.25, le=2)
+    interval_seconds: float = Field(default=0.5, ge=MIN_INTERVAL, le=2)
     max_frames: int = Field(default=120, ge=2, le=240)
     max_evidence_mb: int = Field(default=64, ge=1, le=256)
     max_worker_seconds: int = Field(default=120, ge=10, le=600)
@@ -88,6 +88,7 @@ def window_payload(source, request, layout=None):
         "pose_version": POSE_VERSION,
         "pose_model_sha256": POSE_SHA256,
         "perspective_handles_version": PERSPECTIVE_HANDLES_VERSION,
+        "delivery_version": DELIVERY_VERSION,
     }
 
 
@@ -119,6 +120,7 @@ def execute_window(db, job):
         job.get("pose_version"),
         job.get("pose_model_sha256"),
         job.get("perspective_handles_version"),
+        job.get("delivery_version"),
     ) != (
         VERSION,
         DECODER_VERSION,
@@ -131,6 +133,7 @@ def execute_window(db, job):
         POSE_VERSION,
         POSE_SHA256,
         PERSPECTIVE_HANDLES_VERSION,
+        DELIVERY_VERSION,
     ):
         raise ValueError("Window processing version changed; enqueue current work")
     started, last_tick, token = time.monotonic(), 0, job["lease_token"]
@@ -148,7 +151,7 @@ def execute_window(db, job):
     handle = resolve_media(source)
     tick()
     layout, detector, tracker = job["profile"], HSVHandleDetector(), ConfigurationTracker()
-    rows, previous, recent, retained = [], {}, deque(maxlen=8), {}
+    rows, previous, run_starts, retained = [], {}, {}, {}
     actor_rows = []
     person_detector, actor_info = (
         optional_person_detector(db.settings.data_dir)
@@ -184,7 +187,6 @@ def execute_window(db, job):
             if not request.start_seconds - 0.001 <= seconds < request.end_seconds + 0.001:
                 raise ValueError("Decoded timestamps fall outside the requested source window")
             frame = (index, image, timing)
-            recent.append(frame)
             first, last = first or frame, frame
             if middle is None or abs(seconds - midpoint) < abs(source_seconds(middle[2], source) - midpoint):
                 middle = frame
@@ -220,12 +222,22 @@ def execute_window(db, job):
                 }
                 rows.append(row)
                 previous[view] = vector
-                if candidate := tracker.feed(row):
+                candidate = tracker.feed(row)
+                active_run = tracker.runs.get(view, [])
+                if active_run:
+                    start_index = active_run[0]["sample_index"]
+                    if view not in run_starts or run_starts[view][0] != start_index:
+                        if start_index != index:
+                            raise ValueError("Configuration start frame was not retained")
+                        run_starts[view] = frame
+                else:
+                    run_starts.pop(view, None)
+                if candidate:
                     key = (view, candidate["sample_indices"][0])
                     if key in retained:
                         retained[key][1] = frame
                     elif len(retained) < 3:
-                        beginning = next(f for f in recent if f[0] == key[1])
+                        beginning = run_starts[view]
                         retained[key] = [beginning, frame]
             if person_detector is not None:
                 for view in ("perspective_left", "perspective_right"):
@@ -378,6 +390,7 @@ def execute_window(db, job):
         "profile_sha256": job["profile_sha256"],
         "version": VERSION,
         "decoder_version": DECODER_VERSION,
+        "delivery_version": DELIVERY_VERSION,
         "model_version": detector.version,
         "visibility_version": VISIBILITY_VERSION,
         "retention_version": RETENTION_VERSION,

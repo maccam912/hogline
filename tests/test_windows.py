@@ -123,3 +123,17 @@ def test_source_grid_rejects_window_without_any_target_and_nonfinite_origin(vide
         list(decode_window(str(video), 0.1, 0.2, interval=0.5))
     with pytest.raises(ValueError, match="Invalid bounded"):
         list(decode_window(str(video), 0, 1, source_time_origin=float("nan")))
+
+
+def test_high_cadence_does_not_duplicate_low_frame_rate_source_frames(video):
+    frames = list(decode_window(str(video), 0, 2, interval=1 / 30, max_frames=60))
+    assert len(frames) == 20
+    assert [t["pts"] * t["time_base_num"] / t["time_base_den"] for _, t in frames] == pytest.approx(
+        [i / 10 for i in range(20)]
+    )
+    from hogline.orchestration.windows import WindowRequest
+
+    with pytest.raises(ValueError, match="frame budget"):
+        WindowRequest(
+            source_id="fixture", start_seconds=0, end_seconds=10, interval_seconds=1 / 30, max_frames=240
+        )

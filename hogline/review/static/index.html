@@ -712,6 +712,9 @@
         <div class="form-grid">
           <label
             >Window length<select name="duration">
+              <option value="3">3 seconds</option>
+              <option value="5">5 seconds</option>
+              <option value="8">8 seconds</option>
               <option value="10">10 seconds</option>
               <option value="20" selected>20 seconds</option>
               <option value="40">40 seconds</option>
@@ -723,6 +726,8 @@
               <option value="1">1 second</option>
               <option value="0.5" selected>0.5 seconds</option>
               <option value="0.25">0.25 seconds</option>
+              <option value="0.1">0.1 seconds · short detail</option>
+              <option value="0.03333333333333333">1/30 second · up to 8 seconds</option>
             </select></label
           >
           <label
@@ -946,6 +951,8 @@
               max="60"
               required
           /></label>
+          <label
+            >Delivery refinements<input name="refinements" type="number" min="0" max="8" required /></label>
           <label
             >Frames to read<input
               name="ocr"

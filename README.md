@@ -37,7 +37,7 @@ The [house-state benchmark](docs/HOUSE_EVALUATION.md) freezes independently revi
 
 **Anonymous players** keep persistent group IDs with optional names, exact-frame body previews and reversible fragment links. Naming is optional; automatic overlap links require identical source-frame evidence. See [player groups](docs/PLAYERS.md).
 
-**Delivery evidence** adds optional limb poses, perspective handle motion and conservative hand-control/separation hypotheses automatically. Missing control or ambiguous actors remain explicit; see [release associations and validation](docs/DELIVERIES.md). Physical timing and named player statistics still need reliable stone, geometry and identity evidence.
+**Delivery evidence** adds optional limb poses, perspective handle motion and conservative hand-control/separation hypotheses automatically. Missing control or ambiguous actors remain explicit; see [release associations and validation](docs/DELIVERIES.md). Automatic campaigns can refine supported delivery brackets in short native-cadence windows under the same budget. Physical timing and player statistics still need reliable stone, geometry and attribution evidence.
 
 **Local model training** learns a small context classifier from frozen corrected handle labels, with checksummed weights and recording/day leakage checks. It stays an experimental benchmark until independent validation; see [training experiments](docs/TRAINING.md).
 

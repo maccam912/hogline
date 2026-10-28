@@ -226,3 +226,18 @@ def test_temporal_anchors_use_real_nearest_midpoint_even_without_house_candidate
     assert not window["candidates"]
     assert window["retention_version"] == windows.RETENTION_VERSION
     assert len(window["anchor_evidence_ids"]) == len(expected)
+
+
+@pytest.mark.usefixtures("fake_window")
+def test_high_cadence_retains_configuration_start_after_more_than_eight_samples(db, sources):
+    request = windows.WindowRequest(
+        source_id=sources[0]["id"], start_seconds=100, end_seconds=103, interval_seconds=1 / 30, max_frames=90
+    )
+    windows.enqueue_window(db, request)
+    assert worker.run_one(db)["state"] == "succeeded"
+    (window,) = catalog(db)["analysis_windows"]
+    assert window["sample_count"] == 90 and window["candidates"]
+    evidence = {e["id"]: e for e in catalog(db)["evidence"]}
+    for candidate in window["candidates"]:
+        assert evidence[candidate["evidence_ids"][0]]["source_seconds"] == candidate["start_seconds"]
+        assert evidence[candidate["evidence_ids"][-1]]["source_seconds"] == candidate["end_seconds"]

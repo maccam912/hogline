@@ -16,6 +16,7 @@ VERSION = "original-pts-source-grid-v2"
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 MAX_FRAME_BYTES = 32 * 1024**2
 MAX_PIXELS = 4096 * 2160
+MIN_INTERVAL = 1 / 30
 
 
 def pop_png(buffer):
@@ -53,7 +54,7 @@ def decode_window(
     if (
         not all(math.isfinite(v) for v in (start, end, interval, timeout, source_time_origin))
         or not 0 <= start < end <= start + 60
-        or not 0.25 <= interval <= 2
+        or not MIN_INTERVAL <= interval <= 2
         or not 1 <= max_frames <= 240
         or math.ceil((end - start) / interval) > max_frames
         or not 1 <= timeout <= 120

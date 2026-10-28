@@ -169,6 +169,7 @@ def adaptive_in_session(session, request):
                     "pose_version",
                     "pose_model_sha256",
                     "perspective_handles_version",
+                    "delivery_version",
                 )
             )
             and j.document["request"]["source_id"] == sid

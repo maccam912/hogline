@@ -29,6 +29,7 @@
       scans: request?.scan_jobs ?? 2,
       interval: request?.scan_interval_seconds ?? 30,
       details: request?.detail_jobs ?? 4,
+      refinements: request?.delivery_refinement_jobs ?? 2,
       duration: request?.window_seconds ?? 10,
       ocr: request?.ocr_frames ?? 24,
       growth: request?.max_image_growth_mb ?? 128,
@@ -53,6 +54,7 @@
       scan_jobs: Number(d.get("scans")),
       scan_interval_seconds: Number(d.get("interval")),
       detail_jobs: Number(d.get("details")),
+      delivery_refinement_jobs: Number(d.get("refinements")),
       window_seconds: Number(d.get("duration")),
       ocr_frames: Number(d.get("ocr")),
       max_image_growth_mb: Number(d.get("growth")),
@@ -75,9 +77,9 @@
         (u) => u.disposition === "existing_needs_attention",
       );
       $("#automatic-preview").innerHTML =
-        `<h3>Scan → inspect selected windows → read boards and clocks</h3>
+        `<h3>Scan → inspect → refine delivery brackets → read boards</h3>
         <p>${plan.admitted_new_units} new scan chunks · ${plan.reused_succeeded_units} reused · ${plan.deferred_units} scan chunks deferred.</p>
-        <p>After scanning: up to ${request.detail_jobs} windows of ${request.window_seconds} seconds, with quiet audits; then up to ${request.ocr_frames} pending detailed frames read locally.</p>
+        <p>After scanning: up to ${request.detail_jobs} windows of ${request.window_seconds} seconds, with quiet audits, up to ${request.delivery_refinement_jobs} four-second native-cadence delivery refinements when supported; then up to ${request.ocr_frames} pending detailed frames read locally.</p>
         <p><strong>One shared limit: ${request.max_image_growth_mb} MB retained growth and ${request.max_worker_seconds} worker seconds.</strong> Pause or resume under Processing.</p>
         <p class="fine-print">${escapeHTML(plan.notice)} The exact later selections are recorded as each stage starts. A completed campaign means its bounded work finished; unscanned time and deferred frames remain unknown.</p>
         ${blocked ? '<p class="job-error">Matching unfinished scans exist. Resume or retry their batch before starting this campaign.</p>' : ""}

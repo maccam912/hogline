@@ -6,7 +6,7 @@ from uuid import NAMESPACE_URL, uuid5
 
 from hogline.adapters.sources import digest
 
-VERSION = "perspective-release-associations-v1"
+VERSION = "perspective-release-associations-v2"
 
 
 def visible_wrist(person, index):
@@ -78,7 +78,11 @@ def release_associations(rows, actors, handles, input_sha256):
             first, last = points[indices[0]], points[indices[-1]]
             if len(indices) < 3 or last["source_seconds"] - first["source_seconds"] < 0.5:
                 continue
-            prelude = [points[i] for i in indices[:3]]
+            prelude = []
+            for index in indices:
+                prelude.append(points[index])
+                if prelude[-1]["source_seconds"] - prelude[0]["source_seconds"] >= 0.5:
+                    break
             if prelude[-1]["source_seconds"] - prelude[0]["source_seconds"] < 0.5 or max(
                 math.dist(prelude[0]["center_px"], p["center_px"]) for p in prelude
             ) > max(2, track["crop_width"] * 0.006):
@@ -160,6 +164,20 @@ def release_associations(rows, actors, handles, input_sha256):
                     "start_seconds": track["start_seconds"],
                     "end_seconds": track["end_seconds"],
                     "reasons": reasons,
+                    "control_intervals": [
+                        {
+                            "actor_track_id": run["key"][0],
+                            "wrist_landmark_index": run["key"][1],
+                            "first": points[run["indices"][0]],
+                            "last": points[run["indices"][-1]],
+                            "sample_count": len(run["indices"]),
+                        }
+                        for run in sorted(runs, key=lambda r: (-len(r["indices"]), r["indices"][0]))[:4]
+                        if len(run["indices"]) >= 3
+                        and points[run["indices"][-1]]["source_seconds"]
+                        - points[run["indices"][0]]["source_seconds"]
+                        >= 0.5
+                    ],
                 }
             )
     return {
