@@ -196,6 +196,7 @@ def observe(
         vectors[name] = np.asarray(crop.convert("L").resize((96, 96)), dtype=np.float32)
     key = {
         "source": source["id"],
+        "source_snapshot": source["metadata_sha256"],
         **timing,
         "image": result["image"]["sha256"],
         "profile_sha256": digest(layout),

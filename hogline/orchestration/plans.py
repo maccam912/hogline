@@ -232,7 +232,11 @@ def batch_view(session, batch):
 
 def batches(db):
     with db.session() as session:
-        return [batch_view(session, b) for b in session.scalars(select(ProcessingBatch))]
+        return batches_in_session(session)
+
+
+def batches_in_session(session):
+    return [batch_view(session, b) for b in session.scalars(select(ProcessingBatch))]
 
 
 class BatchControl(Model):

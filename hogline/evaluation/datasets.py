@@ -9,7 +9,7 @@ def freeze_dataset(db, request: DatasetCreate):
     if not request.partitions:
         raise ValueError("Assign at least one whole recording/day group to a partition")
     records, exclusions = [], []
-    with db.session() as session:
+    with db.snapshot_session(write=True) as session:
         sources = {s.id: s.document for s in session.scalars(select(Source))}
         evidence = {e.id: e.document for e in session.scalars(select(Evidence))}
         source_partitions, day_partitions = {}, {}

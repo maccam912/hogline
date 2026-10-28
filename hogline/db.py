@@ -218,3 +218,17 @@ class Database:
     def session(self):
         with self.sessions.begin() as session:
             yield session
+
+    @contextmanager
+    def snapshot_session(self, *, write=False):
+        """One database view across all reads; reserve SQLite writes before reading."""
+        with self.sessions.begin() as session:
+            if self.engine.dialect.name == "sqlite":
+                # Python's legacy SQLite mode does not begin a transaction for
+                # SELECT. Explicit BEGIN is necessary for a real read snapshot.
+                session.connection().exec_driver_sql("BEGIN IMMEDIATE" if write else "BEGIN")
+            elif self.engine.dialect.name == "postgresql":
+                session.connection(execution_options={"isolation_level": "REPEATABLE READ"})
+            else:
+                raise ValueError("Snapshot consistency is configured for SQLite and PostgreSQL")
+            yield session

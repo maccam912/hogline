@@ -90,7 +90,7 @@ def save_game(db, edit):
 
 
 def present_game(row, sources):
-    game = {**row.document, "revision": row.revision}
+    game = {**row.document, "id": row.id, "revision": row.revision}
     game["spans"] = [
         {**s, "youtube_url": video_link(sources[s["source_id"]], s["start_seconds"])} for s in game["spans"]
     ]
@@ -152,39 +152,45 @@ def propose_games(session, source, scan, job_id):
 
 
 def catalog(db):
-    with db.session() as session:
-        sources = {r.id: r.document for r in session.scalars(select(Source))}
-        games = [
-            present_game(r, sources)
-            for r in session.scalars(select(GameRow))
-            if not r.document.get("retired_into")
-        ]
-        scans = [
-            {
-                "id": r.id,
-                "source_id": r.source_id,
-                "source_metadata_sha256": j.document["source_hash"],
-                **r.document,
-            }
-            for r, j in session.execute(select(Scan, Job).join(Job, Scan.job_id == Job.id))
-        ]
-        evidence = [{"id": r.id, **r.document} for r in session.scalars(select(Evidence))]
-        tasks = [
-            {"id": r.id, "game_id": r.game_id, "reason": r.reason, "state": r.state}
-            for r in session.scalars(select(ReviewTask))
-        ]
-        return {
-            "sources": list(sources.values()),
-            "games": games,
-            "scans": scans,
-            "evidence": evidence,
-            "review_tasks": tasks,
-            "timelines": [
-                reconstruct_source(
-                    s,
-                    [scan for scan in scans if scan["source_id"] == s["id"]],
-                    {e["id"]: e for e in evidence},
-                )
-                for s in sources.values()
-            ],
+    with db.snapshot_session() as session:
+        return catalog_in_session(session)
+
+
+def catalog_in_session(session):
+    sources = {r.id: {**r.document, "id": r.id} for r in session.scalars(select(Source))}
+    games = [
+        present_game(r, sources)
+        for r in session.scalars(select(GameRow))
+        if not r.document.get("retired_into")
+    ]
+    scans = [
+        {
+            **r.document,
+            "id": r.id,
+            "source_id": r.source_id,
+            "source_metadata_sha256": j.document["source_hash"],
         }
+        for r, j in session.execute(select(Scan, Job).join(Job, Scan.job_id == Job.id))
+    ]
+    evidence = [
+        {**r.document, "id": r.id, "source_id": r.source_id} for r in session.scalars(select(Evidence))
+    ]
+    tasks = [
+        {"id": r.id, "game_id": r.game_id, "reason": r.reason, "state": r.state}
+        for r in session.scalars(select(ReviewTask))
+    ]
+    return {
+        "sources": list(sources.values()),
+        "games": games,
+        "scans": scans,
+        "evidence": evidence,
+        "review_tasks": tasks,
+        "timelines": [
+            reconstruct_source(
+                s,
+                [scan for scan in scans if scan["source_id"] == s["id"]],
+                {e["id"]: e for e in evidence},
+            )
+            for s in sources.values()
+        ],
+    }

@@ -28,7 +28,7 @@ from hogline.db import (
     Revision,
     Source,
 )
-from hogline.domain.catalog import Conflict, catalog, save_game
+from hogline.domain.catalog import Conflict, catalog_in_session, save_game
 from hogline.domain.models import GameEdit, Model, ScanRequest
 from hogline.evaluation.datasets import dataset_catalog, freeze_dataset
 from hogline.evaluation.labels import label_id, labels_catalog, save_labels
@@ -46,14 +46,14 @@ from hogline.orchestration.plans import (
     BatchControl,
     BatchStart,
     PlanRequest,
-    batches,
+    batches_in_session,
     control_batch,
     create_batch,
     preview_plan,
 )
-from hogline.orchestration.worker import enqueue, jobs, retry, run_one
-from hogline.perception.broadcast import analyze_broadcast, broadcast_catalog
-from hogline.perception.pipeline import analyze_cached, observations
+from hogline.orchestration.worker import enqueue, jobs_in_session, retry, run_one
+from hogline.perception.broadcast import analyze_broadcast, broadcast_catalog_in_session
+from hogline.perception.pipeline import analyze_cached, observations_in_session
 from hogline.perception.stones import VERSION as DETECTOR_VERSION
 from hogline.reconstruction.boundaries import boundary_links
 
@@ -109,21 +109,22 @@ def create_app(settings: Settings | None = None, start_worker=False):
 
     @app.get("/api/catalog")
     def get_catalog():
-        data = catalog(db)
-        broadcast = broadcast_catalog(db)
-        return {
-            **data,
-            "jobs": jobs(db),
-            "batches": batches(db),
-            "observations": observations(db),
-            "broadcast": broadcast,
-            "source_boundary_links": boundary_links(
-                data["sources"],
-                broadcast["observations"],
-                broadcast["version"],
-                {e["id"] for e in data["evidence"]},
-            ),
-        }
+        with db.snapshot_session() as session:
+            data = catalog_in_session(session)
+            broadcast = broadcast_catalog_in_session(session)
+            return {
+                **data,
+                "jobs": jobs_in_session(session),
+                "batches": batches_in_session(session),
+                "observations": observations_in_session(session),
+                "broadcast": broadcast,
+                "source_boundary_links": boundary_links(
+                    data["sources"],
+                    broadcast["observations"],
+                    broadcast["version"],
+                    {e["id"] for e in data["evidence"]},
+                ),
+            }
 
     @app.post("/api/perception/analyze")
     def analyze():

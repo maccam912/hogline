@@ -137,14 +137,16 @@ def analyze_broadcast(db, evidence_ids=None, limit=120, max_seconds=120):
 
 
 def broadcast_catalog(db):
-    version = broadcast_version(profile())
     with db.session() as session:
-        observations = [
-            r.document
-            for r in session.scalars(
-                select(FrameObservation).where(FrameObservation.model_version == version)
-            )
-        ]
+        return broadcast_catalog_in_session(session)
+
+
+def broadcast_catalog_in_session(session):
+    version = broadcast_version(profile())
+    observations = [
+        r.document
+        for r in session.scalars(select(FrameObservation).where(FrameObservation.model_version == version))
+    ]
     return {
         "observations": observations,
         "clock_hypotheses": fit_clock_hypotheses(observations),

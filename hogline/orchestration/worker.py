@@ -55,7 +55,11 @@ def job_view(job):
 
 def jobs(db):
     with db.session() as session:
-        return [job_view(j) for j in session.scalars(select(Job))]
+        return jobs_in_session(session)
+
+
+def jobs_in_session(session):
+    return [job_view(j) for j in session.scalars(select(Job))]
 
 
 def claim(db):

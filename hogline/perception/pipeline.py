@@ -75,9 +75,11 @@ def analyze_cached(db):
 
 def observations(db):
     with db.session() as session:
-        return [
-            r.document
-            for r in session.scalars(
-                select(FrameObservation).where(FrameObservation.model_version == VERSION)
-            )
-        ]
+        return observations_in_session(session)
+
+
+def observations_in_session(session):
+    return [
+        r.document
+        for r in session.scalars(select(FrameObservation).where(FrameObservation.model_version == VERSION))
+    ]

@@ -56,6 +56,13 @@ def test_changed_source_manifest_does_not_reuse_old_acquisition(db, sources, mon
     worker.enqueue(db, req)
     assert worker.run_one(db)["state"] == "succeeded"
     assert len(calls) == 2
+    frames = catalog(db)["evidence"]
+    assert len(frames) == 2  # Identical pixels can have distinct source-manifest provenance.
+    assert len({f["image"]["sha256"] for f in frames}) == 1
+    assert {f["source_metadata_sha256"] for f in frames} == {
+        sources[0]["metadata_sha256"],
+        "changed-manifest",
+    }
     assert catalog(db)["timelines"][0]["stale_scans_excluded"] == 1
 
 

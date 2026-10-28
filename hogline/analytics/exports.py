@@ -3,18 +3,24 @@ import io
 import json
 
 from hogline.adapters.sources import digest
+from hogline.analytics.lineage import source_lineage, validate_references
 from hogline.db import Release, now
-from hogline.domain.catalog import catalog
-from hogline.perception.broadcast import broadcast_catalog
-from hogline.perception.pipeline import observations
+from hogline.domain.catalog import catalog_in_session
+from hogline.perception.broadcast import broadcast_catalog_in_session
+from hogline.perception.pipeline import observations_in_session
 from hogline.reconstruction.boundaries import boundary_links
 
 
 def snapshot(db, mode="confirmed"):
     if mode not in ("confirmed", "exploratory"):
         raise ValueError("Export mode must be confirmed or exploratory")
-    data = catalog(db)
-    broadcast = broadcast_catalog(db)
+    with db.snapshot_session(write=True) as session:
+        return snapshot_in_session(session, mode)
+
+
+def snapshot_in_session(session, mode):
+    data = catalog_in_session(session)
+    broadcast = broadcast_catalog_in_session(session)
     games = data["games"]
     if mode == "confirmed":
         games = [g for g in games if g["acceptance"] == "human_confirmed"]
@@ -29,13 +35,15 @@ def snapshot(db, mode="confirmed"):
                     "evidence_ids": [],
                 }
     payload = {
-        "schema_version": "hogline-archive-v1",
+        "schema_version": "hogline-archive-v2",
         "mode": mode,
         "created_at": now(),
         "games": games,
         "sources": data["sources"],
+        **source_lineage(session, data),
+        "processing_scans": data["scans"],
         "evidence": data["evidence"],
-        "observations": observations(db),
+        "observations": observations_in_session(session),
         "broadcast": broadcast,
         "source_boundary_links": boundary_links(
             data["sources"],
@@ -60,13 +68,13 @@ def snapshot(db, mode="confirmed"):
             "unknown": "excluded from decided-game counts; null is not zero",
         },
     }
-    with db.session() as session:
-        # Use the same rows that were serialized, even if a review is saved during export.
-        payload["interpretation_revisions"] = {g["id"]: g["revision"] for g in data["games"]}
-        release = Release(sha256=digest(payload), document=payload)
-        session.add(release)
-        session.flush()
-        return {"id": release.id, "sha256": release.sha256, **payload}
+    validate_references(payload)
+    # Use the same rows that were serialized, even if a review is saved during export.
+    payload["interpretation_revisions"] = {g["id"]: g["revision"] for g in data["games"]}
+    release = Release(sha256=digest(payload), document=payload)
+    session.add(release)
+    session.flush()
+    return {"id": release.id, "sha256": release.sha256, **payload}
 
 
 def csv_export(release):
