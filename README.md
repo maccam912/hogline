@@ -50,6 +50,8 @@ uv run hogline export /absolute/path/pilot.json --mode exploratory
 
 Inventory is bounded to 50 entries per request. It is a first page, **not** a complete seasonal backfill or a discovery checkpoint system. Video import never enqueues processing automatically.
 
+Channel listings are tracked separately from full recording metadata. A later sparse listing cannot discard a known duration, replace a full manifest hash, or reset stored clock/event-date fields. Listing changes set `metadata_refresh_needed`; importing the recording URL again performs a full refresh. Every curated input snapshot remains content-hashed and excludes signed media URLs and request credentials.
+
 **Plan recording** previews a long recording and admits a limited batch of overlapping chunks. Pause, resume, image-growth limits, cumulative worker time, and per-attempt accounting are available from the workbench and CLI. Completed chunks are reused when previewing the remaining work. See [bounded processing](docs/PROCESSING.md) for the plan format and tested limits.
 
 Each scan is limited to 20 source minutes, a declared frame count, an evidence-byte budget, and a worker-time budget (default ten worker minutes; a currently running decoder may take up to its 45-second timeout to return). The shared evidence cache defaults to 2 GiB, configurable with `HOGLINE_MAX_CACHE_MB`. These are retained-image and worker limits, **not measured network-byte quotas**: remote seeks can fetch surrounding codec/keyframe data. Successful frame caches survive a failed attempt. Retry failed jobs with `uv run hogline retry JOB_ID`; retries are bounded to three attempts. Repeating an identical successful job reuses it.
