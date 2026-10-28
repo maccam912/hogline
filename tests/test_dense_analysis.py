@@ -241,3 +241,23 @@ def test_high_cadence_retains_configuration_start_after_more_than_eight_samples(
     for candidate in window["candidates"]:
         assert evidence[candidate["evidence_ids"][0]]["source_seconds"] == candidate["start_seconds"]
         assert evidence[candidate["evidence_ids"][-1]]["source_seconds"] == candidate["end_seconds"]
+
+
+@pytest.mark.usefixtures("fake_window")
+def test_slow_publication_rechecks_budget_without_opening_a_second_database_writer(db, sources, monkeypatch):
+    real_clock, offset = windows.time.monotonic, [0]
+    monkeypatch.setattr(windows.time, "monotonic", lambda: real_clock() + offset[0])
+    original = windows.save_actors_in_session
+
+    def delayed(session, window, rows):
+        result = original(session, window, rows)
+        offset[0] += 2.5  # Cross the regular heartbeat boundary while already owning the write transaction.
+        return result
+
+    monkeypatch.setattr(windows, "save_actors_in_session", delayed)
+    windows.enqueue_window(
+        db, windows.WindowRequest(source_id=sources[0]["id"], start_seconds=100, end_seconds=105)
+    )
+    outcome = worker.run_one(db)
+    assert outcome["state"] == "succeeded", outcome
+    assert catalog(db)["analysis_windows"][0]["wall_seconds"] >= 2.5

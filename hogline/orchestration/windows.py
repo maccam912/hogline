@@ -22,7 +22,13 @@ from hogline.domain.models import Model
 from hogline.media.frames import EvidenceBudget, observe, resolve_media, source_seconds
 from hogline.media.windows import MIN_INTERVAL, decode_window
 from hogline.media.windows import VERSION as DECODER_VERSION
-from hogline.orchestration.plans import check_execution, enqueue_in_session, finish_execution
+from hogline.orchestration.plans import (
+    WorkStopped,
+    check_execution,
+    check_execution_in_session,
+    enqueue_in_session,
+    finish_execution,
+)
 from hogline.perception.actors import VERSION as ACTOR_VERSION
 from hogline.perception.people import MODEL_SHA256, optional_person_detector
 from hogline.perception.people import VERSION as PERSON_VERSION
@@ -439,7 +445,7 @@ def execute_window(db, job):
         "media_selection": media_selection,
     }
     check_execution(db, token, time.monotonic() - started)
-    with db.session() as session:
+    with db.snapshot_session(write=True) as session:
         row = session.get(Job, job["id"])
         if row.state != "running" or row.document.get("lease_token") != token:
             raise ValueError("Work lease expired before window publication")
@@ -455,13 +461,20 @@ def execute_window(db, job):
         session.flush()
         for evidence_id in evidence:
             analyze_frame(session, session.get(Evidence, evidence_id), db.settings.data_dir)
-        session.add(AnalysisWindow(id=result["id"], job_id=row.id, source_id=source["id"], document=result))
+        window_row = AnalysisWindow(id=result["id"], job_id=row.id, source_id=source["id"], document=result)
+        session.add(window_row)
         session.flush()
         save_tracks_in_session(session, result, rows)
         save_house_states_in_session(session, result, rows)
         actors = save_actors_in_session(session, result, actor_rows)
         save_deliveries_in_session(session, result, actors, actor_rows)
-        tick()
+        elapsed = time.monotonic() - started
+        if elapsed > request.max_worker_seconds:
+            raise ValueError("Detailed window worker-time budget reached during publication")
+        if stopped := check_execution_in_session(session, token, elapsed):
+            raise WorkStopped(stopped)
+        result = {**result, "wall_seconds": elapsed}
+        window_row.document = result
         row.state, row.lease_until = "succeeded", None
         row.document = {
             **row.document,

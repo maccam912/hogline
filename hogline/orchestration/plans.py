@@ -338,41 +338,43 @@ def execution_tick(session, execution, elapsed):
         return batch
 
 
-def check_execution(db, token, elapsed, reserve_bytes=0):
+def check_execution_in_session(session, token, elapsed, reserve_bytes=0):
+    """Use the caller's transaction when checking publication; never open a second writer."""
     stopped = None
-    with db.session() as session:
-        execution = session.get(JobExecution, token)
-        if execution is None or execution.state != "running":
-            raise WorkStopped("Execution lease is no longer active")
-        job = session.get(Job, execution.job_id)
-        if job.state != "running" or job.document.get("lease_token") != token:
-            raise WorkStopped("Work lease was reclaimed")
-        batch = execution_tick(session, execution, elapsed)
-        if batch:
-            limits = batch.document.get("limits", batch.document["request"])
-            if batch.state != "active":
-                stopped = f"Batch {batch.state}"
-            elif batch.document["spent_worker_seconds"] >= limits["max_worker_seconds"]:
-                stopped = "Batch worker-time budget reached"
-            elif (
-                batch.document["reserved_image_bytes"] + reserve_bytes
-                > limits["max_image_growth_mb"] * 1024**2
-            ):
-                stopped = "Batch image-growth budget reached"
-            if stopped and batch.state == "active":
-                batch.state = "paused"
-                batch.document = {**batch.document, "pause_reason": stopped}
-            if not stopped and reserve_bytes:
-                batch.document = {
-                    **batch.document,
-                    "reserved_image_bytes": batch.document["reserved_image_bytes"] + reserve_bytes,
-                }
+    execution = session.get(JobExecution, token)
+    if execution is None or execution.state != "running":
+        raise WorkStopped("Execution lease is no longer active")
+    job = session.get(Job, execution.job_id)
+    if job.state != "running" or job.document.get("lease_token") != token:
+        raise WorkStopped("Work lease was reclaimed")
+    batch = execution_tick(session, execution, elapsed)
+    if batch:
+        limits = batch.document.get("limits", batch.document["request"])
+        if batch.state != "active":
+            stopped = f"Batch {batch.state}"
+        elif batch.document["spent_worker_seconds"] >= limits["max_worker_seconds"]:
+            stopped = "Batch worker-time budget reached"
+        elif batch.document["reserved_image_bytes"] + reserve_bytes > limits["max_image_growth_mb"] * 1024**2:
+            stopped = "Batch image-growth budget reached"
+        if stopped and batch.state == "active":
+            batch.state = "paused"
+            batch.document = {**batch.document, "pause_reason": stopped}
         if not stopped and reserve_bytes:
-            execution.document = {
-                **execution.document,
-                "new_image_bytes_reserved": execution.document.get("new_image_bytes_reserved", 0)
-                + reserve_bytes,
+            batch.document = {
+                **batch.document,
+                "reserved_image_bytes": batch.document["reserved_image_bytes"] + reserve_bytes,
             }
+    if not stopped and reserve_bytes:
+        execution.document = {
+            **execution.document,
+            "new_image_bytes_reserved": execution.document.get("new_image_bytes_reserved", 0) + reserve_bytes,
+        }
+    return stopped
+
+
+def check_execution(db, token, elapsed, reserve_bytes=0):
+    with db.session() as session:
+        stopped = check_execution_in_session(session, token, elapsed, reserve_bytes)
     if stopped:
         raise WorkStopped(stopped)
 
