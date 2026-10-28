@@ -895,7 +895,8 @@ label textarea {
   display: block;
   margin: 5px 0 13px;
 }
-.close-dialog {
+.close-dialog,
+.dialog-close {
   position: absolute;
   right: 15px;
   top: 12px;

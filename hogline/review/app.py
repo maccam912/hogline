@@ -96,6 +96,7 @@ from hogline.perception.tracking import VERSION as TRACKING_VERSION
 from hogline.perception.visibility import VERSION as VISIBILITY_VERSION
 from hogline.reconstruction.boundaries import boundary_links
 from hogline.review.board_evaluation import register_board_evaluation
+from hogline.review.score_conflicts import conflicts_in_session, register_score_conflicts
 
 
 class SourceImport(Model):
@@ -134,6 +135,7 @@ def create_app(settings: Settings | None = None, start_worker=False):
     app = FastAPI(title="Hogline", version=__version__, lifespan=lifespan)
     app.state.db = db
     register_board_evaluation(app, db)
+    register_score_conflicts(app, db)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "testserver"])
 
     @app.middleware("http")
@@ -172,6 +174,7 @@ def create_app(settings: Settings | None = None, start_worker=False):
                 "window_decoder_version": DECODER_VERSION,
                 "window_retention_version": RETENTION_VERSION,
                 "broadcast": broadcast,
+                "score_disagreements": conflicts_in_session(session, data, broadcast),
                 "source_boundary_links": boundary_links(
                     data["sources"],
                     broadcast["observations"],

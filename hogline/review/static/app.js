@@ -47,6 +47,9 @@ let toastTimer;
 let catalogSignature;
 function toast(text, error = false) {
   const el = $("#toast");
+  // Native dialogs sit above body content, including fixed-position notices.
+  const host = $$("dialog[open]").at(-1) || document.body;
+  if (el.parentElement !== host) host.appendChild(el);
   el.textContent = text;
   el.classList.toggle("error", error);
   el.hidden = false;
@@ -115,6 +118,7 @@ async function refresh() {
 }
 function render() {
   const { sources, games, review_tasks } = state.data;
+  window.hoglineScoreConflicts?.render();
   $("#build-label").textContent = `PILOT ${state.data.app_version || ""}`;
   $("#recording-count").textContent = sources.length;
   $("#review-count").textContent = review_tasks.filter(

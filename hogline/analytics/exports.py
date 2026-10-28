@@ -11,6 +11,7 @@ from hogline.perception.board_locator import board_locations_in_session
 from hogline.perception.broadcast import broadcast_catalog_in_session
 from hogline.perception.pipeline import observations_in_session
 from hogline.reconstruction.boundaries import boundary_links
+from hogline.review.score_conflicts import conflicts_in_session
 
 
 def snapshot(db, mode="confirmed"):
@@ -51,6 +52,7 @@ def snapshot_in_session(session, mode, root):
         "evidence": data["evidence"],
         "observations": observations_in_session(session),
         "broadcast": broadcast,
+        "score_disagreements": conflicts_in_session(session, {**data, "games": games}, broadcast),
         "board_locations": board_locations_in_session(session),
         "source_boundary_links": boundary_links(
             data["sources"],

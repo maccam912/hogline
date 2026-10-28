@@ -14,6 +14,7 @@
     <script src="/static/windows.js" defer></script>
     <script src="/static/tracks.js" defer></script>
     <script src="/static/moments.js" defer></script>
+    <script src="/static/score-conflicts.js" defer></script>
     <script src="/static/adaptive.js" defer></script>
     <script src="/static/reconciliation.js" defer></script>
     <script src="/static/automatic.js" defer></script>
@@ -42,6 +43,9 @@
           ▤ <span>Recordings</span><b id="recording-count">0</b></button
         ><button class="nav-item" id="review-nav">
           ◎ <span>Needs review</span><b id="review-count">0</b>
+        </button>
+        <button class="nav-item" id="score-disagreements-button">
+          Score disagreements <b id="score-disagreement-count">0</b>
         </button>
         <div class="sidebar-rule"></div>
         <div class="nav-label">FILTER BY SHEET</div>
@@ -1140,6 +1144,60 @@
           Download this result page · JSON ↓
         </button>
       </div>
+    </dialog>
+    <dialog id="score-disagreements-dialog" class="wide-dialog">
+      <button
+        type="button"
+        id="close-score-disagreements"
+        class="dialog-close"
+        aria-label="Close score disagreements"
+      >
+        ×
+      </button>
+      <span class="eyebrow">SAVED SCORES · MODEL DISAGREEMENTS</span>
+      <h2>Compare before correcting</h2>
+      <p class="fine-print">
+        New board readings can flag a discrepancy. They never overwrite a saved
+        score or its acceptance. Review the card history and linked game before
+        deciding.
+      </p>
+      <button
+        class="button quiet"
+        type="button"
+        id="reload-score-disagreements"
+      >
+        Refresh comparisons
+      </button>
+      <div id="score-disagreements-list"></div>
+      <form id="score-disagreement-form" hidden>
+        <h3 id="score-disagreement-selection"></h3>
+        <label
+          >Decision<select name="decision">
+            <option value="needs_review">Keep open for review</option>
+            <option value="keep_saved_score">Reviewed: keep saved score</option>
+          </select></label
+        >
+        <label>Reviewer<input name="author" required maxlength="120" /></label>
+        <label
+          >Reason<textarea name="reason" required maxlength="2000"></textarea>
+        </label>
+        <p class="fine-print">
+          This records a decision about this exact game revision and proposal
+          evidence. To change a score, use Open game review.
+        </p>
+        <div class="batch-actions">
+          <button class="button primary" type="submit">
+            Save discrepancy review</button
+          ><button
+            class="button quiet"
+            id="discard-score-disagreement"
+            type="button"
+          >
+            Discard review draft
+          </button>
+        </div>
+      </form>
+      <details id="score-disagreements-history"></details>
     </dialog>
   </body>
 </html>

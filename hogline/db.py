@@ -261,6 +261,17 @@ class WindowTracks(Base):
     __table_args__ = (UniqueConstraint("window_id", "version"),)
 
 
+class ScoreConflictReview(Base):
+    __tablename__ = "score_conflict_review"
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=uid)
+    conflict_id: Mapped[str] = mapped_column(String)
+    revision: Mapped[int] = mapped_column(Integer)
+    sha256: Mapped[str] = mapped_column(String)
+    document: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[str] = mapped_column(String, default=now)
+    __table_args__ = (UniqueConstraint("conflict_id", "revision"),)
+
+
 class Database:
     def __init__(self, settings: Settings):
         self.settings = settings

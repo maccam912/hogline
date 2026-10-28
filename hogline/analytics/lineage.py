@@ -204,6 +204,10 @@ def validate_references(payload):
         expected_scores = persistent_board_claims(payload["broadcast"]["observations"])
         if payload["broadcast"]["score_proposals"] != expected_scores:
             raise ValueError("Release score proposals disagree with pinned repeated board readings")
+    if "score_disagreements" in payload:
+        from hogline.reconstruction.score_conflicts import validate_review_export
+
+        validate_review_export(payload["score_disagreements"], payload, payload["broadcast"])
     for proposal in payload["source_boundary_links"]:
         require([proposal["left_source_id"], proposal["right_source_id"]], sources, "recording link")
         require(
