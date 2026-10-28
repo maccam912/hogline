@@ -9,6 +9,7 @@
     ({ red: "#f97868", yellow: "#ffe381", unknown: "#c8e5f7" })[value];
   const clean = (row) => {
     const result = structuredClone(row);
+    result.negative_regions ||= [];
     delete result.id;
     delete result.revision;
     return result;
@@ -21,7 +22,7 @@
     state.data.evidence.find((e) => e.id === workspace.labels.evidence_id)
       .crops[workspace.labels.view];
   const countText = () =>
-    `${workspace.labels.points.length} handle centers · ${workspace.labels.ignore_regions.length} ignored regions`;
+    `${workspace.labels.points.length} handle centers · ${workspace.labels.ignore_regions.length} ignored regions · ${workspace.labels.negative_regions.length} non-stone regions`;
 
   function rememberForm() {
     const form = $("#label-form");
@@ -68,6 +69,7 @@
               evaluationState.suggested_source_groups[state.source],
             points: [],
             ignore_regions: [],
+            negative_regions: [],
             copied_from_model_version: null,
             note: "",
           },
@@ -101,7 +103,7 @@
     if (!workspace) return;
     const labels = workspace.labels,
       dimensions = asset();
-    root.innerHTML = `<form class="editor label-form" id="label-form"><div class="section-heading"><h3>Label visible handles</h3><span class="pill">${labels.view} · ${dimensions.width}×${dimensions.height}</span></div><p>Click handle centers in the image. Drag an ignored region over an occlusion. Labels describe colored handles, not granite footprints.</p><div class="label-modes">${["red", "yellow", "unknown", "remove", "ignore"].map((mode) => `<button type="button" class="button ${workspace.mode === mode || (!workspace.mode && mode === "red") ? "primary" : "secondary"}" data-label-mode="${mode}" aria-pressed="${workspace.mode === mode || (!workspace.mode && mode === "red")}">${{ red: "Red", yellow: "Yellow", unknown: "Color unknown", remove: "Remove mark", ignore: "Ignore region" }[mode]}</button>`).join("")}</div><p class="fine-print">${countText()} · ${workspace.dirty ? "unsaved changes" : workspace.revision ? "saved revision " + workspace.revision : "new draft"}</p><div class="label-points">${labels.points.map((p, i) => `<span class="label-chip"><button type="button" data-label-visibility="${i}" title="Toggle full / partial visibility">${i + 1} · ${p.color} · ${Math.round(p.center_px[0])},${Math.round(p.center_px[1])} · ${p.visibility}</button><button type="button" data-remove-label="${i}" aria-label="Remove label ${i + 1}">×</button></span>`).join("") || '<span class="fine-print">No labeled handles.</span>'}</div><div class="form-grid"><label>Coverage<select name="coverage">${options(
+    root.innerHTML = `<form class="editor label-form" id="label-form"><div class="section-heading"><h3>Label visible handles</h3><span class="pill">${labels.view} · ${dimensions.width}×${dimensions.height}</span></div><p>Click handle centers in the image. Drag an ignored region over an occlusion. Mark known clothing or equipment as a non-stone area; detections there count as errors even inside an ignored region. Labels describe colored handles, not granite footprints.</p><div class="label-modes">${["red", "yellow", "unknown", "remove", "ignore", "negative"].map((mode) => `<button type="button" class="button ${workspace.mode === mode || (!workspace.mode && mode === "red") ? "primary" : "secondary"}" data-label-mode="${mode}" aria-pressed="${workspace.mode === mode || (!workspace.mode && mode === "red")}">${{ red: "Red", yellow: "Yellow", unknown: "Color unknown", remove: "Remove mark", ignore: "Ignore region", negative: "Mark non-stone area" }[mode]}</button>`).join("")}</div><p class="fine-print">${countText()} · ${workspace.dirty ? "unsaved changes" : workspace.revision ? "saved revision " + workspace.revision : "new draft"}</p><div class="label-points">${labels.points.map((p, i) => `<span class="label-chip"><button type="button" data-label-visibility="${i}" title="Toggle full / partial visibility">${i + 1} · ${p.color} · ${Math.round(p.center_px[0])},${Math.round(p.center_px[1])} · ${p.visibility}</button><button type="button" data-remove-label="${i}" aria-label="Remove label ${i + 1}">×</button></span>`).join("") || '<span class="fine-print">No labeled handles.</span>'}</div><div class="form-grid"><label>Coverage<select name="coverage">${options(
       [
         ["partial", "Partial labels"],
         ["complete_visible", "All visible handles labeled"],
@@ -116,7 +118,7 @@
         ["model_seeded", "Unverified model seed"],
       ],
       labels.provenance,
-    )}</select></label></div><label>Recording/day group<input name="evaluation_group" value="${escapeHTML(labels.evaluation_group)}" required></label><p class="fine-print">Keep a recording day, adjacent frames, and duplicate-upload family in the same evaluation group. Title-day suggestions still need verification.</p><label class="check-label"><input type="checkbox" name="reviewed" ${labels.review_status === "reviewed" ? "checked" : ""}> I checked the visible handles and ignored regions.</label><label>Annotation notes<textarea name="note" rows="2">${escapeHTML(labels.note)}</textarea></label><div class="form-grid"><label>Reviewer<input name="author" value="${escapeHTML(workspace.author)}" required></label><label>Reason for this revision<input name="reason" value="${escapeHTML(workspace.reason)}" required></label></div><div class="label-actions"><button type="button" class="button quiet" id="label-seed">Use model candidates as a draft</button><button type="button" class="button quiet" id="label-undo" ${workspace.undo.length ? "" : "disabled"}>Undo mark</button><button type="button" class="button quiet" id="label-clear">Clear marks</button><button type="button" class="button secondary" id="label-close">Close draft</button><button type="submit" class="button primary">Save label revision →</button></div></form>`;
+    )}</select></label></div><label>Recording/day group<input name="evaluation_group" value="${escapeHTML(labels.evaluation_group)}" required></label><p class="fine-print">Keep a recording day, adjacent frames, and duplicate-upload family in the same evaluation group. Title-day suggestions still need verification.</p><label class="check-label"><input type="checkbox" name="reviewed" ${labels.review_status === "reviewed" ? "checked" : ""}> I checked the visible handles, ignored regions, and non-stone areas.</label><label>Annotation notes<textarea name="note" rows="2">${escapeHTML(labels.note)}</textarea></label><div class="form-grid"><label>Reviewer<input name="author" value="${escapeHTML(workspace.author)}" required></label><label>Reason for this revision<input name="reason" value="${escapeHTML(workspace.reason)}" required></label></div><div class="label-actions"><button type="button" class="button quiet" id="label-seed">Use model candidates as a draft</button><button type="button" class="button quiet" id="label-undo" ${workspace.undo.length ? "" : "disabled"}>Undo mark</button><button type="button" class="button quiet" id="label-clear">Clear marks</button><button type="button" class="button secondary" id="label-close">Close draft</button><button type="submit" class="button primary">Save label revision →</button></div></form>`;
   }
   function overlay(frame, view) {
     if (
@@ -133,13 +135,19 @@
           `<rect x="${r.x}" y="${r.y}" width="${r.width}" height="${r.height}" fill="#1c302c66" stroke="#fff" stroke-dasharray="5 4"/>`,
       )
       .join("");
+    const negatives = labels.negative_regions
+      .map(
+        (r) =>
+          `<rect x="${r.x}" y="${r.y}" width="${r.width}" height="${r.height}" fill="#ff5fa044" stroke="#ff5fa0" stroke-width="2"/>`,
+      )
+      .join("");
     const marks = labels.points
       .map(
         (p, i) =>
           `<circle cx="${p.center_px[0]}" cy="${p.center_px[1]}" r="6" fill="${color(p.color)}" stroke="#fff" stroke-width="2" ${p.visibility === "partial" ? 'stroke-dasharray="3 2"' : ""}/><text x="${p.center_px[0] + 9}" y="${p.center_px[1] - 7}" fill="#fff" stroke="#15291d" stroke-width=".4" font-size="13">${i + 1}</text>`,
       )
       .join("");
-    return `<svg class="label-overlay" viewBox="0 0 ${width} ${height}" aria-label="Editable handle labels">${regions}${marks}</svg>`;
+    return `<svg class="label-overlay" viewBox="0 0 ${width} ${height}" aria-label="Editable handle labels">${regions}${negatives}${marks}</svg>`;
   }
   function position(event, svg, clamp = false) {
     const point = svg.createSVGPoint();
@@ -175,21 +183,22 @@
     drag = null;
     if (!svg.isConnected) return;
     const mode = workspace.mode || "red",
-      end = position(event, svg, mode === "ignore");
+      end = position(event, svg, mode === "ignore" || mode === "negative");
     if (!end) return;
-    if (mode === "ignore") {
+    if (mode === "ignore" || mode === "negative") {
       const x = Math.min(start[0], end[0]),
         y = Math.min(start[1], end[1]),
         width = Math.abs(start[0] - end[0]),
         height = Math.abs(start[1] - end[1]);
       if (width < 3 || height < 3) return;
       change((l) =>
-        l.ignore_regions.push({
+        l[mode === "negative" ? "negative_regions" : "ignore_regions"].push({
           x,
           y,
           width,
           height,
-          reason: "occluded_or_unobservable",
+          reason:
+            mode === "negative" ? "known_nonstone" : "occluded_or_unobservable",
         }),
       );
     } else if (mode === "remove") {
@@ -201,14 +210,20 @@
         .sort((a, b) => a.d - b.d)[0];
       if (nearest?.d < 18) change((l) => l.points.splice(nearest.i, 1));
       else {
-        const i = workspace.labels.ignore_regions.findIndex(
-          (r) =>
-            end[0] >= r.x &&
-            end[0] <= r.x + r.width &&
-            end[1] >= r.y &&
-            end[1] <= r.y + r.height,
-        );
-        if (i >= 0) change((l) => l.ignore_regions.splice(i, 1));
+        // Remove a known negative before the larger occlusion region underneath it.
+        for (const key of ["negative_regions", "ignore_regions"]) {
+          const i = workspace.labels[key].findIndex(
+            (r) =>
+              end[0] >= r.x &&
+              end[0] <= r.x + r.width &&
+              end[1] >= r.y &&
+              end[1] <= r.y + r.height,
+          );
+          if (i >= 0) {
+            change((l) => l[key].splice(i, 1));
+            break;
+          }
+        }
       }
     } else
       change((l) =>
@@ -255,6 +270,7 @@
       u: "unknown",
       x: "remove",
       i: "ignore",
+      n: "negative",
     }[event.key.toLowerCase()];
     if (mode) {
       event.preventDefault();
@@ -338,7 +354,7 @@
   function renderReport(report) {
     const s = report.summary;
     $("#evaluation-report").innerHTML =
-      `<div class="evaluation-result"><span class="pill amber">${escapeHTML(report.mode.toUpperCase())} · ${report.partition.toUpperCase()}</span><h3>${s.true_positive} matched · ${s.false_negative} missed · ${s.false_positive} extra</h3><p class="fine-print">${escapeHTML(report.model_version)} · ${escapeHTML(report.dataset_name)} · label provenance: ${escapeHTML(Object.keys(report.breakdowns.provenance).join(", "))}</p><p>Precision ${percent(s.precision)} · recall ${percent(s.recall)} · F1 ${percent(s.f1)}</p><p class="fine-print">${report.coverage.evaluated_views} / ${report.coverage.eligible_frozen_views} frozen views evaluated. ${s.ignored_predictions} predictions ignored in occluded regions. This report cannot authorize automatic score acceptance.</p><table><thead><tr><th>Sheet</th><th>Views</th><th>Matched</th><th>Missed</th><th>Extra</th></tr></thead><tbody>${Object.entries(
+      `<div class="evaluation-result"><span class="pill amber">${escapeHTML(report.mode.toUpperCase())} · ${report.partition.toUpperCase()}</span><h3>${s.true_positive} matched · ${s.false_negative} missed · ${s.false_positive} extra</h3><p class="fine-print">${escapeHTML(report.model_version)} · ${escapeHTML(report.dataset_name)} · label provenance: ${escapeHTML(Object.keys(report.breakdowns.provenance).join(", "))}</p><p>Precision ${percent(s.precision)} · recall ${percent(s.recall)} · F1 ${percent(s.f1)}</p><p class="fine-print">${report.coverage.evaluated_views} / ${report.coverage.eligible_frozen_views} frozen views evaluated. ${s.ignored_predictions} predictions ignored in occluded regions. ${s.known_negative_predictions || 0} predictions on known non-stone areas counted as errors. This report cannot authorize automatic score acceptance.</p><table><thead><tr><th>Sheet</th><th>Views</th><th>Matched</th><th>Missed</th><th>Extra</th></tr></thead><tbody>${Object.entries(
         report.breakdowns.sheet,
       )
         .map(
@@ -372,6 +388,7 @@
         change((l) => {
           l.points = [];
           l.ignore_regions = [];
+          l.negative_regions = [];
         });
       if (button.id === "label-undo" && workspace.undo.length) {
         rememberForm();

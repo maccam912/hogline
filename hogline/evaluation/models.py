@@ -31,6 +31,7 @@ class Labels(Model):
     evaluation_group: str = Field(min_length=1, max_length=200)
     points: list[LabelPoint] = Field(default_factory=list, max_length=128)
     ignore_regions: list[IgnoreRegion] = Field(default_factory=list, max_length=64)
+    negative_regions: list[IgnoreRegion] = Field(default_factory=list, max_length=64)
     copied_from_model_version: str | None = None
     note: str = Field(default="", max_length=5000)
 

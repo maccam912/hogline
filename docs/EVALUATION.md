@@ -5,12 +5,12 @@ The workbench labels colored **handle centers in crop pixels**. These are not su
 ## Label a retained view
 
 1. Select an overhead view and choose **Label an overhead view**. The editor locks the source frame while a draft is open. All coordinates use the retained crop's original resolution, regardless of display size.
-2. Click red, yellow, or unknown-color handle centers. Toggle a point's full/partial visibility by clicking its label chip; × removes it. Drag **Ignore region** over occluded or unobservable areas. Points cannot also be inside ignored regions.
+2. Click red, yellow, or unknown-color handle centers. Toggle a point's full/partial visibility by clicking its label chip; × removes it. Drag **Ignore region** over occluded or unobservable areas. Use **Mark non-stone area** over clearly visible clothing, equipment, or other known false objects. These pink regions override ignored regions: predictions inside them count as false positives and cannot match a nearby true handle. Points cannot also be inside either kind of region. Remove mode deletes a non-stone region before an overlapping ignored region.
 3. Use **model candidates as a draft** only as a starting point. This marks the provenance `model_seeded` and the review status `draft`; such output cannot be evaluated as reviewed truth. Inspect every seed, remove false positives, and add missed visible handles.
 4. State coverage separately from review. **All visible handles labeled** can be a valid empty-house negative example. Partial and unobservable views never supply a recall denominator.
 5. Select the actual provenance: human reviewer, assistant visual audit, or known synthetic construction. Check the review box only after inspecting the view. A point/region edit clears that box. Save with an author and revision reason.
 
-Keyboard modes outside input fields: **R** red, **Y** yellow, **U** color unknown, **I** ignored region, **X** remove. Ctrl/Cmd-Z undoes a draft mark. Draft undo is separate from the durable revision history. Closing a dirty draft keeps an in-memory scratch copy until the page reloads; saving creates an immutable historical revision and optimistic checks reject stale edits.
+Keyboard modes outside input fields: **R** red, **Y** yellow, **U** color unknown, **I** ignored region, **N** non-stone area, **X** remove. Ctrl/Cmd-Z undoes a draft mark. Draft undo is separate from the durable revision history. Closing a dirty draft keeps an in-memory scratch copy until the page reloads; saving creates an immutable historical revision and optimistic checks reject stale edits.
 
 ## Freeze a cohort
 
@@ -24,7 +24,7 @@ Confirmed mode includes complete, reviewed **human** labels only. Exploratory mo
 
 Choose a frozen partition and detector version. Current-detector predictions can be generated from retained evidence without acquiring video. Historical versions use their retained observations; missing predictions/images are exclusions and reduce reported coverage rather than becoming invented misses or zeros.
 
-Matching is one-to-one: maximize the number of valid matches, then minimize center error within the declared tolerance, expressed as a fraction of crop width. Reports preserve both color-agnostic detection and color-aware measurements. Predictions in ignored regions are excluded. Unknown-color labels do not enter color accuracy. Empty views with no predictions have undefined precision/recall rather than a fabricated perfect score.
+Matching is one-to-one: maximize the number of valid matches, then minimize center error within the declared tolerance, expressed as a fraction of crop width. Reports preserve both color-agnostic detection and color-aware measurements. Predictions in ignored regions are excluded unless a known non-stone region also covers their center. Reports separately count `known_negative_predictions` among false positives. Older frozen datasets without `negative_regions` retain their original semantics; corrections require a new label revision and frozen dataset. Unknown-color labels do not enter color accuracy. Empty views with no predictions have undefined precision/recall rather than a fabricated perfect score.
 
 Every report stores per-view rows and breakdowns by sheet, resolution, provenance, and evaluation group, along with exact dataset/model/observation references. Denominators and exclusions are visible. Adjacent frames and shared days are correlated; these descriptive reports do not yet establish the design's statistical release gates. They never authorize automatic score acceptance.
 
@@ -48,4 +48,10 @@ The Sheet 4 frame at [source 5:00](https://www.youtube.com/watch?v=es9urvYvLiE&t
 
 The frozen **validation** case reports seven matched handles, one miss, and no extras for `opencv-hsv-handles-v3`. Version 4 removes long straight colored border bands before contour extraction and recovers the clipped red handle: eight matches, no misses, no extras on the same case. Both versions' observations/reports remain available, and no video was reacquired to compare them.
 
-This is a targeted fix on one development view with assistant provenance, not an independently labeled held-out accuracy result. It is deliberately ineligible for confirmed evaluation. The source corpus is also rerun across all eight sheets to surface changed candidates; those unlabeled views are not assigned accuracy scores.
+This is a targeted fix on one development view with assistant provenance, not an independently labeled held-out accuracy result. It is deliberately ineligible for confirmed evaluation. The source corpus is also rerun across all eight sheets to surface changed candidates; unlabeled views are not assigned accuracy scores.
+
+## Cross-sheet development audit
+
+Thirteen assistant-audited views cover all eight sheets, two recording dates, and 320-/480-pixel house crops. They contain 19 visible handle labels and nine views with no visible handles outside occlusions. All groups are assigned to **train**, not held-out testing. Six detections on a foot, face, and red clothing were initially hidden by broad occlusion masks; explicit non-stone regions now count them correctly as errors.
+
+The v4 baseline on this corrected frozen development cohort has **19 matches, 6 false positives, and 0 misses** (76% precision). Eight empty views are correctly empty; the ninth has the foreground false positive. These are small, selected development examples with assistant provenance, not release accuracy or independent ground truth. Existing earlier frozen datasets/reports remain unchanged. See [vision experiments](VISION_EXPERIMENTS.md) for the generic person-model trial and its limitations.

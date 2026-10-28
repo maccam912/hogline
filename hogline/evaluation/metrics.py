@@ -42,8 +42,18 @@ def match_points(truth, predictions, width, tolerance, *, color_aware=False):
 
 
 def evaluate_view(labels, predictions, width, tolerance):
-    ignored = [d for d in predictions if any(inside(d["center_px"], r) for r in labels["ignore_regions"])]
-    retained = [d for d in predictions if d not in ignored]
+    # Known non-stone objects override an occlusion mask and cannot match nearby truth.
+    # Older frozen labels predate negative_regions; their original semantics remain valid.
+    ignored, retained, negative = [], [], []
+    for detection in predictions:
+        point = detection["center_px"]
+        if any(inside(point, r) for r in labels.get("negative_regions", [])):
+            negative.append(detection)
+        elif any(inside(point, r) for r in labels["ignore_regions"]):
+            ignored.append(detection)
+        else:
+            retained.append(detection)
+    prediction_count = len(retained) + len(negative)
     truth = labels["points"]
     matches = match_points(truth, retained, width, tolerance)
     color_matches = match_points(truth, retained, width, tolerance, color_aware=True)
@@ -54,19 +64,20 @@ def evaluate_view(labels, predictions, width, tolerance):
     ]
     return {
         "true_positive": len(matches),
-        "false_positive": len(retained) - len(matches),
+        "false_positive": prediction_count - len(matches),
         "false_negative": len(truth) - len(matches),
         "truth_count": len(truth),
-        "prediction_count": len(retained),
+        "prediction_count": prediction_count,
         "ignored_predictions": len(ignored),
+        "known_negative_predictions": len(negative),
         "color_aware_true_positive": len(color_matches),
-        "color_aware_false_positive": len(retained) - len(color_matches),
+        "color_aware_false_positive": prediction_count - len(color_matches),
         "color_aware_false_negative": len(truth) - len(color_matches),
         "known_color_matches": len(known_color),
         "correct_colors": sum(a["color"] == b["color"] for a, b in known_color),
         "matches": matches,
         "color_aware_matches": color_matches,
-        "empty_view_correct": not truth and not retained,
+        "empty_view_correct": not truth and prediction_count == 0,
     }
 
 
@@ -78,6 +89,7 @@ def summarize(rows):
         "truth_count",
         "prediction_count",
         "ignored_predictions",
+        "known_negative_predictions",
         "color_aware_true_positive",
         "color_aware_false_positive",
         "color_aware_false_negative",
@@ -182,7 +194,7 @@ def evaluate_dataset(db, request: EvaluationRequest):
             for value in sorted({r[field] for r in rows}, key=str)
         }
     document = {
-        "schema_version": "handle-detection-evaluation-v1",
+        "schema_version": "handle-detection-evaluation-v2",
         "created_at": now(),
         "dataset_id": request.dataset_id,
         "dataset_sha256": dataset_sha,
@@ -195,7 +207,10 @@ def evaluate_dataset(db, request: EvaluationRequest):
             "matching": "one_to_one_max_cardinality_min_distance",
             "max_center_error_fraction": request.max_center_error_fraction,
             "error_unit": "fraction_of_crop_width",
-            "eligibility": "complete_visible reviewed frozen label views; ignored regions excluded",
+            "eligibility": (
+                "complete_visible reviewed frozen label views; "
+                "known non-stone regions override ignored regions"
+            ),
             "scope": "image-space handle detection; not granite localization, score accuracy, or identity",
             "uncertainty_note": (
                 "Adjacent frames and shared days are correlated; this report "

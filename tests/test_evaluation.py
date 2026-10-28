@@ -10,7 +10,14 @@ from hogline.domain.catalog import Conflict
 from hogline.evaluation.datasets import freeze_dataset
 from hogline.evaluation.labels import save_labels
 from hogline.evaluation.metrics import evaluate_dataset, evaluate_view, match_points, summarize
-from hogline.evaluation.models import DatasetCreate, EvaluationRequest, LabelEdit, LabelPoint, Labels
+from hogline.evaluation.models import (
+    DatasetCreate,
+    EvaluationRequest,
+    IgnoreRegion,
+    LabelEdit,
+    LabelPoint,
+    Labels,
+)
 from hogline.media.frames import observe
 from hogline.review.app import create_app
 
@@ -82,6 +89,45 @@ def test_ignored_occlusions_and_empty_views_are_not_fake_perfect_recall():
     summary = summarize([result])
     assert summary["precision"] is None and summary["recall"] is None and summary["f1"] is None
     assert summary["empty_views_correctly_empty"] == 1
+
+
+def test_known_nonstone_regions_override_occlusions_and_cannot_match_nearby_handles():
+    region = {"x": 10, "y": 10, "width": 20, "height": 20}
+    labels = {
+        "points": [{"center_px": (31, 20), "color": "red"}],
+        "ignore_regions": [region],
+        "negative_regions": [region],
+    }
+    # This false detection is close enough to match the real handle, but its center
+    # is on an explicitly labeled non-stone object. The occlusion cannot hide it.
+    result = evaluate_view(labels, [{"center_px": (29, 20), "color": "red"}], 480, 0.035)
+    assert result["true_positive"] == 0
+    assert result["false_positive"] == result["false_negative"] == 1
+    assert result["color_aware_false_positive"] == result["color_aware_false_negative"] == 1
+    assert result["prediction_count"] == result["known_negative_predictions"] == 1
+    assert result["ignored_predictions"] == 0
+    assert summarize([result])["known_negative_predictions"] == 1
+    labels["points"] = []
+    assert not evaluate_view(labels, [{"center_px": (20, 20), "color": "red"}], 480, 0.035)[
+        "empty_view_correct"
+    ]
+
+
+def test_nonstone_regions_are_bounded_and_cannot_contain_true_handles(db, labeled_frame):
+    labels, _ = labeled_frame
+    labels.negative_regions = [IgnoreRegion(x=230, y=190, width=20, height=20)]
+    edit = LabelEdit(expected_revision=1, author="Fixture", reason="Negative labels", labels=labels)
+    with pytest.raises(ValueError, match="non-stone"):
+        save_labels(db, edit)
+    labels.negative_regions = [IgnoreRegion(x=479, y=0, width=5, height=5)]
+    with pytest.raises(ValueError, match="original crop"):
+        save_labels(db, edit)
+    labels.negative_regions = [IgnoreRegion(x=10, y=10, width=20, height=20)]
+    labels.ignore_regions = list(labels.negative_regions)
+    saved = save_labels(db, edit)
+    assert saved["revision"] == 2
+    dataset = freeze(db)
+    assert dataset["records"][0]["labels"]["negative_regions"] == saved["negative_regions"]
 
 
 def test_labels_validate_crop_bounds_ignore_regions_and_stale_revisions(db, labeled_frame):

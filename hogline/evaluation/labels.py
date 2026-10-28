@@ -37,9 +37,11 @@ def save_labels(db, edit: LabelEdit):
                 raise ValueError("A label center falls outside the original crop pixels")
             if any(inside(point.center_px, r.model_dump()) for r in labels.ignore_regions):
                 raise ValueError("A measured point cannot also be inside an ignored region")
-        for region in labels.ignore_regions:
+            if any(inside(point.center_px, r.model_dump()) for r in labels.negative_regions):
+                raise ValueError("A measured point cannot also be inside a known non-stone region")
+        for region in labels.ignore_regions + labels.negative_regions:
             if region.x + region.width > width or region.y + region.height > height:
-                raise ValueError("Ignored regions must stay inside the original crop")
+                raise ValueError("Annotation regions must stay inside the original crop")
         identifier = label_id(labels.evidence_id, labels.view)
         row = session.get(FrameLabels, identifier)
         if row is None:
