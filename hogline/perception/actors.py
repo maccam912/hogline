@@ -9,7 +9,27 @@ from scipy.optimize import linear_sum_assignment
 
 from hogline.adapters.sources import digest
 
-VERSION = "perspective-actor-fragments-v1"
+VERSION = "perspective-actor-fragments-v2"
+
+
+def actor_point(row, detection):
+    return {
+        **{
+            k: row[k]
+            for k in (
+                "sample_index",
+                "source_seconds",
+                "pts",
+                "time_base_num",
+                "time_base_den",
+                "youtube_url",
+            )
+        },
+        "person_index": row["people"].index(detection),
+        "bbox_px": detection["bbox_px"],
+        "raw_model_score": detection["raw_model_score"],
+        "body_pose_status": (detection.get("body_pose") or {}).get("status", "unavailable"),
+    }
 
 
 def foot(box):
@@ -135,23 +155,7 @@ def actor_fragments(rows, input_sha256):
                     finish(track, "ambiguous_association" if i in ambiguous_rows else "no_matching_person")
                 else:
                     detection = detections[matches[i]]
-                    track["points"].append(
-                        {
-                            **{
-                                k: row[k]
-                                for k in (
-                                    "sample_index",
-                                    "source_seconds",
-                                    "pts",
-                                    "time_base_num",
-                                    "time_base_den",
-                                    "youtube_url",
-                                )
-                            },
-                            "bbox_px": detection["bbox_px"],
-                            "raw_model_score": detection["raw_model_score"],
-                        }
-                    )
+                    track["points"].append(actor_point(row, detection))
                     following.append(track)
             used = set(matches.values()) | ambiguous_columns
             for j, detection in enumerate(detections):
@@ -162,23 +166,7 @@ def actor_fragments(rows, input_sha256):
                         "appearance": detection["torso_hsv_histogram"],
                         "width": row["crop_width"],
                         "height": row["crop_height"],
-                        "points": [
-                            {
-                                **{
-                                    k: row[k]
-                                    for k in (
-                                        "sample_index",
-                                        "source_seconds",
-                                        "pts",
-                                        "time_base_num",
-                                        "time_base_den",
-                                        "youtube_url",
-                                    )
-                                },
-                                "bbox_px": detection["bbox_px"],
-                                "raw_model_score": detection["raw_model_score"],
-                            }
-                        ],
+                        "points": [actor_point(row, detection)],
                     }
                 )
             diagnostics["ambiguous_people_excluded"] += len(ambiguous_columns)

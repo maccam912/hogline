@@ -15,9 +15,11 @@ MIN_SPAN_SECONDS = 1.0
 MAX_CANDIDATES = 64
 
 
-def track_handles(rows, input_sha256):
+def track_handles(
+    rows, input_sha256, *, views=("house_top", "house_bottom"), version=VERSION, require_ring=True
+):
     tracks, diagnostics = [], Counter()
-    for view in ("house_top", "house_bottom"):
+    for view in views:
         active, previous = [], None
 
         def finish(track, reason, view=view):
@@ -34,7 +36,7 @@ def track_handles(rows, input_sha256):
             )
             document = {
                 "kind": "image_space_handle_tracklet",
-                "version": VERSION,
+                "version": version,
                 "view": view,
                 "color": track["color"],
                 "crop_width": track["width"],
@@ -59,7 +61,7 @@ def track_handles(rows, input_sha256):
             tracks.append(document)
 
         def point(row, index, detection):
-            return {
+            result = {
                 **{
                     k: row[k]
                     for k in (
@@ -75,12 +77,16 @@ def track_handles(rows, input_sha256):
                 "detection_index": index,
                 "center_px": list(detection["center_px"]),
             }
+            if "raw_detection_index" in detection:
+                result["raw_detection_index"] = detection["raw_detection_index"]
+                result["candidate_bbox_px"] = detection["bbox_px"]
+            return result
 
         for row in sorted((r for r in rows if r["view"] == view), key=lambda r: r["source_seconds"]):
             diagnostics["sampled_views"] += 1
             dt = row["source_seconds"] - previous["source_seconds"] if previous else None
             break_reason = None
-            if row.get("ring_reference", {}).get("status") != "candidate":
+            if require_ring and row.get("ring_reference", {}).get("status") != "candidate":
                 break_reason = "house_reference_unavailable"
             elif row.get("foreground_regions"):
                 break_reason = "foreground_or_ring_obstruction"
@@ -204,7 +210,7 @@ def track_handles(rows, input_sha256):
         for track in active:
             finish(track, "window_boundary")
     return {
-        "version": VERSION,
+        "version": version,
         "tracks": sorted(tracks, key=lambda t: (t["start_seconds"], t["view"], t["id"])),
         "diagnostics": dict(diagnostics),
         "minimum_samples": MIN_SAMPLES,

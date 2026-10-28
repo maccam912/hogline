@@ -15,8 +15,12 @@ from hogline.db import AnalysisWindow, WindowActors, now
 from hogline.perception.actors import VERSION, actor_fragments
 from hogline.perception.people import MAX_PEOPLE, MODEL_SHA256
 from hogline.perception.people import VERSION as DETECTOR_VERSION
+from hogline.perception.perspective_stones import VERSION as PERSPECTIVE_HANDLES_VERSION
+from hogline.perception.pose import MODEL_SHA256 as POSE_SHA256
+from hogline.perception.pose import VERSION as POSE_VERSION
 
-SCHEMA_VERSION = "hogline-perspective-people-v1"
+LEGACY_SCHEMA_VERSION = "hogline-perspective-people-v1"
+SCHEMA_VERSION = "hogline-perspective-people-v2"
 SCHEMA = pa.schema(
     [
         ("sample_index", pa.int32()),
@@ -50,6 +54,111 @@ SCHEMA = pa.schema(
     ]
 )
 MAX_RESULT_BYTES = 2 * 1024**2
+LEGACY_SCHEMA = SCHEMA
+POSE = pa.struct(
+    [
+        ("status", pa.string()),
+        ("missing_reason", pa.string()),
+        ("raw_model_score", pa.float64()),
+        (
+            "landmarks",
+            pa.list_(
+                pa.struct(
+                    [
+                        ("index", pa.int32()),
+                        ("center_px", pa.list_(pa.float64(), 2)),
+                        ("raw_visibility", pa.float64()),
+                        ("raw_presence", pa.float64()),
+                        ("inside_crop", pa.bool_()),
+                    ]
+                )
+            ),
+        ),
+    ]
+)
+SCHEMA = pa.schema(
+    [
+        *[field for field in LEGACY_SCHEMA if field.name != "people"],
+        (
+            "people",
+            pa.list_(
+                pa.struct(
+                    [
+                        *LEGACY_SCHEMA.field("people").type.value_type,
+                        ("body_pose", POSE),
+                    ]
+                )
+            ),
+        ),
+        (
+            "perspective_handles",
+            pa.struct(
+                [
+                    ("status", pa.string()),
+                    ("missing_reason", pa.string()),
+                    (
+                        "detections",
+                        pa.list_(
+                            pa.struct(
+                                [
+                                    ("color", pa.string()),
+                                    ("center_px", pa.list_(pa.float64(), 2)),
+                                    ("bbox_px", pa.list_(pa.int32(), 4)),
+                                    ("area_px2", pa.float64()),
+                                    ("shape_score", pa.float64()),
+                                    ("granite_context_fraction", pa.float64()),
+                                    ("person_overlap", pa.bool_()),
+                                    ("near_wrist", pa.bool_()),
+                                    ("boundary_clipped", pa.bool_()),
+                                ]
+                            )
+                        ),
+                    ),
+                ]
+            ),
+        ),
+    ]
+)
+
+
+def validate_pose_and_handles(row):
+    for person in row["people"]:
+        pose = person.get("body_pose")
+        if pose is None:
+            continue  # Older bounded artifacts predate pose inference.
+        points = pose["landmarks"]
+        if (
+            pose["status"] not in ("observed", "unavailable")
+            or (pose["status"] == "observed" and {p["index"] for p in points} != set(range(11, 33)))
+            or (pose["status"] != "observed" and points)
+            or len(points) > 22
+            or (pose["raw_model_score"] is not None and not 0 <= pose["raw_model_score"] <= 1)
+            or any(
+                len(p["center_px"]) != 2
+                or not all(math.isfinite(v) for v in p["center_px"])
+                or not 0 <= p["raw_visibility"] <= 1
+                or not 0 <= p["raw_presence"] <= 1
+                for p in points
+            )
+        ):
+            raise ValueError("Actor input contains invalid body-pose observations")
+    observation = row.get("perspective_handles")
+    if observation is None:
+        return
+    if observation["status"] not in ("observed", "unavailable") or len(observation["detections"]) > 128:
+        raise ValueError("Perspective handle observations exceed their bounded contract")
+    for d in observation["detections"]:
+        if (
+            d["color"] not in ("red", "yellow")
+            or len(d["center_px"]) != 2
+            or not all(
+                math.isfinite(v) and 0 <= v < bound
+                for v, bound in zip(d["center_px"], (row["crop_width"], row["crop_height"]), strict=True)
+            )
+            or not 0 <= d["granite_context_fraction"] <= 1
+            or not 0 <= d["shape_score"] <= 1
+        ):
+            raise ValueError("Actor input contains invalid perspective-handle observations")
 
 
 def validate_actor_rows(window, rows):
@@ -108,6 +217,7 @@ def validate_actor_rows(window, rows):
                 )
             ):
                 raise ValueError("Actor input contains invalid body geometry or torso descriptor")
+        validate_pose_and_handles(row)
     ordered = [times[i] for i in range(window["sample_count"])]
     if any(
         b[0] <= a[0] or abs((b[1] * b[2] / b[3] - a[1] * a[2] / a[3]) - (b[0] - a[0])) > 1e-4
@@ -127,7 +237,7 @@ def load_actor_input(root, window):
     artifact = info["parquet"]
     path = (root / artifact["path"]).resolve()
     if (
-        artifact["schema"] != SCHEMA_VERSION
+        artifact["schema"] not in (SCHEMA_VERSION, LEGACY_SCHEMA_VERSION)
         or not path.is_relative_to((root / "dense").resolve())
         or not path.is_file()
         or path.stat().st_size > 16 * 1024**2
@@ -140,9 +250,18 @@ def load_actor_input(root, window):
     if parquet.metadata.num_rows != artifact["rows"] or parquet.metadata.num_rows > 480:
         raise ValueError("Perspective row count exceeds the bounded window contract")
     metadata = parquet.schema_arrow.metadata or {}
-    if metadata.get(b"hogline.schema_version", b"").decode() != SCHEMA_VERSION:
+    if metadata.get(b"hogline.schema_version", b"").decode() != artifact["schema"]:
         raise ValueError("Perspective schema metadata disagrees with its manifest")
     manifest = json.loads(metadata[b"hogline.input_manifest"])
+    if artifact["schema"] == SCHEMA_VERSION and any(
+        manifest.get(key) != value
+        for key, value in (
+            ("pose_version", POSE_VERSION),
+            ("pose_model_sha256", POSE_SHA256),
+            ("perspective_handles_version", PERSPECTIVE_HANDLES_VERSION),
+        )
+    ):
+        raise ValueError("Perspective feature versions disagree with their pinned manifest")
     if any(
         manifest.get(key) != value
         for key, value in (

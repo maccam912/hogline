@@ -137,6 +137,48 @@ def validate_references(payload):
                 )
             ):
                 raise ValueError("Release actor fragment timestamps disagree with their source window")
+    actor_results = {r["id"]: r for r in payload.get("window_actors", [])}
+    for result in payload.get("window_deliveries", []):
+        require([result["window_id"]], windows, "release associations")
+        require([result["actor_result_id"]], actor_results, "release actor analysis")
+        window, actors = windows[result["window_id"]], actor_results[result["actor_result_id"]]
+        if (
+            result["input_perspective"] != window.get("actor_input")
+            or result["actor_result_sha256"] != actors["sha256"]
+            or actors["window_id"] != window["id"]
+            or any(
+                result[key] != window[key]
+                for key in ("source_id", "source_metadata_sha256", "profile_sha256")
+            )
+        ):
+            raise ValueError(
+                "Release delivery hypotheses disagree with their source window or actor analysis"
+            )
+        require(result["context_anchor_evidence_ids"], window["anchor_evidence_ids"], "release context")
+        handle_tracks = {t["id"]: t for t in result["perspective_handle_tracks"]}
+        actor_tracks = {t["id"]: t for t in actors["tracks"]}
+        for candidate in result["candidates"]:
+            require([candidate["handle_track_id"]], handle_tracks, "release handle track")
+            require([candidate["actor_track_id"]], actor_tracks, "release body track")
+            handle, actor = (
+                handle_tracks[candidate["handle_track_id"]],
+                actor_tracks[candidate["actor_track_id"]],
+            )
+            if (
+                candidate["view"] != handle["view"]
+                or candidate["view"] != actor["view"]
+                or candidate["before"] not in handle["points"]
+                or candidate["after"] not in handle["points"]
+                or candidate["earliest_release_seconds"] != candidate["before"]["source_seconds"]
+                or candidate["latest_release_seconds"] != candidate["after"]["source_seconds"]
+                or not window["observed_first_seconds"]
+                <= candidate["earliest_release_seconds"]
+                < candidate["latest_release_seconds"]
+                <= window["observed_last_seconds"]
+            ):
+                raise ValueError(
+                    "Release delivery timing disagrees with supporting person/object observations"
+                )
     for result in payload.get("window_house_states", []):
         require([result["window_id"]], windows, "house states")
         window = windows[result["window_id"]]

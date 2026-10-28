@@ -5,6 +5,7 @@ from uuid import uuid4
 
 from hogline.adapters.sources import import_local, import_youtube, inventory
 from hogline.analytics.actors import derive_window_actors
+from hogline.analytics.deliveries import derive_window_deliveries
 from hogline.analytics.exports import csv_export, snapshot
 from hogline.analytics.house_states import derive_house_states
 from hogline.analytics.moments import MomentQuery, search_moments
@@ -141,6 +142,10 @@ def main():
         "trace-actors", help="Derive anonymous person fragments from cached observations"
     )
     actors.add_argument("window_id")
+    deliveries = commands.add_parser(
+        "derive-deliveries", help="Derive release associations from cached perspective observations"
+    )
+    deliveries.add_argument("window_id")
     house_label = commands.add_parser("label-house", help="Save independent sampled-interval labels")
     house_label.add_argument("window_id")
     house_label.add_argument("view", choices=["house_top", "house_bottom"])
@@ -298,6 +303,8 @@ def main():
                 result = derive_house_states(db, args.window_id)
             case "trace-actors":
                 result = derive_window_actors(db, args.window_id)
+            case "derive-deliveries":
+                result = derive_window_deliveries(db, args.window_id)
             case "label-house":
                 result = save_house_labels(
                     db,

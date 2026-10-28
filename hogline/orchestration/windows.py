@@ -12,6 +12,7 @@ from pydantic import Field, model_validator
 
 from hogline.adapters.sources import digest, video_link
 from hogline.analytics.actors import save_actor_observations, save_actors_in_session
+from hogline.analytics.deliveries import save_deliveries_in_session
 from hogline.analytics.dense import save_dense
 from hogline.analytics.house_states import save_house_states_in_session
 from hogline.analytics.tracks import save_tracks_in_session
@@ -26,7 +27,12 @@ from hogline.orchestration.plans import check_execution, enqueue_in_session, fin
 from hogline.perception.actors import VERSION as ACTOR_VERSION
 from hogline.perception.people import MODEL_SHA256, optional_person_detector
 from hogline.perception.people import VERSION as PERSON_VERSION
+from hogline.perception.perspective_stones import VERSION as PERSPECTIVE_HANDLES_VERSION
+from hogline.perception.perspective_stones import perspective_handles
 from hogline.perception.pipeline import analyze_frame
+from hogline.perception.pose import MODEL_SHA256 as POSE_SHA256
+from hogline.perception.pose import VERSION as POSE_VERSION
+from hogline.perception.pose import optional_body_pose
 from hogline.perception.stones import HSVHandleDetector
 from hogline.perception.temporal import VERSION, ConfigurationTracker
 from hogline.perception.visibility import VERSION as VISIBILITY_VERSION
@@ -72,6 +78,9 @@ def window_payload(source, request, layout=None):
         "actor_version": ACTOR_VERSION,
         "person_version": PERSON_VERSION,
         "person_model_sha256": MODEL_SHA256,
+        "pose_version": POSE_VERSION,
+        "pose_model_sha256": POSE_SHA256,
+        "perspective_handles_version": PERSPECTIVE_HANDLES_VERSION,
     }
 
 
@@ -100,6 +109,9 @@ def execute_window(db, job):
         job.get("actor_version"),
         job.get("person_version"),
         job.get("person_model_sha256"),
+        job.get("pose_version"),
+        job.get("pose_model_sha256"),
+        job.get("perspective_handles_version"),
     ) != (
         VERSION,
         DECODER_VERSION,
@@ -109,6 +121,9 @@ def execute_window(db, job):
         ACTOR_VERSION,
         PERSON_VERSION,
         MODEL_SHA256,
+        POSE_VERSION,
+        POSE_SHA256,
+        PERSPECTIVE_HANDLES_VERSION,
     ):
         raise ValueError("Window processing version changed; enqueue current work")
     started, last_tick, token = time.monotonic(), 0, job["lease_token"]
@@ -134,6 +149,14 @@ def execute_window(db, job):
         else (None, {"status": "disabled", "missing_reason": "disabled_by_request"})
     )
     actor_info = {**actor_info, "detector_version": PERSON_VERSION, "actor_version": ACTOR_VERSION}
+    pose_detector, pose_info = (
+        optional_body_pose(db.settings.data_dir)
+        if person_detector is not None
+        else (
+            None,
+            {"status": "unavailable", "missing_reason": "person_stage_unavailable", "version": POSE_VERSION},
+        )
+    )
     first = last = middle = None
     midpoint = (request.start_seconds + request.end_seconds) / 2
     media_selection = {k: v for k, v in handle.items() if k != "uri"}
@@ -217,6 +240,31 @@ def execute_window(db, job):
                             "missing_reason": "person_inference_failed",
                         }
                         break
+                    rgb = np.asarray(crop)
+                    for person_index, person in enumerate(people):
+                        tick()
+                        body_pose = {
+                            "status": "unavailable",
+                            "missing_reason": pose_info.get("missing_reason"),
+                            "raw_model_score": None,
+                            "landmarks": [],
+                        }
+                        if person_index >= 12:
+                            body_pose["missing_reason"] = "pose_candidate_limit"
+                        elif person["boundary_clipped"]:
+                            body_pose["missing_reason"] = "clipped_body"
+                        elif pose_detector is not None:
+                            try:
+                                body_pose = pose_detector.detect(rgb, person["bbox_px"])
+                            except (cv2.error, ValueError):
+                                pose_detector = None
+                                pose_info = {
+                                    **pose_info,
+                                    "status": "unavailable",
+                                    "missing_reason": "body_pose_inference_failed",
+                                }
+                                body_pose["missing_reason"] = "body_pose_inference_failed"
+                        person["body_pose"] = body_pose
                     actor_rows.append(
                         {
                             **{
@@ -239,6 +287,7 @@ def execute_window(db, job):
                             "crop_width": crop.width,
                             "crop_height": crop.height,
                             "people": people,
+                            "perspective_handles": perspective_handles(rgb, people),
                         }
                     )
             update_owned(
@@ -293,6 +342,7 @@ def execute_window(db, job):
         min(16 * 1024**2, request.max_evidence_mb * 1024**2),
         budget,
     )
+    actor_info["pose_model"] = pose_info
     if actor_info["status"] == "available":
         actor_info["parquet"] = save_actor_observations(
             actor_rows,
@@ -302,6 +352,9 @@ def execute_window(db, job):
                 "profile_sha256": job["profile_sha256"],
                 "detector_version": PERSON_VERSION,
                 "model_sha256": MODEL_SHA256,
+                "pose_version": POSE_VERSION,
+                "pose_model_sha256": POSE_SHA256,
+                "perspective_handles_version": PERSPECTIVE_HANDLES_VERSION,
             },
             db.settings.data_dir,
             min(16 * 1024**2, request.max_evidence_mb * 1024**2),
@@ -385,7 +438,8 @@ def execute_window(db, job):
         session.flush()
         save_tracks_in_session(session, result, rows)
         save_house_states_in_session(session, result, rows)
-        save_actors_in_session(session, result, actor_rows)
+        actors = save_actors_in_session(session, result, actor_rows)
+        save_deliveries_in_session(session, result, actors, actor_rows)
         row.state, row.lease_until = "succeeded", None
         row.document = {
             **row.document,

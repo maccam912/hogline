@@ -16,6 +16,11 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from hogline import __version__
 from hogline.adapters.sources import import_youtube
 from hogline.analytics.actors import actors_in_session, checked_actor_result, derive_window_actors
+from hogline.analytics.deliveries import (
+    checked_delivery_result,
+    deliveries_in_session,
+    derive_window_deliveries,
+)
 from hogline.analytics.exports import csv_export, snapshot
 from hogline.analytics.house_states import checked_result, derive_house_states, house_states_in_session
 from hogline.analytics.moments import MomentQuery, search_moments
@@ -35,6 +40,7 @@ from hogline.db import (
     Revision,
     Source,
     WindowActors,
+    WindowDeliveries,
     WindowHouseStates,
     WindowTracks,
 )
@@ -185,6 +191,7 @@ def create_app(settings: Settings | None = None, start_worker=False):
                 "house_states_version": HOUSE_STATES_VERSION,
                 "window_actors": actors_in_session(session),
                 "actor_version": ACTOR_VERSION,
+                "window_deliveries": deliveries_in_session(session),
                 "window_detector_version": DETECTOR_VERSION,
                 "window_visibility_version": VISIBILITY_VERSION,
                 "window_decoder_version": DECODER_VERSION,
@@ -234,6 +241,18 @@ def create_app(settings: Settings | None = None, start_worker=False):
     @app.post("/api/windows/{window_id}/actors")
     def create_window_actors(window_id: str):
         return derive_window_actors(db, window_id)
+
+    @app.post("/api/windows/{window_id}/deliveries")
+    def create_window_deliveries(window_id: str):
+        return derive_window_deliveries(db, window_id)
+
+    @app.get("/api/window-deliveries/{identifier}")
+    def get_window_deliveries(identifier: str):
+        with db.session() as session:
+            row = session.get(WindowDeliveries, identifier)
+            if row is None:
+                raise HTTPException(404, "Release analysis not found")
+            return checked_delivery_result(row)
 
     @app.get("/api/window-actors/{identifier}")
     def get_window_actors(identifier: str):
