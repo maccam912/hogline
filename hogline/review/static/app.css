@@ -1576,3 +1576,7 @@ dialog .primary {
 #players-dialog .players-grid { align-items: start; }
 #players-dialog .batch-card { min-width: 0; }
 #players-dialog .fine-print { overflow-wrap: anywhere; }
+
+#players-dialog .check-row { display: flex; align-items: center; gap: 8px; margin: 12px 0; }
+#players-dialog .check-row input { width: 18px; height: 18px; margin: 0; }
+#actors-dialog { width: min(920px, 95vw); max-width: 95vw; }

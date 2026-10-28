@@ -37,3 +37,6 @@ Tree-vote fractions are uncalibrated and do not establish probability. Training 
 ## First real experiment, October 28, 2026
 
 The local development cohort had 19 reviewed views, 45 labeled handles and eight negative proposals on January 16 and March 17. Ninety-six trees produced a 132 KiB classifier. The original development views returned 45 matches, no extras and no misses. These are **training-day results**, not independent accuracy or a release gate. Previously cached March 7/8 samples were empty or too dark for a useful positive held-out benchmark, so they do not validate the classifier. The default HSV detector remains unchanged.
+
+
+A subsequent independently inspected March 7 Sheet 4 smoke check froze six overhead views from 600, 1800 and 3000 seconds, with people/brooms ignored where they obscured the ice. Of two visible yellow handles, the default HSV detector matched both; the learned classifier matched one and missed one, with no extras from either. All six views were evaluated, and the training recording/day leakage guard passed. This tiny held-out result catches a recall regression and does not establish archive-wide accuracy. The experimental model remains inactive. Keep these frozen examples out of training if reporting them as held out.

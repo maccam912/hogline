@@ -14,6 +14,8 @@ from hogline.domain.catalog import Conflict
 from hogline.domain.models import Model
 
 VERSION = "anonymous-player-groups-v1"
+MAX_OVERLAP_CANDIDATES = 128
+MAX_PARENT_RESULTS = 32
 
 
 class Review(Model):
@@ -141,16 +143,19 @@ def register_fragments(session, result):
                     ActorIdentity.start_seconds <= track["end_seconds"],
                     ActorIdentity.end_seconds >= track["start_seconds"],
                 )
-                .limit(129)
+                .limit(MAX_OVERLAP_CANDIDATES + 1)
             )
         )
-        candidate_limit = len(previous) > 128
+        candidate_limit = len(previous) > MAX_OVERLAP_CANDIDATES
         for assignment in [] if candidate_limit else previous:
             info = checked(assignment)
             if info["source_id"] != result["source_id"] or info["view"] != track["view"]:
                 continue
             if info["end_seconds"] < track["start_seconds"] or info["start_seconds"] > track["end_seconds"]:
                 continue
+            if assignment.actor_result_id not in results and len(results) >= MAX_PARENT_RESULTS:
+                candidate_limit = True
+                break
             parent = results.setdefault(assignment.actor_result_id, None)
             if parent is None:
                 parent = results[assignment.actor_result_id] = actor_result(
@@ -164,6 +169,8 @@ def register_fragments(session, result):
             other = next((t for t in parent["tracks"] if t["id"] == assignment.track_id), None)
             if other is not None and same_original_track(track, other):
                 matches.append(assignment)
+        if candidate_limit:
+            matches = []
         groups = {m.group_id for m in matches}
         if len(groups) == 1:
             group = session.get(PlayerGroup, next(iter(groups)))
@@ -282,6 +289,26 @@ def players_in_session(session, *, history=False):
                 "group_id": row.group_id,
             }
         )
+    assignment_index = {m["id"]: (g, m) for g in groups for m in g["members"]}
+    for group in groups:
+        for member in group["members"]:
+            member["matching_review_needed"] = member["acceptance"] == "proposed" and member["basis"] in (
+                "ambiguous_overlap_kept_separate",
+                "overlap_candidate_limit_kept_separate",
+            )
+            candidates = {}
+            if member["matching_review_needed"]:
+                for identifier in member["overlap_assignment_ids"]:
+                    if identifier not in assignment_index:
+                        raise ValueError("Player overlap references a missing assignment")
+                    other, fragment = assignment_index[identifier]
+                    if other["id"] != group["id"]:
+                        candidates[other["id"]] = {
+                            "group_id": other["id"],
+                            "name": other["name"],
+                            "assignment_id": fragment["id"],
+                        }
+            member["matching_candidates"] = sorted(candidates.values(), key=lambda c: c["group_id"])
     output = {
         "version": VERSION,
         "groups": groups,

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "hogline"
-version = "0.29.1"
+version = "0.29.2"
 description = "An evidence-first curling archive and review workbench"
 requires-python = ">=3.12"
 dependencies = [

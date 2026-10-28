@@ -203,3 +203,40 @@ def test_history_and_group_corruption_fail_closed(db, player_result):
         row.document = {**row.document, "name": "Corrupt"}
     with pytest.raises(ValueError, match="checksum"):
         groups(db)
+
+
+def test_ambiguous_overlap_surfaces_candidates_and_never_overrides_manual_split(
+    db, player_result, monkeypatch
+):
+    from hogline.domain import players
+
+    clone_result(db, player_result)
+    source = groups(db)["groups"][0]
+    member = source["members"][0]
+    split = move_fragment(
+        db,
+        member["id"],
+        IdentityMove(
+            expected_revision=member["revision"],
+            expected_source_revision=source["revision"],
+            author="Operator",
+            reason="Keep uncertain groups separate",
+        ),
+    )
+    third = clone_result(db, player_result)
+    ambiguous = [
+        m
+        for g in groups(db)["groups"]
+        for m in g["members"]
+        if m["actor_result_id"] == third["id"] and m["matching_review_needed"]
+    ]
+    assert len(ambiguous) == 1
+    assert {c["group_id"] for c in ambiguous[0]["matching_candidates"]} == {source["id"], split["group_id"]}
+    assert ambiguous[0]["group_id"] not in (source["id"], split["group_id"])
+    monkeypatch.setattr(players, "MAX_OVERLAP_CANDIDATES", 1)
+    limited = clone_result(db, player_result)
+    members = [m for g in groups(db)["groups"] for m in g["members"] if m["actor_result_id"] == limited["id"]]
+    assert all(
+        m["basis"] == "overlap_candidate_limit_kept_separate" and m["matching_review_needed"] for m in members
+    )
+    assert all(not m["matching_candidates"] for m in members)
