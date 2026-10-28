@@ -213,6 +213,43 @@ class EvaluationRun(Base):
     created_at: Mapped[str] = mapped_column(String, default=now)
 
 
+class BoardLabels(Base):
+    __tablename__ = "board_labels"
+    id: Mapped[str] = mapped_column(ForeignKey("evidence_frame.id"), primary_key=True)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    document: Mapped[dict] = mapped_column(JSON)
+    __mapper_args__ = {"version_id_col": revision}
+
+
+class BoardLabelRevision(Base):
+    __tablename__ = "board_label_revision"
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=uid)
+    labels_id: Mapped[str] = mapped_column(ForeignKey("board_labels.id"))
+    number: Mapped[int] = mapped_column(Integer)
+    document: Mapped[dict] = mapped_column(JSON)
+    author: Mapped[str] = mapped_column(String)
+    reason: Mapped[str] = mapped_column(String)
+    created_at: Mapped[str] = mapped_column(String, default=now)
+    __table_args__ = (UniqueConstraint("labels_id", "number"),)
+
+
+class BoardDataset(Base):
+    __tablename__ = "board_evaluation_dataset"
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=uid)
+    sha256: Mapped[str] = mapped_column(String)
+    document: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[str] = mapped_column(String, default=now)
+
+
+class BoardEvaluation(Base):
+    __tablename__ = "board_evaluation_run"
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=uid)
+    dataset_id: Mapped[str] = mapped_column(ForeignKey("board_evaluation_dataset.id"))
+    sha256: Mapped[str] = mapped_column(String)
+    document: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[str] = mapped_column(String, default=now)
+
+
 class Database:
     def __init__(self, settings: Settings):
         self.settings = settings

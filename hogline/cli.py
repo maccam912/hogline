@@ -9,6 +9,14 @@ from hogline.config import Settings
 from hogline.db import Database
 from hogline.domain.catalog import catalog
 from hogline.domain.models import ScanRequest
+from hogline.evaluation.boards import (
+    BoardEvaluationRequest,
+    BoardLabelEdit,
+    board_evaluation_catalog,
+    evaluate_board_dataset,
+    freeze_board_dataset,
+    save_board_labels,
+)
 from hogline.evaluation.datasets import freeze_dataset
 from hogline.evaluation.labels import labels_catalog, save_labels
 from hogline.evaluation.metrics import evaluate_dataset
@@ -79,6 +87,16 @@ def main():
     broadcast = commands.add_parser("analyze-broadcast", help="Resume OCR on pending detailed frames")
     broadcast.add_argument("--limit", type=int, default=120)
     broadcast.add_argument("--max-seconds", type=float, default=120)
+    commands.add_parser("board-benchmark", help="List board labels, frozen datasets and reader evaluations")
+    board_label = commands.add_parser("label-board", help="Save a versioned inspected board annotation")
+    board_label.add_argument("evidence_id")
+    board_label.add_argument("path", help="BoardLabelEdit JSON file")
+    board_freeze = commands.add_parser(
+        "freeze-board-dataset", help="Freeze reviewed board labels and day partitions"
+    )
+    board_freeze.add_argument("path", help="DatasetCreate JSON file")
+    board_evaluate = commands.add_parser("evaluate-board", help="Evaluate cached board reader outputs")
+    board_evaluate.add_argument("path", help="BoardEvaluationRequest JSON file")
     commands.add_parser("labels", help="List saved label views and recording/day groups")
     label_import = commands.add_parser("label-import", help="Import a revisioned label-edit JSON document")
     label_import.add_argument("path")
@@ -189,6 +207,20 @@ def main():
                 result = analyze_cached(db)
             case "analyze-broadcast":
                 result = analyze_broadcast(db, limit=args.limit, max_seconds=args.max_seconds)
+            case "board-benchmark":
+                result = board_evaluation_catalog(db)
+            case "label-board":
+                result = save_board_labels(
+                    db, args.evidence_id, BoardLabelEdit.model_validate_json(Path(args.path).read_text())
+                )
+            case "freeze-board-dataset":
+                result = freeze_board_dataset(
+                    db, DatasetCreate.model_validate_json(Path(args.path).read_text())
+                )
+            case "evaluate-board":
+                result = evaluate_board_dataset(
+                    db, BoardEvaluationRequest.model_validate_json(Path(args.path).read_text())
+                )
             case "labels":
                 result = labels_catalog(db)
             case "label-import":

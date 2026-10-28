@@ -91,6 +91,7 @@ from hogline.perception.stones import VERSION as DETECTOR_VERSION
 from hogline.perception.temporal import VERSION as WINDOW_VERSION
 from hogline.perception.visibility import VERSION as VISIBILITY_VERSION
 from hogline.reconstruction.boundaries import boundary_links
+from hogline.review.board_evaluation import register_board_evaluation
 
 
 class SourceImport(Model):
@@ -128,6 +129,7 @@ def create_app(settings: Settings | None = None, start_worker=False):
 
     app = FastAPI(title="Hogline", version=__version__, lifespan=lifespan)
     app.state.db = db
+    register_board_evaluation(app, db)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "testserver"])
 
     @app.middleware("http")

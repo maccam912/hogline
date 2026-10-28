@@ -1505,3 +1505,35 @@ dialog .primary {
 #reconcile-preview {
   margin: 16px 0;
 }
+
+.board-label-image {
+  width: 100%;
+  height: auto;
+  margin: 12px 0;
+}
+.board-label-columns {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+.board-label-columns input {
+  width: 100%;
+  min-width: 0;
+}
+#board-label-form fieldset {
+  border: 1px solid var(--line, #d7dfd4);
+  margin: 16px 0;
+  padding: 12px;
+}
+.close-board-labels {
+  float: right;
+  border: 0;
+  background: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+}
+#board-evaluation-content table {
+  width: 100%;
+  margin-bottom: 12px;
+  text-align: left;
+}
