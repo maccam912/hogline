@@ -8,7 +8,7 @@ import os
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-SCHEMA_VERSION = "hogline-dense-observations-v3"
+SCHEMA_VERSION = "hogline-dense-observations-v4"
 DETECTION = pa.struct(
     [
         ("color", pa.string()),
@@ -39,7 +39,27 @@ SCHEMA = pa.schema(
         ("motion_mean_abs", pa.float64()),
         (
             "foreground_regions",
-            pa.list_(pa.struct([("bbox_px", pa.list_(pa.int32(), 4)), ("area_px2", pa.int32())])),
+            pa.list_(
+                pa.struct(
+                    [("bbox_px", pa.list_(pa.int32(), 4)), ("area_px2", pa.int32()), ("kind", pa.string())]
+                )
+            ),
+        ),
+        ("visibility_version", pa.string()),
+        (
+            "ring_reference",
+            pa.struct(
+                [
+                    ("status", pa.string()),
+                    ("center_px", pa.list_(pa.float64(), 2)),
+                    ("axes_px", pa.list_(pa.float64(), 2)),
+                    ("angle_degrees", pa.float64()),
+                    ("median_normalized_residual", pa.float64()),
+                    ("band_inner_radius", pa.float64()),
+                    ("band_outer_radius", pa.float64()),
+                    ("missing_reason", pa.string()),
+                ]
+            ),
         ),
         ("detections", pa.list_(DETECTION)),
         (

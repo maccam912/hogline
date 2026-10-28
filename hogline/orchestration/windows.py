@@ -22,7 +22,8 @@ from hogline.orchestration.plans import check_execution, enqueue_in_session, fin
 from hogline.perception.pipeline import analyze_frame
 from hogline.perception.stones import HSVHandleDetector
 from hogline.perception.temporal import VERSION, ConfigurationTracker
-from hogline.perception.visibility import foreground_regions
+from hogline.perception.visibility import VERSION as VISIBILITY_VERSION
+from hogline.perception.visibility import visibility_observation
 
 
 class WindowRequest(Model):
@@ -56,6 +57,7 @@ def window_payload(source, request, layout=None):
         "stage_version": VERSION,
         "decoder_version": DECODER_VERSION,
         "perception_version": HSVHandleDetector.version,
+        "visibility_version": VISIBILITY_VERSION,
     }
 
 
@@ -75,10 +77,16 @@ def execute_window(db, job):
         source = source_or_error(session, request.source_id)
     if source["metadata_sha256"] != job["source_hash"]:
         raise ValueError("Source manifest changed; enqueue a current detailed window")
-    if (job["stage_version"], job["decoder_version"], job["perception_version"]) != (
+    if (
+        job["stage_version"],
+        job["decoder_version"],
+        job["perception_version"],
+        job.get("visibility_version"),
+    ) != (
         VERSION,
         DECODER_VERSION,
         HSVHandleDetector.version,
+        VISIBILITY_VERSION,
     ):
         raise ValueError("Window processing version changed; enqueue current work")
     started, last_tick, token = time.monotonic(), 0, job["lease_token"]
@@ -144,7 +152,7 @@ def execute_window(db, job):
                     "motion_mean_abs": float(np.abs(vector - previous[view]).mean())
                     if view in previous
                     else None,
-                    "foreground_regions": foreground_regions(rgb),
+                    **visibility_observation(rgb),
                     **detector.inspect(rgb),
                 }
                 rows.append(row)
@@ -200,6 +208,7 @@ def execute_window(db, job):
                 "stage_version",
                 "decoder_version",
                 "perception_version",
+                "visibility_version",
             )
         },
         db.settings.data_dir,
@@ -217,6 +226,7 @@ def execute_window(db, job):
         "version": VERSION,
         "decoder_version": DECODER_VERSION,
         "model_version": detector.version,
+        "visibility_version": VISIBILITY_VERSION,
         "sample_count": len(rows) // 2,
         "observed_first_seconds": rows[0]["source_seconds"],
         "observed_last_seconds": rows[-1]["source_seconds"],
@@ -229,7 +239,19 @@ def execute_window(db, job):
             view: {
                 "samples": sum(r["view"] == view for r in rows),
                 "no_handle_candidates": sum(r["view"] == view and not r["detections"] for r in rows),
-                "large_dark_regions": sum(r["view"] == view and bool(r["foreground_regions"]) for r in rows),
+                "large_dark_regions": sum(
+                    r["view"] == view
+                    and any(f["kind"] == "large_dark_region" for f in r["foreground_regions"])
+                    for r in rows
+                ),
+                "ring_obstructions": sum(
+                    r["view"] == view
+                    and any(f["kind"] == "blue_ring_obstruction" for f in r["foreground_regions"])
+                    for r in rows
+                ),
+                "missing_ring_reference": sum(
+                    r["view"] == view and r["ring_reference"]["status"] != "candidate" for r in rows
+                ),
                 "clipped_handle_candidates": sum(
                     r["view"] == view and any(d["boundary_clipped"] for d in r["detections"]) for r in rows
                 ),

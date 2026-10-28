@@ -14,7 +14,7 @@ from hogline.db import AnalysisWindow, Evidence, Job, Scan
 from hogline.domain.catalog import catalog
 from hogline.orchestration import windows, worker
 from hogline.perception.temporal import persistent_configurations
-from hogline.perception.visibility import foreground_regions
+from hogline.perception.visibility import foreground_regions, visibility_observation
 from hogline.review.app import create_app
 
 
@@ -28,6 +28,7 @@ def row(index, *, x=50, color="red", clipped=False, count=1, motion=0, seconds=N
         "crop_height": 300,
         "motion_mean_abs": motion,
         "foreground_regions": [],
+        "ring_reference": {"status": "candidate"},
         "detections": [
             {"center_px": [x + n * 20, 50], "color": color, "boundary_clipped": clipped} for n in range(count)
         ],
@@ -44,6 +45,8 @@ def test_persistence_requires_positions_colors_visibility_motion_and_time():
         {**row(i), "foreground_regions": [{"bbox_px": [0, 0, 50, 50], "area_px2": 2000}]} for i in range(8)
     ]
     assert persistent_configurations(obstructed) == []
+    no_reference = [{**row(i), "ring_reference": {"status": "unavailable"}} for i in range(8)]
+    assert persistent_configurations(no_reference) == []
     assert persistent_configurations([row(i, x=50 + i) for i in range(4)]) == []  # Slow drift.
     assert persistent_configurations([row(i, color="red" if i % 2 else "yellow") for i in range(8)]) == []
     assert persistent_configurations([row(0), row(1), row(2), row(3, seconds=6)]) == []
@@ -56,6 +59,7 @@ def test_persistence_requires_positions_colors_visibility_motion_and_time():
 def fake_window(monkeypatch):
     image = Image.new("RGB", (1280, 720), "white")
     draw = ImageDraw.Draw(image)
+    draw.ellipse((500, 20, 780, 300), outline=(45, 55, 180), width=25)
     draw.ellipse((536, 126, 550, 140), fill=(225, 20, 20))
     draw.ellipse((577, 170, 591, 184), fill=(240, 205, 20))
     draw.ellipse((647, 197, 653, 203), fill=(225, 20, 20))
@@ -96,7 +100,7 @@ def test_dense_window_has_columnar_rows_bounded_anchors_and_no_games(db, sources
     rejected = table.to_pylist()[0]["rejected_candidates"]
     assert len(rejected) == 1
     assert rejected[0]["rejection_reasons"] == ["colored_area_below_crop_prior"]
-    assert table.schema.metadata[b"hogline.schema_version"] == b"hogline-dense-observations-v3"
+    assert table.schema.metadata[b"hogline.schema_version"] == b"hogline-dense-observations-v4"
     assert table.schema.field("pts").type.bit_width == 64
     assert table.to_pylist()[0]["detections"][0]["color"] == "red"
     manifest = json.loads(table.schema.metadata[b"hogline.input_manifest"])
@@ -160,7 +164,26 @@ def test_dark_foreground_gate_scales_and_does_not_claim_people(size):
     assert foreground_regions(np.asarray(image)) == []
     draw.rectangle((size // 8, size // 2, size // 3, 3 * size // 4), fill=(30, 30, 35))
     regions = foreground_regions(np.asarray(image))
-    assert len(regions) == 1 and regions[0]["area_px2"] > size**2 * 0.01
+    assert any(r["kind"] == "large_dark_region" and r["area_px2"] > size**2 * 0.01 for r in regions)
+
+
+@pytest.mark.parametrize("size", [320, 480])
+def test_blue_ring_reference_catches_bright_gray_occlusion_but_not_small_granite(size):
+    image = Image.new("RGB", (size, size), "white")
+    draw = ImageDraw.Draw(image)
+    draw.ellipse(
+        (size * 0.05, size * 0.05, size * 0.95, size * 0.95), outline=(45, 55, 180), width=round(size * 0.15)
+    )
+    draw.ellipse((size * 0.08, size * 0.47, size * 0.14, size * 0.53), fill=(140, 140, 140))
+    measured = visibility_observation(np.asarray(image))
+    assert measured["ring_reference"]["status"] == "candidate"
+    assert measured["foreground_regions"] == []
+    draw.rectangle((size * 0.07, size * 0.36, size * 0.22, size * 0.57), fill=(140, 140, 140))
+    measured = visibility_observation(np.asarray(image))
+    assert measured["foreground_regions"]
+    assert all(r["kind"] == "blue_ring_obstruction" for r in measured["foreground_regions"])
+    # An unchanged colored object on this static obstruction must not become a configuration.
+    assert persistent_configurations([{**row(i), **measured} for i in range(8)]) == []
 
 
 def test_explicit_reanalysis_preserves_old_logical_window(db, sources, fake_window):

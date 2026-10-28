@@ -5,7 +5,7 @@ import math
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 
-VERSION = "handle-configuration-persistence-v2"
+VERSION = "handle-configuration-persistence-v3"
 MIN_SAMPLES = 4
 MIN_SECONDS = 1.5
 MAX_MOTION = 2.5  # Mean absolute grayscale difference on 96x96 house crops, 0..255.
@@ -60,6 +60,7 @@ class ConfigurationTracker:
         run = self.runs.setdefault(view, [])
         usable = (
             bool(row["detections"])
+            and row.get("ring_reference", {}).get("status") == "candidate"
             and not row["foreground_regions"]
             and not any(d["boundary_clipped"] for d in row["detections"])
         )

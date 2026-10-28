@@ -16,7 +16,7 @@ The API serves `GET /api/windows/WINDOW_ID/observations.parquet` only after chec
 
 ## Experimental persistence checks
 
-`handle-configuration-persistence-v2` requires at least four distinct samples spanning 1.5 seconds. The complete candidate set must match by color and position against both the first and previous samples. Global crop motion, gaps, count/position/color changes, clipped candidates, or large dark regions split the run. An empty detection list is unknown visibility/detection, not an empty-house claim.
+`handle-configuration-persistence-v3` requires at least four distinct samples spanning 1.5 seconds. The complete candidate set must match by color and position against both the first and previous samples. Global crop motion, gaps, count/position/color changes, clipped candidates, large dark regions, blue-ring obstructions, or an unavailable ring reference split the run. An empty detection list is unknown visibility/detection, not an empty-house claim.
 
 The dark-region check uses low-value, modest-saturation connected components larger than 1% of the crop, with a minimum extent. It flags possible obstruction. It is not a person detector: logos or granite clusters may also trigger it, and people can be missed. Its absence does not establish clear ice. These thresholds are experimental and are not calibrated probabilities or measured accuracy rates.
 
@@ -28,3 +28,16 @@ Configuration proposals carry exact source times, anchor IDs, and YouTube links.
 The v5 handle detector preserves rejected color/shape proposals in `hogline-dense-observations-v3` Parquet with a `rejection_reasons` list. The workbench distinguishes windows made with earlier detector versions even when the persistence method is unchanged. A detector upgrade does not overwrite prior window manifests or publish an accepted game state.
 
 Four real ten-second windows (January Sheet 5, March Sheets 3, 4, and 6) were rerun with v5: 160 rows, 47 retained rejections, 51 worker seconds total. All files passed checksum and source-time checks. The persistence gate still abstained on all four intervals because of clipping/foreground/motion; a better handle detector alone does not establish a complete settled house.
+
+
+## Brighter foreground and varying painted rings
+
+`dark-and-blue-ring-obstruction-v2` adds an image-space cue for gray or brighter objects that interrupt the blue house ring. It fits the existing blue ellipse, computes blue-pixel support in one-percent radial bins, and finds the outermost continuous band of at least ten bins with 70% blue support. It trims the band edges before testing non-blue connected regions with the same 1%-area / 15%-extent thresholds as the dark-region gate. The painted width is measured per crop rather than assumed identical on every sheet. These are image priors, not a surveyed calibration.
+
+The dense `hogline-dense-observations-v4` schema stores the fitted reference, measured band radii, visibility method, obstruction kind, bounding box, and area. The manifest pins the visibility method alongside detector, decoder, and persistence versions. Missing/unusable ring references cause persistence to abstain. The UI separately counts dark-region, ring-obstruction, and unavailable-reference samples; old window manifests remain unchanged and visibly carry earlier-version status.
+
+Across 198 retained detailed overhead views from all eight sheets, reference fitting produced a usable blue-band candidate in each view. Thirty views triggered the darkness cue and eleven triggered the ring cue; categories overlap. Both anchors of the newly discovered gray-clothing failure now trigger the ring cue. These are development checks, not independent obstruction recall/precision. Synthetic cases cover narrow/wide painted rings, both 320- and 480-pixel crops, a small gray stone, a large bright-gray obstruction, and absent ring support.
+
+A person entirely inside the inner white/green rings, blue clothing, a bad ellipse, glare, or an unfamiliar layout can still evade or confuse these checks. Stone clusters and painted markings can also trigger conservative abstention. Absence of a flag never establishes clear ice. The v5 handle detector still has the two garment false positives in the 19-view development dataset; the visibility change prevents the bad configuration proposal rather than claiming to fix those detections.
+
+The v3 persistence / v2 visibility rerun decoded four ten-second windows on Sheets 2, 4 (both recordings), and 6: 160 rows in 31.4 worker seconds. The gray-clothing interval flagged blue-ring obstruction in 19 of 20 top-house samples and produced no persistent configuration. The earlier four-candidate proposal remains in history. Artifact checksums, manifest versions, source time bounds, and the browser comparison were verified.

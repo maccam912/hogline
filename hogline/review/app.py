@@ -35,6 +35,7 @@ from hogline.evaluation.datasets import dataset_catalog, freeze_dataset
 from hogline.evaluation.labels import label_id, labels_catalog, save_labels
 from hogline.evaluation.metrics import evaluate_dataset, run_catalog
 from hogline.evaluation.models import DatasetCreate, EvaluationRequest, LabelEdit
+from hogline.media.windows import VERSION as DECODER_VERSION
 from hogline.orchestration.adaptive import (
     AdaptiveRequest,
     AdaptiveStart,
@@ -64,6 +65,7 @@ from hogline.perception.broadcast import analyze_broadcast, broadcast_catalog_in
 from hogline.perception.pipeline import analyze_cached, observations_in_session
 from hogline.perception.stones import VERSION as DETECTOR_VERSION
 from hogline.perception.temporal import VERSION as WINDOW_VERSION
+from hogline.perception.visibility import VERSION as VISIBILITY_VERSION
 from hogline.reconstruction.boundaries import boundary_links
 
 
@@ -128,6 +130,8 @@ def create_app(settings: Settings | None = None, start_worker=False):
                 "observations": observations_in_session(session),
                 "window_version": WINDOW_VERSION,
                 "window_detector_version": DETECTOR_VERSION,
+                "window_visibility_version": VISIBILITY_VERSION,
+                "window_decoder_version": DECODER_VERSION,
                 "broadcast": broadcast,
                 "source_boundary_links": boundary_links(
                     data["sources"],

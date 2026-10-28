@@ -5,7 +5,9 @@
     (Number.isInteger(n) ? "" : (n % 1).toFixed(3).slice(1).replace(/0+$/, ""));
   const currentVersion = (w) =>
     w.version === state.data.window_version &&
-    w.model_version === state.data.window_detector_version;
+    w.model_version === state.data.window_detector_version &&
+    w.visibility_version === state.data.window_visibility_version &&
+    w.decoder_version === state.data.window_decoder_version;
   function renderWindows() {
     const windows = (state.data.analysis_windows || [])
       .filter((w) => w.source_id === state.source)
@@ -24,11 +26,11 @@
               .filter((e) => w.anchor_evidence_ids.includes(e.id))
               .sort((a, b) => a.source_seconds - b.source_seconds);
             return `<article class="batch-card"><div class="batch-heading"><strong>${stamp(w.request.start_seconds)}–${stamp(w.request.end_seconds)}</strong><span class="pill ${stale || older ? "amber" : ""}">${stale ? "earlier source manifest" : older ? "earlier analysis version" : "proposed"}</span></div>
-          ${older ? '<p class="fine-print">This run predates the current detector or persistence checks. Reanalyze it to apply the current method.</p>' : ""}
+          ${older ? '<p class="fine-print">This run predates the current vision checks. Reanalyze it to apply the current method.</p>' : ""}
           <p>${w.sample_count} discrete samples in each overhead view · ${w.anchor_evidence_ids.length} retained frames</p>
           ${anchors.length ? `<div class="batch-actions"><button class="button quiet" data-window-evidence="${escapeHTML(anchors[0].id)}" data-window-view="composite">View window start →</button><button class="button quiet" data-window-evidence="${escapeHTML(anchors.at(-1).id)}" data-window-view="composite">View window end →</button></div>` : ""}
           <p class="fine-print">Observed ${stamp(w.observed_first_seconds)}–${stamp(w.observed_last_seconds)} · ${w.request.interval_seconds}s minimum interval · ${(w.parquet.bytes / 1024).toFixed(1)} KB of dense observations</p>
-          ${w.candidates.length ? w.candidates.map((c) => `<div class="window-candidate"><strong>${c.view === "house_top" ? "Top" : "Bottom"} overhead · ${c.candidate_count} persistent handle candidates</strong><p class="fine-print">${stamp(c.start_seconds)}–${stamp(c.end_seconds)} · ${c.sample_indices.length} samples · scoring unresolved</p><div class="batch-actions"><button class="button quiet" data-window-evidence="${escapeHTML(c.evidence_ids[0])}" data-window-view="${c.view}">Inspect first anchor →</button><button class="button quiet" data-window-evidence="${escapeHTML(c.evidence_ids.at(-1))}" data-window-view="${c.view}">Inspect last anchor →</button>${c.youtube_url ? `<a class="evidence-link" href="${escapeHTML(c.youtube_url)}" target="_blank" rel="noopener">Check on YouTube ↗</a>` : ""}</div></div>`).join("") : "<p>No configuration passed the current detector or persistence checks. Hidden or undetected stones remain unknown.</p>"}
+          ${w.candidates.length ? w.candidates.map((c) => `<div class="window-candidate"><strong>${c.view === "house_top" ? "Top" : "Bottom"} overhead · ${c.candidate_count} persistent handle candidates</strong><p class="fine-print">${stamp(c.start_seconds)}–${stamp(c.end_seconds)} · ${c.sample_indices.length} samples · scoring unresolved</p><div class="batch-actions"><button class="button quiet" data-window-evidence="${escapeHTML(c.evidence_ids[0])}" data-window-view="${c.view}">Inspect first anchor →</button><button class="button quiet" data-window-evidence="${escapeHTML(c.evidence_ids.at(-1))}" data-window-view="${c.view}">Inspect last anchor →</button>${c.youtube_url ? `<a class="evidence-link" href="${escapeHTML(c.youtube_url)}" target="_blank" rel="noopener">Check on YouTube ↗</a>` : ""}</div></div>`).join("") : "<p>No configuration passed the current vision checks. Hidden or undetected stones remain unknown.</p>"}
           ${w.deferred_candidate_count ? `<p class="fine-print">${w.deferred_candidate_count} further configurations remain in the dense observations without retained candidate anchors.</p>` : ""}
           ${
             w.diagnostics
@@ -37,7 +39,7 @@
                 )
                   .map(
                     ([view, d]) =>
-                      `<p class="fine-print">${view === "house_top" ? "Top" : "Bottom"}: ${d.samples} samples · ${d.no_handle_candidates} without handle candidates · ${d.large_dark_regions} with large dark regions · ${d.clipped_handle_candidates} with clipped candidates · ${d.high_motion} with high motion · ${d.rejected_color_candidates || 0} color candidates rejected by shape/size checks. Checks can overlap; absence of a flag does not establish clear ice.</p>`,
+                      `<p class="fine-print">${view === "house_top" ? "Top" : "Bottom"}: ${d.samples} samples · ${d.no_handle_candidates} without handle candidates · ${d.large_dark_regions} with large dark regions · ${d.ring_obstructions || 0} with blue-ring obstruction · ${d.missing_ring_reference || 0} without a usable ring reference · ${d.clipped_handle_candidates} with clipped candidates · ${d.high_motion} with high motion · ${d.rejected_color_candidates || 0} color candidates rejected by shape/size checks. Checks can overlap; absence of a flag does not establish clear ice.</p>`,
                   )
                   .join("")}</details>`
               : ""
