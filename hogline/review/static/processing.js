@@ -167,4 +167,5 @@
     }
   });
   window.hoglineProcessing = { render };
+  render();
 })();

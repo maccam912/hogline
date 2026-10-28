@@ -185,6 +185,7 @@ function render() {
   renderGames();
   renderJobs();
   window.hoglineProcessing?.render();
+  window.hoglineBoundaries?.render();
 }
 function renderFrame() {
   const src = source(),
@@ -269,13 +270,19 @@ function renderBroadcast(frame) {
         `<figure><img src="/api/broadcast/${observation.id}/${name}" alt="Source evidence crop: ${escapeHTML(name)}"><figcaption>${escapeHTML(name.replaceAll("_", " "))}</figcaption></figure>`,
     )
     .join("");
+  const layoutInfo = board.layout_alignment;
+  const clockDetails = [
+    ...(clock.date_reads || []).map((r) => ["Date", r]),
+    ...(clock.time_reads || []).map((r) => ["Time", r]),
+  ];
+  const diagnostics = `<details class="broadcast-diagnostics"><summary>Clock readings and layout checks</summary>${clock.ocr_conflict ? '<p class="fine-print">Competing valid OCR readings remain. Temporal mappings can support an alternative without rewriting this frame.</p>' : ""}${clockDetails.map(([kind, r]) => `<p class="fine-print">${kind}: ${escapeHTML(r.text || "unreadable")} · ${escapeHTML(r.crop || "seed crop")} · ${escapeHTML(r.preprocessing || "otsu")}</p>`).join("")}${layoutInfo ? `<p class="fine-print">Board alignment: ${escapeHTML(layoutInfo.status.replaceAll("_", " "))}${layoutInfo.translation_source_px ? ` · proposed crop translation ${layoutInfo.translation_source_px.join(", ")} pixels` : ""}. Experimental check; all scores remain proposals.</p>` : ""}${board.missing_reason ? `<p class="fine-print">${escapeHTML(board.missing_reason.replaceAll("_", " "))}</p>` : ""}</details>`;
   const cards = board.cards
     .map(
       (c) =>
         `<span class="board-card ${c.color}">End ${c.end_number ?? "?"} → ${c.cumulative_points} cumulative</span>`,
     )
     .join("");
-  panel.innerHTML = `<p class="fine-print">${width} × ${height} source pixels · seed views uncalibrated · sheet ${observation.sheet}</p><div class="broadcast-crops">${crops}</div><h4>Observed clock</h4><p>${escapeHTML(clock.date_text || "Date unreadable")} · ${escapeHTML(clock.time_text || "Time unreadable")}</p><p class="fine-print">${clock.candidates.length ? `${clock.candidates.length} wall-time alternative${clock.candidates.length === 1 ? "" : "s"} · ${clock.ambiguous ? "AM/PM or DST remains ambiguous" : "mapping still proposed"}` : escapeHTML(clock.missing_reason || "Clock not resolved")}. The recording title is not substituted for an unreadable overlay.</p><h4>Traditional board</h4>${board.status === "unconfigured" ? '<p class="fine-print">No scoreboard template is configured for this sheet. The Sheet 4 crop is not reused here.</p>' : `<div class="board-cards">${cards || '<p class="fine-print">No legible scoring cards.</p>'}</div><p class="fine-print">Numbers on movable cards identify ends; board position is cumulative points. ${board.unreadable_slots?.length || 0} occupied slots unreadable. Storage and blank markers remain uninterpreted.</p>`}${proposals.length ? `<h4>Persistent score proposals</h4>${proposals.map((p) => `<div class="score-proposal"><span>End ${p.official_number}: ${p.color} +${p.points}</span><a class="evidence-link" target="_blank" rel="noopener" href="${escapeHTML(p.youtube_links[0])}">${p.evidence_ids.length} frames ↗</a><button class="button quiet" data-score-proposal="${p.id}">Add to game review →</button></div>`).join("")}` : '<p class="fine-print">No score proposal has passed the temporal consistency checks.</p>'}`;
+  panel.innerHTML = `${diagnostics}<p class="fine-print">${width} × ${height} source pixels · seed views uncalibrated · sheet ${observation.sheet}</p><div class="broadcast-crops">${crops}</div><h4>Observed clock</h4><p>${escapeHTML(clock.date_text || (clock.candidates.length ? "Date alternatives unresolved" : "Date unreadable"))} · ${escapeHTML(clock.time_text || (clock.candidates.length ? "Time alternatives unresolved" : "Time unreadable"))}</p><p class="fine-print">${clock.candidates.length ? `${clock.candidates.length} wall-time alternative${clock.candidates.length === 1 ? "" : "s"} · ${clock.ambiguous ? "OCR, AM/PM or DST alternatives remain" : "mapping still proposed"}` : escapeHTML(clock.missing_reason || "Clock not resolved")}. The recording title is not substituted for an unreadable overlay.</p><h4>Traditional board</h4>${board.status === "unconfigured" ? '<p class="fine-print">Board reading is unavailable for this recording, time, or alignment. Its source crop and missing reason remain available.</p>' : `<div class="board-cards">${cards || '<p class="fine-print">No legible scoring cards.</p>'}</div><p class="fine-print">Numbers on movable cards identify ends; board position is cumulative points. ${board.unreadable_slots?.length || 0} occupied slots unreadable. Storage and blank markers remain uninterpreted.</p>`}${proposals.length ? `<h4>Score proposals from this recording</h4>${proposals.map((p) => `<div class="score-proposal"><span>End ${p.official_number}: ${p.color} +${p.points}</span><a class="evidence-link" target="_blank" rel="noopener" href="${escapeHTML(p.youtube_links[0])}">${p.evidence_ids.length} frames · ${time(p.source_start_seconds)} ↗</a><button class="button quiet" data-score-proposal="${p.id}">Add to game review →</button></div>`).join("")}` : '<p class="fine-print">No score proposal has passed the temporal consistency checks.</p>'}`;
 }
 
 function useScoreProposal(id) {
@@ -551,7 +558,10 @@ function renderEditor() {
             `span-${i}-source`,
             state.data.sources
               .filter((src) => src.sheet === game.sheet)
-              .map((src) => [src.id, src.title]),
+              .map((src) => [
+                src.id,
+                `${src.title} · ${time(src.duration_seconds)} · ${src.platform_id.slice(0, 8)}`,
+              ]),
             s.source_id,
           )}<div class="form-grid three">${input("Start · HH:MM:SS", `span-${i}-start`, time(s.start_seconds))}${input("End · HH:MM:SS", `span-${i}-end`, time(s.end_seconds))}${select(
             "Relationship",

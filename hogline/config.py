@@ -29,4 +29,26 @@ def profile():
             raise ValueError("Crop bounds must contain four normalized coordinates")
         if bounds[0] >= bounds[2] or bounds[1] >= bounds[3]:
             raise ValueError("Crop bounds must have positive width and height")
+    for template in layout.get("broadcast", {}).get("scoreboards", {}).values():
+        reference = template.get("layout_reference")
+        if reference:
+            bounds = reference.get("header_bounds", [])
+            if (
+                not isinstance(reference.get("source_key"), str)
+                or not isinstance(reference.get("source_seconds"), (int, float))
+                or not 0 <= reference["source_seconds"] < float("inf")
+                or len(bounds) != 4
+                or not all(isinstance(v, (int, float)) and 0 <= v <= 1 for v in bounds)
+                or bounds[0] >= bounds[2]
+                or bounds[1] >= bounds[3]
+            ):
+                raise ValueError("Layout reference needs a source/time and ordered normalized header bounds")
+        for scope in template.get("source_intervals", []):
+            if (
+                not isinstance(scope.get("source_key"), str)
+                or not isinstance(scope.get("start_seconds"), (int, float))
+                or not isinstance(scope.get("end_seconds"), (int, float))
+                or not 0 <= scope["start_seconds"] < scope["end_seconds"] < float("inf")
+            ):
+                raise ValueError("Scoreboard scope needs a stable source key and finite ordered source times")
     return layout

@@ -106,7 +106,29 @@
           0.8630952380952381,
           0.9315476190476191
         ],
-        "status": "sheet4_march17_seed_not_other_sheets"
+        "status": "recording_scoped_seed_with_experimental_header_alignment",
+        "source_intervals": [
+          {
+            "source_key": "youtube:es9urvYvLiE",
+            "start_seconds": 0,
+            "end_seconds": 2210
+          },
+          {
+            "source_key": "youtube:zN855hwsYxY",
+            "start_seconds": 0,
+            "end_seconds": 7455
+          }
+        ],
+        "layout_reference": {
+          "source_key": "youtube:es9urvYvLiE",
+          "source_seconds": 300,
+          "header_bounds": [
+            0.13,
+            0.37,
+            0.99,
+            0.67
+          ]
+        }
       }
     }
   }

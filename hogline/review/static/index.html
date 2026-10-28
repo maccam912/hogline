@@ -9,6 +9,7 @@
     <script src="/static/evaluation.js" defer></script>
     <script src="/static/processing.js" defer></script>
     <script src="/static/discovery.js" defer></script>
+    <script src="/static/boundaries.js" defer></script>
   </head>
   <body>
     <header>
@@ -19,7 +20,7 @@
       ><span class="header-label">THE CURLING ARCHIVE</span>
       <div class="header-right">
         <span class="local-light"></span> LOCAL WORKBENCH
-        <span class="version">PILOT 0.5</span>
+        <span class="version">PILOT 0.6</span>
       </div>
     </header>
     <div class="shell">
@@ -231,6 +232,15 @@
                 <span class="fine-print">Motion does not establish a game</span>
               </div>
               <div id="activity-list"></div>
+              <section id="source-boundary-panel" hidden>
+                <div class="section-heading">
+                  <h2>Recording links to review</h2>
+                  <span class="fine-print"
+                    >Game membership remains proposed</span
+                  >
+                </div>
+                <div id="source-boundary-list"></div>
+              </section>
               <div class="section-heading games-heading">
                 <h2>Games in this recording</h2>
                 <button class="button quiet" id="add-game">
@@ -451,6 +461,12 @@
       </button>
     </dialog>
     <div id="toast" role="status" aria-live="polite" hidden></div>
+    <dialog id="boundary-dialog">
+      <button class="close-dialog" type="button" aria-label="Close">×</button
+      ><span class="eyebrow">TWO RECORDINGS · ONE QUESTION</span>
+      <h2>Inspect a recording link</h2>
+      <div id="boundary-comparison"></div>
+    </dialog>
     <dialog id="discovery-dialog">
       <button class="close-dialog" type="button" aria-label="Close">×</button>
       <span class="eyebrow">METADATA FIRST</span>

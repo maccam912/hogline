@@ -10,14 +10,25 @@ from hogline.config import profile
 from hogline.db import Evidence, FrameObservation, Source
 from hogline.media.clocks import fit_clock_hypotheses, parse_overlay
 from hogline.media.frames import EvidenceBudget, save_image
+from hogline.perception.layout import board_alignment, reference_image
 from hogline.perception.ocr import TesseractOCR, normalized_crop
+from hogline.perception.overlay_clock import read_clock
 from hogline.perception.scoreboard import persistent_board_claims, read_board
 
-VERSION = "traditional-board-clock-v3"
+VERSION = "traditional-board-clock-v7"
 
 
 def broadcast_version(layout):
     return f"{VERSION}:{digest(layout.get('broadcast', {}))[:16]}"
+
+
+def template_applies(template, source, seconds):
+    """Explicit source/time scope; sheet identity alone cannot select a layout."""
+    key = f"{source['platform']}:{source['platform_id']}"
+    return any(
+        scope["source_key"] == key and scope["start_seconds"] <= seconds < scope["end_seconds"]
+        for scope in template.get("source_intervals", [])
+    )
 
 
 def analyze_broadcast_frame(session, frame, root, layout, reader, budget):
@@ -38,17 +49,15 @@ def analyze_broadcast_frame(session, frame, root, layout, reader, budget):
     source = session.get(Source, frame.source_id).document
     config = layout.get("broadcast", {})
     clock_config = config.get("clock", {})
-    date_read, time_read = {"text": ""}, {"text": ""}
+    clock = parse_overlay("", "", layout["timezone"])
     crops = {}
     if clock_config:
         date_image = normalized_crop(image, clock_config["date_bounds"])
         time_image = normalized_crop(image, clock_config["time_bounds"])
-        date_read = reader.read(date_image, whitelist="0123456789/", psm=13)
-        time_read = reader.read(time_image, whitelist="0123456789:APM", psm=7)
+        clock, tight_date = read_clock(date_image, time_image, reader, layout["timezone"])
         crops["clock_date"] = save_image(date_image, root, budget)
+        crops["clock_date_tight"] = save_image(tight_date, root, budget)
         crops["clock_time"] = save_image(time_image, root, budget)
-    clock = parse_overlay(date_read["text"], time_read["text"], layout["timezone"])
-    clock["raw_date_ocr"], clock["raw_time_ocr"] = date_read, time_read
     clock["template_status"] = clock_config.get("status", "unconfigured")
     board_config = config.get("scoreboards", {}).get(str(source.get("sheet")))
     board = {
@@ -57,14 +66,39 @@ def analyze_broadcast_frame(session, frame, root, layout, reader, budget):
         "cards": [],
         "acceptance": "unknown",
     }
-    if board_config:
-        board = {"status": "observed", **read_board(image, board_config, reader)}
-        crops["scoreboard"] = save_image(normalized_crop(image, board_config["bounds"]), root, budget)
+    if board_config and template_applies(board_config, source, frame.document["source_seconds"]):
+        reference, reference_manifest = reference_image(session, root, board_config)
+        alignment = (
+            board_alignment(image, reference, board_config) if reference is not None else reference_manifest
+        )
+        board["layout_alignment"] = {**alignment, "reference": reference_manifest}
+        if alignment["status"] in ("compatible_seed", "translated_seed"):
+            effective_config = {**board_config, "bounds": alignment["effective_bounds"]}
+            board = {**board, "status": "observed", **read_board(image, effective_config, reader)}
+            board["template_source_intervals"] = board_config["source_intervals"]
+            board["effective_bounds"] = effective_config["bounds"]
+            board["missing_reason"] = None
+            crops["scoreboard"] = {
+                **save_image(normalized_crop(image, effective_config["bounds"]), root, budget),
+                "normalized_bounds": effective_config["bounds"],
+            }
+            if alignment["status"] == "translated_seed":
+                crops["scoreboard_seed"] = save_image(
+                    normalized_crop(image, board_config["bounds"]), root, budget
+                )
+        else:
+            board["missing_reason"] = alignment.get("missing_reason", "scoreboard_layout_drift_or_occlusion")
+            crops["scoreboard_candidate"] = save_image(
+                normalized_crop(image, board_config["bounds"]), root, budget
+            )
+    elif board_config:
+        board["missing_reason"] = "scoreboard_template_not_applicable_to_source_time"
     doc = {
         "id": identifier,
         "kind": "broadcast_observation",
         "evidence_id": frame.id,
         "source_id": frame.source_id,
+        "source_metadata_sha256": frame.document.get("source_metadata_sha256"),
         "sheet": source.get("sheet"),
         "source_seconds": frame.document["source_seconds"],
         "pts": frame.document["pts"],

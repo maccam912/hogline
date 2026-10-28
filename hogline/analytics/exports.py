@@ -7,12 +7,14 @@ from hogline.db import Release, now
 from hogline.domain.catalog import catalog
 from hogline.perception.broadcast import broadcast_catalog
 from hogline.perception.pipeline import observations
+from hogline.reconstruction.boundaries import boundary_links
 
 
 def snapshot(db, mode="confirmed"):
     if mode not in ("confirmed", "exploratory"):
         raise ValueError("Export mode must be confirmed or exploratory")
     data = catalog(db)
+    broadcast = broadcast_catalog(db)
     games = data["games"]
     if mode == "confirmed":
         games = [g for g in games if g["acceptance"] == "human_confirmed"]
@@ -34,7 +36,13 @@ def snapshot(db, mode="confirmed"):
         "sources": data["sources"],
         "evidence": data["evidence"],
         "observations": observations(db),
-        "broadcast": broadcast_catalog(db),
+        "broadcast": broadcast,
+        "source_boundary_links": boundary_links(
+            data["sources"],
+            broadcast["observations"],
+            broadcast["version"],
+            {e["id"] for e in data["evidence"]},
+        ),
         "activity_timelines": data["timelines"],
         "coverage": {
             "inventoried_recordings": len(data["sources"]),

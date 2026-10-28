@@ -702,6 +702,22 @@ input::placeholder {
 .discovery-card {
   margin-top: 14px;
 }
+.boundary-frame {
+  margin: 20px 0;
+}
+.boundary-frame img {
+  width: 100%;
+  display: block;
+  margin: 10px 0;
+}
+.boundary-frame figcaption {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.broadcast-diagnostics {
+  margin-bottom: 16px;
+}
 .time-jump {
   display: flex;
   gap: 10px;

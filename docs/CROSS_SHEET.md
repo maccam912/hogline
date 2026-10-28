@@ -1,13 +1,14 @@
 # Cross-sheet source checks — October 27, 2026
 
-Bounded metadata discovery found recordings for all eight sheets. The retained-media validation corpus covers nine recordings and 49 detailed frames, including the older January Sheet 5 stream. Later coarse-tier checks add 11 activity-only frames, for 60 retained frames in total. No complete video was downloaded or committed. Images and OCR outputs remain in the ignored data directory.
+Bounded metadata discovery found recordings for all eight sheets. The retained-media validation corpus covers ten recordings and 58 detailed frames, including the older January Sheet 5 stream. Later coarse-tier checks add 11 activity-only frames, for 69 retained frames in total. No complete video was downloaded or committed. Images and OCR outputs remain in the ignored data directory.
 
 | Sheet | Source / title date | Selected frame resolution | Retained source seconds |
 | --- | --- | --- | --- |
 | 1 | [2026-03-17](https://www.youtube.com/watch?v=BXv6b907n7A&t=0s) | 1920 × 1080 | 300.0, 315.0, 330.0, 5400.0, 5415.0, 5430.0 |
 | 2 | [2026-03-17](https://www.youtube.com/watch?v=bBsHR8TsKOc&t=0s) | 1280 × 720 | 300.0, 315.0, 330.0, 5400.0, 5415.0, 5430.0 |
 | 3 | [2026-03-17](https://www.youtube.com/watch?v=KR0Cy0UhU9s&t=0s) | 1920 × 1080 | 300.0, 315.0, 330.0, 5400.0, 5415.0, 5430.0 |
-| 4 | [2026-03-17](https://www.youtube.com/watch?v=es9urvYvLiE&t=0s) | 1920 × 1080 | 300.0, 310.0, 315.0, 330.0 |
+| 4 | [2026-03-17 fragment](https://www.youtube.com/watch?v=es9urvYvLiE&t=0s) | 1920 × 1080 | 0.0, 15.0, 30.0, 300.0, 310.0, 315.0, 330.0 |
+| 4 | [2026-03-17 long upload](https://www.youtube.com/watch?v=zN855hwsYxY&t=0s) | 1920 × 1080 | 300.0, 315.0, 330.0, 7395.0, 7410.0, 7425.0 |
 | 5 | [2026-01-16](https://www.youtube.com/watch?v=976gtQn17P0&t=0s) | 1920 × 1080 | 1800.0, 1815.0, 1830.0 |
 | 5 | [2026-03-17](https://www.youtube.com/watch?v=qBE25ciL0K4&t=0s) | 1920 × 1080 | 300.0, 315.0, 330.0, 5400.0, 5415.0, 5430.0 |
 | 6 | [2026-03-17](https://www.youtube.com/watch?v=bxsiCiRMBUk&t=0s) | 1920 × 1080 | 300.0, 315.0, 330.0, 5400.0, 5415.0, 5430.0 |
@@ -18,7 +19,7 @@ Bounded metadata discovery found recordings for all eight sheets. The retained-m
 
 - Sheet 2's selected encode is 1280×720; the others sampled here are 1920×1080. Normalized crops scale to the actual image, giving 320-pixel versus 480-pixel house views. A resolution increase cannot recover missing detail.
 - All eight March samples contain the expected two central overhead views, but house centers, apparent ring diameters, exposure, center logos, and nearby occlusions differ. The OpenCV fits are per frame/view, with no shared metric calibration or physical end naming.
-- Scoreboard framing varies across the perspective cameras. Only the inspected March Sheet 4 template is configured. Other sheets explicitly return `sheet_scoreboard_template_not_configured`; a plausible-looking wrong crop is not treated as evidence.
+- Scoreboard framing varies across the perspective cameras. Only the two inspected March Sheet 4 recordings have an applicable template, checked against retained header evidence on each reading. Their early/late board framing also differs by a few pixels; see [recording links](RECORDING_LINKS.md). Other sheets explicitly return `sheet_scoreboard_template_not_configured`; a plausible-looking wrong crop is not treated as evidence.
 - Equal source seconds are not equal club time. The Sheet 4 fragment has a later overlay time than the beginnings of the other March recordings.
 - Sheet 2 has poorer OCR and sampled time reads that do not fit one continuous offset. This may involve OCR error or source/encoder timing discontinuities; no cause is asserted. The segment fitter declines a supported mapping for these samples rather than correcting their dates from the title.
 - The older January Sheet 5 date currently fails OCR although its time is read. Its date and wall-time mapping stay unresolved.

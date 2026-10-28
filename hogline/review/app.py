@@ -55,6 +55,7 @@ from hogline.orchestration.worker import enqueue, jobs, retry, run_one
 from hogline.perception.broadcast import analyze_broadcast, broadcast_catalog
 from hogline.perception.pipeline import analyze_cached, observations
 from hogline.perception.stones import VERSION as DETECTOR_VERSION
+from hogline.reconstruction.boundaries import boundary_links
 
 
 class SourceImport(Model):
@@ -108,12 +109,20 @@ def create_app(settings: Settings | None = None, start_worker=False):
 
     @app.get("/api/catalog")
     def get_catalog():
+        data = catalog(db)
+        broadcast = broadcast_catalog(db)
         return {
-            **catalog(db),
+            **data,
             "jobs": jobs(db),
             "batches": batches(db),
             "observations": observations(db),
-            "broadcast": broadcast_catalog(db),
+            "broadcast": broadcast,
+            "source_boundary_links": boundary_links(
+                data["sources"],
+                broadcast["observations"],
+                broadcast["version"],
+                {e["id"] for e in data["evidence"]},
+            ),
         }
 
     @app.post("/api/perception/analyze")

@@ -8,6 +8,12 @@ from zoneinfo import ZoneInfo
 
 def parse_overlay(date_text, time_text, timezone="America/Chicago"):
     date_match = re.search(r"\b(\d{1,2})[/-](\d{1,2})[/-](\d{4})\b", date_text)
+    date_syntax = "separated_mdy"
+    if date_match is None:
+        # Eight observed digits fix MM/DD/YYYY field widths even if OCR loses a
+        # slash. Seven digits remain ambiguous and are never padded from a title.
+        date_match = re.fullmatch(r"(\d{2})[/-]?(\d{2})[/-]?(\d{4})", date_text.replace(" ", ""))
+        date_syntax = "eight_digit_mdy_missing_separator"
     time_match = re.search(r"\b(\d{1,2}):(\d{2}):(\d{2})\s*(AM|PM)?\b", time_text, re.I)
     result = {
         "date_text": date_text,
@@ -18,6 +24,7 @@ def parse_overlay(date_text, time_text, timezone="America/Chicago"):
         "candidates": [],
         "uncertainty_seconds": 1,
         "missing_reason": None,
+        "date_syntax": date_syntax if date_match else None,
     }
     if not date_match or not time_match:
         result["missing_reason"] = "overlay_date_or_time_not_read"
