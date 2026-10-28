@@ -231,11 +231,16 @@ function renderFrame() {
         0,
       )
     : 0;
+  const rejected = observation
+    ? Object.entries(observation.views).flatMap(([view, data]) =>
+        (data.rejected_candidates || []).map((d) => ({ ...d, view })),
+      )
+    : [];
   $("#perception-caption").innerHTML =
     frame?.acquisition_tier === "coarse"
       ? '<p class="fine-print">Coarse scan · activity only. Request a detailed frame to inspect handles and the scoreboard.</p>'
       : observation
-        ? `<span class="pill green">OPENCV BASELINE</span><span>${count} colored-handle candidates · uncalibrated · scores unknown</span>`
+        ? `<span class="pill green">OPENCV BASELINE</span><span>${count} colored-handle candidates · uncalibrated · scores unknown</span>${rejected.length ? `<details class="rejected-candidates"><summary>${rejected.length} color candidates rejected · inspect reasons</summary><p class="fine-print">${escapeHTML(observation.model_version)} · size and shape checks are development priors; rejected candidates can include missed or occluded handles.</p>${rejected.map((d) => `<p class="fine-print">${d.view === "house_top" ? "Top" : "Bottom"} · ${escapeHTML(d.color)} at ${d.center_px.map((v) => Math.round(v)).join(", ")} px · ${d.rejection_reasons.map((r) => escapeHTML(r.replaceAll("_", " "))).join(", ")}</p>`).join("")}</details>` : ""}`
         : `<span class="fine-print">${frame ? "This cached frame has not been analyzed." : "Evidence will be analyzed with OpenCV when cached."}</span>${frame ? '<button class="button quiet" id="analyze-cached">Analyze cached frames →</button>' : ""}`;
   renderBroadcast(frame);
 }
@@ -410,7 +415,7 @@ function renderJobs() {
       .filter((j) => j.request.source_id === state.source)
       .map(
         (j) =>
-          `<div class="job-card"><span class="pill ${j.state === "failed" ? "amber" : ""}">${escapeHTML(j.state)}</span><code>${time(j.request.start_seconds)}–${time(j.request.end_seconds)}</code><span>${j.completed_frames || 0} frames · ${j.cache_hits || 0} reused</span>${j.state === "running" ? `<progress max="1" value="${j.progress || 0}"></progress>` : ""}${j.state === "failed" && j.attempts < 3 && !(j.kind === "dense_window" && j.stage_version !== state.data.window_version) ? `<button class="button quiet" data-retry="${j.id}">Retry</button>` : ""}${j.error ? `<span class="job-error">${escapeHTML(j.error)}</span>` : ""}</div>`,
+          `<div class="job-card"><span class="pill ${j.state === "failed" ? "amber" : ""}">${escapeHTML(j.state)}</span><code>${time(j.request.start_seconds)}–${time(j.request.end_seconds)}</code><span>${j.completed_frames || 0} frames · ${j.cache_hits || 0} reused</span>${j.state === "running" ? `<progress max="1" value="${j.progress || 0}"></progress>` : ""}${j.state === "failed" && j.attempts < 3 && !(j.kind === "dense_window" && (j.stage_version !== state.data.window_version || j.perception_version !== state.data.window_detector_version)) ? `<button class="button quiet" data-retry="${j.id}">Retry</button>` : ""}${j.error ? `<span class="job-error">${escapeHTML(j.error)}</span>` : ""}</div>`,
       )
       .join("") ||
     '<p class="no-data">No work queued. Metadata imports never start a video backfill.</p>';

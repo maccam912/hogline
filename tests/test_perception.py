@@ -8,7 +8,7 @@ from hogline.domain.catalog import catalog
 from hogline.domain.models import ScanRequest
 from hogline.orchestration import worker
 from hogline.perception.pipeline import analyze_cached
-from hogline.perception.stones import HSVHandleDetector
+from hogline.perception.stones import HSVHandleDetector, RawHSVHandleDetector
 
 
 def test_color_shape_baseline_rejects_house_rings_and_red_border():
@@ -54,6 +54,23 @@ def test_partly_clipped_handle_connected_to_broadcast_border_survives():
     assert len(detections) == 1 and detections[0]["color"] == "red"
     assert np.linalg.norm(np.array(detections[0]["center_px"]) - [233, 18]) < 8
     assert detections[0]["boundary_clipped"]
+
+
+def test_shape_refinement_retains_rejected_candidates_and_resizes_with_crop():
+    image = np.full((480, 480, 3), 220, dtype=np.uint8)
+    cv2.circle(image, (200, 230), 12, (210, 50, 40), thickness=-1)
+    cv2.circle(image, (100, 100), 4, (210, 50, 40), thickness=-1)
+    cv2.rectangle(image, (300, 100), (310, 140), (210, 50, 40), thickness=-1)
+    # An irregular L-shaped patch passes the permissive v4 contour baseline.
+    cv2.rectangle(image, (310, 130), (336, 140), (210, 50, 40), thickness=-1)
+    assert len(RawHSVHandleDetector().detect(image)) == 3
+    result = HSVHandleDetector().inspect(image)
+    assert len(result["detections"]) == 1
+    assert len(result["rejected_candidates"]) == 2
+    reasons = {r for d in result["rejected_candidates"] for r in d["rejection_reasons"]}
+    assert reasons == {"colored_area_below_crop_prior", "irregular_colored_shape"}
+    smaller = cv2.resize(image, (320, 320), interpolation=cv2.INTER_AREA)
+    assert len(HSVHandleDetector().detect(smaller)) == 1
 
 
 def test_evidence_budget_stops_before_writing_past_limit(db, sources, monkeypatch):

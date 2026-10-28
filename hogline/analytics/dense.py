@@ -8,7 +8,7 @@ import os
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-SCHEMA_VERSION = "hogline-dense-observations-v2"
+SCHEMA_VERSION = "hogline-dense-observations-v3"
 DETECTION = pa.struct(
     [
         ("color", pa.string()),
@@ -42,6 +42,10 @@ SCHEMA = pa.schema(
             pa.list_(pa.struct([("bbox_px", pa.list_(pa.int32(), 4)), ("area_px2", pa.int32())])),
         ),
         ("detections", pa.list_(DETECTION)),
+        (
+            "rejected_candidates",
+            pa.list_(pa.struct([*DETECTION, ("rejection_reasons", pa.list_(pa.string()))])),
+        ),
     ]
 )
 

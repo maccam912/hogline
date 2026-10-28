@@ -23,3 +23,8 @@ The dark-region check uses low-value, modest-saturation connected components lar
 A real January pilot exposed a persistent person’s foot/clothing false positive under v1. The retained frame also contains a large dark foreground region; v2 abstains on such frames. The old proposed run remains visible with an earlier-version label. This is a development regression case, not held-out evidence of accuracy. Persistence alone cannot distinguish every broom, logo, garment, or stone.
 
 Configuration proposals carry exact source times, anchor IDs, and YouTube links. They have no score, winner, physical stone identity, delivery number, or established end phase. Before automatic end scoring, add calibrated footprints, stronger visibility/detection models, direction/clearing and board reconciliation, and independently labeled evaluation across sheets and dates.
+
+
+The v5 handle detector preserves rejected color/shape proposals in `hogline-dense-observations-v3` Parquet with a `rejection_reasons` list. The workbench distinguishes windows made with earlier detector versions even when the persistence method is unchanged. A detector upgrade does not overwrite prior window manifests or publish an accepted game state.
+
+Four real ten-second windows (January Sheet 5, March Sheets 3, 4, and 6) were rerun with v5: 160 rows, 47 retained rejections, 51 worker seconds total. All files passed checksum and source-time checks. The persistence gate still abstained on all four intervals because of clipping/foreground/motion; a better handle detector alone does not establish a complete settled house.

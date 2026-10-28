@@ -28,7 +28,12 @@ def analyze_frame(session, evidence, root, detector: StoneDetector | None = None
         if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != asset["sha256"]:
             raise ValueError("Cannot analyze missing/corrupt evidence; reacquire that frame first")
         image = np.asarray(Image.open(path).convert("RGB"))
-        detections = detector.detect(image)
+        analysis = (
+            detector.inspect(image)
+            if isinstance(detector, HSVHandleDetector)
+            else {"detections": detector.detect(image), "rejected_candidates": []}
+        )
+        detections = analysis["detections"]
         for index, detection in enumerate(detections):
             detection["id"] = f"{observation_id}:{view}:{index}"
             detection["evidence_id"] = evidence.id
@@ -37,6 +42,7 @@ def analyze_frame(session, evidence, root, detector: StoneDetector | None = None
             "width": image.shape[1],
             "height": image.shape[0],
             "detections": detections,
+            "rejected_candidates": analysis["rejected_candidates"],
             "house_ring": house_ring(image),
         }
     document = {

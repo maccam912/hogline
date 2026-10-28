@@ -121,6 +121,7 @@ def create_app(settings: Settings | None = None, start_worker=False):
                 "batches": batches_in_session(session),
                 "observations": observations_in_session(session),
                 "window_version": WINDOW_VERSION,
+                "window_detector_version": DETECTOR_VERSION,
                 "broadcast": broadcast,
                 "source_boundary_links": boundary_links(
                     data["sources"],

@@ -146,7 +146,7 @@ def execute_window(db, job):
                     if view in previous
                     else None,
                     "foreground_regions": foreground_regions(rgb),
-                    "detections": detector.detect(rgb),
+                    **detector.inspect(rgb),
                 }
                 rows.append(row)
                 previous[view] = vector
@@ -233,6 +233,9 @@ def execute_window(db, job):
                 "large_dark_regions": sum(r["view"] == view and bool(r["foreground_regions"]) for r in rows),
                 "clipped_handle_candidates": sum(
                     r["view"] == view and any(d["boundary_clipped"] for d in r["detections"]) for r in rows
+                ),
+                "rejected_color_candidates": sum(
+                    len(r["rejected_candidates"]) for r in rows if r["view"] == view
                 ),
                 "high_motion": sum(r["view"] == view and (r["motion_mean_abs"] or 0) > 2.5 for r in rows),
             }

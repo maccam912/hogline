@@ -1444,3 +1444,7 @@ dialog .primary {
   margin-left: 4px;
   padding-left: 6px;
 }
+
+.rejected-candidates {
+  flex-basis: 100%;
+}

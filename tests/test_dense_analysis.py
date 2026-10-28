@@ -58,6 +58,7 @@ def fake_window(monkeypatch):
     draw = ImageDraw.Draw(image)
     draw.ellipse((536, 126, 550, 140), fill=(225, 20, 20))
     draw.ellipse((577, 170, 591, 184), fill=(240, 205, 20))
+    draw.ellipse((647, 197, 653, 203), fill=(225, 20, 20))
     calls = []
     monkeypatch.setattr(windows, "resolve_media", lambda s: {"uri": "fixture", "format_id": "fixture"})
 
@@ -92,6 +93,10 @@ def test_dense_window_has_columnar_rows_bounded_anchors_and_no_games(db, sources
     assert hashlib.sha256(artifact.read_bytes()).hexdigest() == window["parquet"]["sha256"]
     table = pq.read_table(artifact)
     assert table.num_rows == 20
+    rejected = table.to_pylist()[0]["rejected_candidates"]
+    assert len(rejected) == 1
+    assert rejected[0]["rejection_reasons"] == ["colored_area_below_crop_prior"]
+    assert table.schema.metadata[b"hogline.schema_version"] == b"hogline-dense-observations-v3"
     assert table.schema.field("pts").type.bit_width == 64
     assert table.to_pylist()[0]["detections"][0]["color"] == "red"
     manifest = json.loads(table.schema.metadata[b"hogline.input_manifest"])

@@ -4,7 +4,7 @@ from typing import Protocol
 import cv2
 import numpy as np
 
-VERSION = "opencv-hsv-handles-v4"
+VERSION = "opencv-hsv-handles-v5"
 
 
 class StoneDetector(Protocol):
@@ -13,14 +13,14 @@ class StoneDetector(Protocol):
     def detect(self, rgb: np.ndarray) -> list[dict]: ...
 
 
-class HSVHandleDetector:
+class RawHSVHandleDetector:
     """Cheap benchmark to compare against a future trained instance detector.
 
     These are colored HANDLE candidates in crop pixels, not stone footprints,
     persistent physical IDs, distances in meters, or calibrated probabilities.
     """
 
-    version = VERSION
+    version = "opencv-hsv-handles-v4"
 
     def detect(self, rgb):
         hsv = cv2.cvtColor(rgb, cv2.COLOR_RGB2HSV)
@@ -70,3 +70,35 @@ class HSVHandleDetector:
                     }
                 )
         return sorted(detections, key=lambda d: (d["color"], d["center_px"][1], d["center_px"][0]))
+
+
+class HSVHandleDetector(RawHSVHandleDetector):
+    """Versioned refinement of the color baseline, retaining rejected proposals.
+
+    The minimum colored area scales with the seed crop, while circularity rejects
+    elongated/irregular clothing patches. These are Wausau development priors, not
+    confidence estimates, physical stone dimensions, or an occlusion classifier.
+    """
+
+    version = VERSION
+    minimum_area_fraction = 0.00035
+    minimum_circularity = 0.55
+
+    def inspect(self, rgb):
+        candidates = super().detect(rgb)
+        minimum = max(6, rgb.shape[0] * rgb.shape[1] * self.minimum_area_fraction)
+        retained, rejected = [], []
+        for candidate in candidates:
+            reasons = []
+            if candidate["area_px2"] < minimum:
+                reasons.append("colored_area_below_crop_prior")
+            if candidate["shape_score"] < self.minimum_circularity:
+                reasons.append("irregular_colored_shape")
+            if reasons:
+                rejected.append({**candidate, "rejection_reasons": reasons})
+            else:
+                retained.append(candidate)
+        return {"detections": retained, "rejected_candidates": rejected}
+
+    def detect(self, rgb):
+        return self.inspect(rgb)["detections"]
