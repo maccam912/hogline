@@ -21,6 +21,7 @@ PRIVATE_SUFFIXES = {
     ".sqlite",
     ".sqlite3",
     ".db",
+    ".parquet",
     ".onnx",
     ".pt",
     ".pth",

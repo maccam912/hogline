@@ -228,6 +228,10 @@ def vectors_from_doc(db, doc):
 
 
 def execute(db, job):
+    if job.get("kind") == "dense_window":
+        from hogline.orchestration.windows import execute_window
+
+        return execute_window(db, job)
     request = ScanRequest.model_validate(job["request"])
     with db.session() as session:
         source = source_or_error(session, request.source_id)

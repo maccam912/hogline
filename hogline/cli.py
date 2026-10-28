@@ -1,6 +1,7 @@
 import argparse
 import json
 from pathlib import Path
+from uuid import uuid4
 
 from hogline.adapters.sources import import_local, import_youtube, inventory
 from hogline.analytics.exports import csv_export, snapshot
@@ -28,6 +29,7 @@ from hogline.orchestration.plans import (
     create_batch,
     preview_plan,
 )
+from hogline.orchestration.windows import WindowRequest, enqueue_window
 from hogline.orchestration.worker import enqueue, retry, run_one
 from hogline.perception.broadcast import analyze_broadcast
 from hogline.perception.pipeline import analyze_cached
@@ -88,6 +90,19 @@ def main():
     scan.add_argument("--tier", choices=["coarse", "evidence"], default="coarse")
     scan.add_argument("--max-frames", type=int, default=120)
     scan.add_argument("--max-evidence-mb", type=int, default=200)
+    window = commands.add_parser(
+        "window", help="Decode a short detailed interval once; retain dense observations"
+    )
+    window.add_argument("source_id")
+    window.add_argument("--start", type=float, required=True)
+    window.add_argument("--end", type=float, required=True)
+    window.add_argument("--interval", type=float, default=0.5)
+    window.add_argument("--max-frames", type=int, default=120)
+    window.add_argument("--max-evidence-mb", type=int, default=64)
+    window.add_argument("--max-worker-seconds", type=int, default=120)
+    window.add_argument(
+        "--new-run", action="store_true", help="Create a fresh run while preserving previous output"
+    )
     plan = commands.add_parser("plan", help="Preview bounded recording chunks; no video is fetched")
     plan.add_argument("path", help="PlanRequest JSON file")
     plan.add_argument("--enqueue", action="store_true", help="Create a durable batch from the plan")
@@ -188,6 +203,20 @@ def main():
             case "plan":
                 request = PlanRequest.model_validate_json(Path(args.path).read_text())
                 result = create_batch(db, request) if args.enqueue else preview_plan(db, request)
+            case "window":
+                result = enqueue_window(
+                    db,
+                    WindowRequest(
+                        source_id=args.source_id,
+                        start_seconds=args.start,
+                        end_seconds=args.end,
+                        interval_seconds=args.interval,
+                        max_frames=args.max_frames,
+                        max_evidence_mb=args.max_evidence_mb,
+                        max_worker_seconds=args.max_worker_seconds,
+                        run_nonce=str(uuid4()) if args.new_run else None,
+                    ),
+                )
             case "batches":
                 result = batches(db)
             case "batch-control":

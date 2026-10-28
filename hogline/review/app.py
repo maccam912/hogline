@@ -16,6 +16,7 @@ from hogline.adapters.sources import import_youtube
 from hogline.analytics.exports import csv_export, snapshot
 from hogline.config import Settings
 from hogline.db import (
+    AnalysisWindow,
     Database,
     DiscoveryRun,
     EvaluationDataset,
@@ -51,10 +52,12 @@ from hogline.orchestration.plans import (
     create_batch,
     preview_plan,
 )
+from hogline.orchestration.windows import WindowRequest, enqueue_window
 from hogline.orchestration.worker import enqueue, jobs_in_session, retry, run_one
 from hogline.perception.broadcast import analyze_broadcast, broadcast_catalog_in_session
 from hogline.perception.pipeline import analyze_cached, observations_in_session
 from hogline.perception.stones import VERSION as DETECTOR_VERSION
+from hogline.perception.temporal import VERSION as WINDOW_VERSION
 from hogline.reconstruction.boundaries import boundary_links
 
 
@@ -117,6 +120,7 @@ def create_app(settings: Settings | None = None, start_worker=False):
                 "jobs": jobs_in_session(session),
                 "batches": batches_in_session(session),
                 "observations": observations_in_session(session),
+                "window_version": WINDOW_VERSION,
                 "broadcast": broadcast,
                 "source_boundary_links": boundary_links(
                     data["sources"],
@@ -129,6 +133,26 @@ def create_app(settings: Settings | None = None, start_worker=False):
     @app.post("/api/perception/analyze")
     def analyze():
         return {"observations": analyze_cached(db)}
+
+    @app.post("/api/windows")
+    def create_window(body: WindowRequest):
+        return enqueue_window(db, body)
+
+    @app.get("/api/windows/{window_id}/observations.parquet")
+    def window_observations(window_id: str):
+        with db.session() as session:
+            row = session.get(AnalysisWindow, window_id)
+            if row is None:
+                raise HTTPException(404, "Analysis window not found")
+            asset = row.document["parquet"]
+        path = (db.settings.data_dir / asset["path"]).resolve()
+        if not path.is_relative_to(db.settings.data_dir / "dense"):
+            raise ValueError("Dense artifact path is outside its data directory")
+        if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != asset["sha256"]:
+            raise HTTPException(404, "Dense observations are missing or corrupt; use Reanalyze this window")
+        return FileResponse(
+            path, media_type="application/vnd.apache.parquet", filename=f"hogline-{window_id}.parquet"
+        )
 
     @app.get("/api/labels/{evidence_id}/{view}")
     def get_labels(evidence_id: str, view: str):

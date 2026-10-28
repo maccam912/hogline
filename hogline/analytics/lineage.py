@@ -11,6 +11,7 @@ from hogline.db import MetadataSnapshot
 def source_lineage(session, data):
     refs = defaultdict(set)
     required = {(s["id"], s["metadata_sha256"]) for s in data["sources"]}
+    required.update((w["source_id"], w["source_metadata_sha256"]) for w in data["analysis_windows"])
     for frame in data["evidence"]:
         if frame.get("source_metadata_sha256"):
             refs[frame["id"]].add((frame["source_id"], frame["source_metadata_sha256"]))
@@ -68,6 +69,16 @@ def validate_references(payload):
             raise ValueError(f"Release {kind} references missing data; publication was rolled back")
 
     require([e["source_id"] for e in evidence.values()], sources, "evidence")
+    for window in payload["analysis_windows"]:
+        require([window["source_id"]], sources, "analysis window")
+        require(window["anchor_evidence_ids"], evidence, "window anchor")
+        require(
+            [e for c in window["candidates"] for e in c["evidence_ids"]],
+            set(window["anchor_evidence_ids"]),
+            "window candidate",
+        )
+        if any(evidence[e]["source_id"] != window["source_id"] for e in window["anchor_evidence_ids"]):
+            raise ValueError("Release window anchor/source mismatch; publication was rolled back")
     for scan in payload["processing_scans"]:
         require([scan["source_id"]], sources, "processing scan")
         require([s["evidence_id"] for s in scan.get("samples", [])], evidence, "processing sample")

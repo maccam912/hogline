@@ -42,6 +42,7 @@ def snapshot_in_session(session, mode):
         "sources": data["sources"],
         **source_lineage(session, data),
         "processing_scans": data["scans"],
+        "analysis_windows": data["analysis_windows"],
         "evidence": data["evidence"],
         "observations": observations_in_session(session),
         "broadcast": broadcast,

@@ -1,6 +1,6 @@
 # Cross-sheet source checks — October 27, 2026
 
-Bounded metadata discovery found recordings for all eight sheets. The retained-media validation corpus covers ten recordings and 58 detailed frames, including the older January Sheet 5 stream. Later coarse-tier checks add 11 activity-only frames, for 69 retained frames in total. No complete video was downloaded or committed. Images and OCR outputs remain in the ignored data directory.
+Bounded metadata discovery found recordings for all eight sheets. The initial retained-media validation corpus covered ten recordings and 58 detailed frames, including the older January Sheet 5 stream. Coarse-tier checks added 11 activity-only frames. The detailed-window checkpoint below brings the local corpus to 94 retained frames: 83 detailed and 11 coarse. No complete video was downloaded or committed. Images, dense observations, and OCR outputs remain in the ignored data directory.
 
 | Sheet | Source / title date | Selected frame resolution | Retained source seconds |
 | --- | --- | --- | --- |
@@ -33,6 +33,22 @@ On the Sheet 4 sample, the OCR recognizes red end cards 1, 2, and 5 at cumulativ
 The broadcast clock lacks AM/PM. Both twelve-hour alternatives remain in the proposed clock mappings. Samples crossing a gap, contradictory overlay, or unreadable clock do not establish a continuous mapping across it.
 
 ## Remaining validation
+
+### Detailed-window checkpoint
+
+The v0.7 decoder/temporal path was exercised on twelve ten-second intervals using `handle-configuration-persistence-v2`:
+
+| Recordings | Source interval | Detailed samples per interval | Outcome |
+| --- | --- | --- | --- |
+| All eight March sheets, using the Sheet 4 fragment | 300–310 seconds | 20 | Decoded and preserved source PTS at native selected resolution |
+| January Sheet 5 | 1800–1810 seconds | 20 | Dark foreground gate rejects a persistent broom-head candidate seen in v1 |
+| March Sheets 3, 5, and 6 during play | 5400–5410 seconds | 20 | Decoded; foreground/clipping/motion checks prevent a whole-configuration proposal |
+
+These twelve current runs produced 480 overhead-view rows in 219,072 bytes of Parquet, with 142.6 total worker seconds on this machine. Every sampled PTS was increasing and inside its requested interval; every artifact checksum and release reference verified. This is a small bounded execution check, not a season-scale throughput estimate. Earlier development runs remain in local history, giving 21 window manifests in total at this checkpoint.
+
+The current conservative persistence gate accepted **zero configuration proposals** across these intervals. Some views had no handle candidates; active views had clipped candidates, possible obstruction, or changing detections. This is not evidence that the houses were empty, nor a usable automatic end-scoring accuracy result. A stationary broom false positive in the earlier January run motivated the dark-region gate; that case is now development data. Further work must improve recall and visibility modeling against independently labeled examples, not merely lower thresholds until this small corpus passes. See [window contracts and limits](WINDOWS.md).
+
+### Larger evaluation corpus
 
 A second acquisition tier was exercised on the same active/quiet source moments on Sheets 2 and 3: three coarse samples at 5400, 5415, and 5430 seconds per recording. The retained coarse images are 640×360, separately identified from the existing 1280×720 and 1920×1080 detailed evidence. They are restricted to activity screening; no handle or scoreboard observations are published from them. These six new images are local cache data, not repository assets.
 

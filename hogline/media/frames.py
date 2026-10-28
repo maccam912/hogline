@@ -107,6 +107,7 @@ class EvidenceBudget:
         self.job_limit, self.cache_limit = job_mb * 1024**2, cache_mb * 1024**2
         self.logical_bytes = 0
         self.cache_bytes = sum(p.stat().st_size for p in (root / "evidence").rglob("*.png"))
+        self.cache_bytes += sum(p.stat().st_size for p in (root / "dense").rglob("*.parquet"))
         self.reserve_growth = None
 
     def consume(self, size, additional_bytes=0):

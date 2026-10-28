@@ -2,7 +2,7 @@ from sqlalchemy import select
 from sqlalchemy.orm.exc import StaleDataError
 
 from hogline.adapters.sources import video_link
-from hogline.db import Evidence, GameRow, Job, ReviewTask, Revision, Scan, Source
+from hogline.db import AnalysisWindow, Evidence, GameRow, Job, ReviewTask, Revision, Scan, Source
 from hogline.domain.models import Game, GameEdit
 from hogline.reconstruction.timeline import reconstruct_source
 
@@ -167,6 +167,7 @@ def catalog_in_session(session):
         {
             **r.document,
             "id": r.id,
+            "job_id": r.job_id,
             "source_id": r.source_id,
             "source_metadata_sha256": j.document["source_hash"],
         }
@@ -183,6 +184,10 @@ def catalog_in_session(session):
         "sources": list(sources.values()),
         "games": games,
         "scans": scans,
+        "analysis_windows": [
+            {**r.document, "id": r.id, "source_id": r.source_id, "job_id": r.job_id}
+            for r in session.scalars(select(AnalysisWindow))
+        ],
         "evidence": evidence,
         "review_tasks": tasks,
         "timelines": [

@@ -186,6 +186,7 @@ function render() {
   renderJobs();
   window.hoglineProcessing?.render();
   window.hoglineBoundaries?.render();
+  window.hoglineWindows?.render();
 }
 function renderFrame() {
   const src = source(),
@@ -409,7 +410,7 @@ function renderJobs() {
       .filter((j) => j.request.source_id === state.source)
       .map(
         (j) =>
-          `<div class="job-card"><span class="pill ${j.state === "failed" ? "amber" : ""}">${escapeHTML(j.state)}</span><code>${time(j.request.start_seconds)}–${time(j.request.end_seconds)}</code><span>${j.completed_frames || 0} frames · ${j.cache_hits || 0} reused</span>${j.state === "running" ? `<progress max="1" value="${j.progress || 0}"></progress>` : ""}${j.state === "failed" && j.attempts < 3 ? `<button class="button quiet" data-retry="${j.id}">Retry</button>` : ""}${j.error ? `<span class="job-error">${escapeHTML(j.error)}</span>` : ""}</div>`,
+          `<div class="job-card"><span class="pill ${j.state === "failed" ? "amber" : ""}">${escapeHTML(j.state)}</span><code>${time(j.request.start_seconds)}–${time(j.request.end_seconds)}</code><span>${j.completed_frames || 0} frames · ${j.cache_hits || 0} reused</span>${j.state === "running" ? `<progress max="1" value="${j.progress || 0}"></progress>` : ""}${j.state === "failed" && j.attempts < 3 && !(j.kind === "dense_window" && j.stage_version !== state.data.window_version) ? `<button class="button quiet" data-retry="${j.id}">Retry</button>` : ""}${j.error ? `<span class="job-error">${escapeHTML(j.error)}</span>` : ""}</div>`,
       )
       .join("") ||
     '<p class="no-data">No work queued. Metadata imports never start a video backfill.</p>';
@@ -885,9 +886,12 @@ $("#scrubber").addEventListener("input", (event) => {
 });
 document.addEventListener("submit", async (event) => {
   if (
-    ["plan-form", "batch-resume-form", "discovery-form"].includes(
-      event.target.id,
-    )
+    [
+      "plan-form",
+      "batch-resume-form",
+      "discovery-form",
+      "window-form",
+    ].includes(event.target.id)
   )
     return;
   event.preventDefault();

@@ -10,6 +10,7 @@
     <script src="/static/processing.js" defer></script>
     <script src="/static/discovery.js" defer></script>
     <script src="/static/boundaries.js" defer></script>
+    <script src="/static/windows.js" defer></script>
   </head>
   <body>
     <header>
@@ -232,6 +233,19 @@
                 <span class="fine-print">Motion does not establish a game</span>
               </div>
               <div id="activity-list"></div>
+              <section id="window-panel">
+                <div class="section-heading">
+                  <h2>House configurations</h2>
+                  <button class="button secondary" id="window-button">
+                    Analyze a short window →
+                  </button>
+                </div>
+                <p class="fine-print">
+                  Compare repeated handle observations. Calibration, hidden
+                  stones, and end phase remain unresolved.
+                </p>
+                <div id="window-list"></div>
+              </section>
               <section id="source-boundary-panel" hidden>
                 <div class="section-heading">
                   <h2>Recording links to review</h2>
@@ -568,6 +582,66 @@
         </p>
         <button class="button primary" type="submit">
           Resume with these limits →
+        </button>
+      </form>
+    </dialog>
+    <dialog id="window-dialog">
+      <form id="window-form">
+        <button class="close-dialog" type="button" aria-label="Close">×</button>
+        <span class="eyebrow">DETAILED ANALYSIS</span>
+        <h2>Analyze a short window</h2>
+        <p>
+          Decode this interval once, compare both overhead views, and keep a few
+          evidence frames plus downloadable observations.
+        </p>
+        <label
+          >Start at source time<input
+            name="start"
+            required
+            aria-label="Window start time"
+        /></label>
+        <div class="form-grid">
+          <label
+            >Window length<select name="duration">
+              <option value="10">10 seconds</option>
+              <option value="20" selected>20 seconds</option>
+              <option value="40">40 seconds</option>
+              <option value="60">60 seconds</option>
+            </select></label
+          >
+          <label
+            >Sample interval<select name="interval">
+              <option value="1">1 second</option>
+              <option value="0.5" selected>0.5 seconds</option>
+              <option value="0.25">0.25 seconds</option>
+            </select></label
+          >
+          <label
+            >Retained data limit (MB)<input
+              name="budget"
+              type="number"
+              min="1"
+              max="256"
+              value="64"
+              required
+          /></label>
+          <label
+            >Worker-time limit (seconds)<input
+              name="worker"
+              type="number"
+              min="10"
+              max="600"
+              value="120"
+              required
+          /></label>
+        </div>
+        <p class="fine-print">
+          Up to 240 selected frames and eight retained anchors. Unretained
+          pixels require decoding this small interval again. Persistent colored
+          objects remain proposals; no end score or final result is assigned.
+        </p>
+        <button class="button primary" type="submit">
+          Queue detailed window →
         </button>
       </form>
     </dialog>

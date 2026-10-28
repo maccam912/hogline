@@ -68,6 +68,14 @@ class ProcessingBatch(Base):
     __mapper_args__ = {"version_id_col": revision}
 
 
+class AnalysisWindow(Base):
+    __tablename__ = "analysis_window"
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    job_id: Mapped[str] = mapped_column(ForeignKey("job.id"), unique=True)
+    source_id: Mapped[str] = mapped_column(ForeignKey("source_video.id"))
+    document: Mapped[dict] = mapped_column(JSON)
+
+
 class JobExecution(Base):
     __tablename__ = "job_execution"
     id: Mapped[str] = mapped_column(String, primary_key=True)  # lease token
