@@ -40,10 +40,12 @@ def validate_evidence(session, game):
             raise ValueError("Score evidence must fall inside a linked source span")
 
 
-def save_in_session(session, edit: GameEdit, origin_key=None):
+def save_in_session(session, edit: GameEdit, origin_key=None, *, reconciliation=False):
     game = edit.game
     validate_evidence(session, game)
     row = session.get(GameRow, game.id)
+    if not reconciliation and (game.retired_into or (row and row.document.get("retired_into"))):
+        raise ValueError("Retire or restore game interpretations through split/merge reconciliation")
     if row is None:
         if edit.expected_revision != 0:
             raise Conflict("Game no longer exists; reload the catalog")
@@ -71,7 +73,10 @@ def save_in_session(session, edit: GameEdit, origin_key=None):
             reason=edit.reason,
         )
     )
-    if game.acceptance == "proposed":
+    if game.retired_into:
+        for task in session.scalars(select(ReviewTask).where(ReviewTask.game_id == row.id)):
+            task.state = "resolved"
+    elif game.acceptance == "proposed":
         key = f"game:{row.id}:boundary"
         task = session.scalar(select(ReviewTask).where(ReviewTask.task_key == key))
         if task is None:
@@ -157,6 +162,8 @@ def catalog(db):
 
 
 def catalog_in_session(session):
+    from hogline.domain.reconciliation import reconciliations_in_session
+
     sources = {r.id: {**r.document, "id": r.id} for r in session.scalars(select(Source))}
     games = [
         present_game(r, sources)
@@ -183,6 +190,12 @@ def catalog_in_session(session):
     return {
         "sources": list(sources.values()),
         "games": games,
+        "retired_games": [
+            present_game(r, sources)
+            for r in session.scalars(select(GameRow))
+            if r.document.get("retired_into")
+        ],
+        "reconciliations": reconciliations_in_session(session),
         "scans": scans,
         "analysis_windows": [
             {**r.document, "id": r.id, "source_id": r.source_id, "job_id": r.job_id}

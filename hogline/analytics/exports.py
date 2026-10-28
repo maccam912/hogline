@@ -40,6 +40,8 @@ def snapshot_in_session(session, mode, root):
         "mode": mode,
         "created_at": now(),
         "games": games,
+        "retired_games": data["retired_games"],
+        "reconciliations": data["reconciliations"],
         "sources": data["sources"],
         **source_lineage(session, data),
         "processing_scans": data["scans"],
@@ -73,7 +75,9 @@ def snapshot_in_session(session, mode, root):
     }
     validate_references(payload)
     # Use the same rows that were serialized, even if a review is saved during export.
-    payload["interpretation_revisions"] = {g["id"]: g["revision"] for g in data["games"]}
+    payload["interpretation_revisions"] = {
+        g["id"]: g["revision"] for g in [*data["games"], *data["retired_games"]]
+    }
     release = Release(sha256=digest(payload), document=payload)
     session.add(release)
     session.flush()

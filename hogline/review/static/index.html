@@ -12,6 +12,7 @@
     <script src="/static/boundaries.js" defer></script>
     <script src="/static/windows.js" defer></script>
     <script src="/static/adaptive.js" defer></script>
+    <script src="/static/reconciliation.js" defer></script>
   </head>
   <body>
     <header>
@@ -22,7 +23,7 @@
       ><span class="header-label">THE CURLING ARCHIVE</span>
       <div class="header-right">
         <span class="local-light"></span> LOCAL WORKBENCH
-        <span class="version">PILOT 0.6</span>
+        <span class="version" id="build-label">LOCAL PILOT</span>
       </div>
     </header>
     <div class="shell">
@@ -267,6 +268,7 @@
               </div>
               <div id="game-list"></div>
               <div id="game-editor" hidden></div>
+              <section id="reconciliation-history" hidden></section>
               <div class="section-heading jobs-heading">
                 <h2>Processing</h2>
                 <button class="button secondary" id="plan-button">
@@ -733,6 +735,52 @@
           Start bounded detail batch →
         </button>
       </form>
+    </dialog>
+    <dialog id="reconcile-dialog">
+      <button class="close-dialog" aria-label="Close split or merge">×</button>
+      <form id="reconcile-form">
+        <h2>Split or merge game intervals</h2>
+        <p id="reconcile-parent" class="fine-print"></p>
+        <label
+          >Correction<select name="action">
+            <option value="split">Split into two games</option>
+            <option value="merge">Merge with other games</option>
+          </select></label
+        >
+        <label
+          >New game label<input
+            name="label"
+            maxlength="180"
+            placeholder="Optional label"
+        /></label>
+        <div id="reconcile-inputs"></div>
+        <div id="reconcile-conflicts"></div>
+        <button class="button secondary" type="submit">
+          Preview correction →
+        </button>
+        <div id="reconcile-preview" aria-live="polite"></div>
+        <div class="form-grid">
+          <label>Reviewer<input name="author" maxlength="120" /></label>
+          <label
+            >Reason for correction<input name="reason" maxlength="2000"
+          /></label>
+        </div>
+        <button
+          id="publish-reconciliation"
+          type="button"
+          class="button primary"
+          disabled
+        >
+          Save split or merge →
+        </button>
+      </form>
+    </dialog>
+    <dialog id="reconcile-history-dialog">
+      <button class="close-dialog" aria-label="Close correction history">
+        ×
+      </button>
+      <h2>Game correction history</h2>
+      <div id="reconcile-history-detail"></div>
     </dialog>
   </body>
 </html>

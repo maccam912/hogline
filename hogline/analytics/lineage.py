@@ -84,7 +84,15 @@ def validate_references(payload):
         require([s["evidence_id"] for s in scan.get("samples", [])], evidence, "processing sample")
         if any(evidence[s["evidence_id"]]["source_id"] != scan["source_id"] for s in scan.get("samples", [])):
             raise ValueError("Release processing sample/source mismatch; publication was rolled back")
-    for game in payload["games"]:
+    lineage_games = [
+        *payload["games"],
+        *payload.get("retired_games", []),
+        *[p["game"] for r in payload.get("reconciliations", []) for p in r["parents"]],
+        *[g for r in payload.get("reconciliations", []) for g in r["successors"]],
+    ]
+    known_games = {g["id"] for g in lineage_games}
+    for game in lineage_games:
+        require(game.get("retired_into", []), known_games, "game retirement")
         require([s["source_id"] for s in game["spans"]], sources, "game span")
         require(
             [i for e in game["ends"] for i in e["evidence_ids"]] + game["result"]["evidence_ids"],

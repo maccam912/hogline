@@ -115,6 +115,7 @@ async function refresh() {
 }
 function render() {
   const { sources, games, review_tasks } = state.data;
+  $("#build-label").textContent = `PILOT ${state.data.app_version || ""}`;
   $("#recording-count").textContent = sources.length;
   $("#review-count").textContent = review_tasks.filter(
     (t) => t.state === "open",
@@ -187,6 +188,7 @@ function render() {
   window.hoglineProcessing?.render();
   window.hoglineBoundaries?.render();
   window.hoglineWindows?.render();
+  window.hoglineReconciliation?.render();
 }
 function renderFrame() {
   const src = source(),
@@ -633,7 +635,7 @@ function renderEditor() {
       ],
       game.result.outcome,
     )}${select("Result review", "result-acceptance", acceptanceOptions, game.result.acceptance)}${input("Final red points", "result-red", game.result.red_points, "number", 'min="0"')}${input("Final yellow points", "result-yellow", game.result.yellow_points, "number", 'min="0"')}</div>${select("Final-result evidence", "result-evidence", ev, game.result.evidence_ids[0] || "")}
-    <label>Review notes<textarea name="note" rows="2">${escapeHTML(game.note)}</textarea></label><div class="form-grid">${input("Reviewer", "author", state.audit.author || localStorage.getItem("hogline-reviewer") || "", "text", "required")}${input("Reason for this revision", "reason", state.audit.reason || "", "text", 'required placeholder="What changed, and why?"')}</div><div id="revision-history"></div><div class="editor-actions"><button type="button" class="button quiet" id="history-button">Revision history</button><button type="button" class="button secondary" id="cancel-edit">Close</button><button type="submit" class="button primary">Save revision →</button></div></form>`;
+    <label>Review notes<textarea name="note" rows="2">${escapeHTML(game.note)}</textarea></label><div class="form-grid">${input("Reviewer", "author", state.audit.author || localStorage.getItem("hogline-reviewer") || "", "text", "required")}${input("Reason for this revision", "reason", state.audit.reason || "", "text", 'required placeholder="What changed, and why?"')}</div><div id="revision-history"></div><div class="editor-actions"><button type="button" class="button quiet" id="history-button">Revision history</button>${revision ? `<button type="button" class="button quiet" data-reconcile="${game.id}">Split or merge →</button>` : ""}<button type="button" class="button secondary" id="cancel-edit">Close</button><button type="submit" class="button primary">Save revision →</button></div></form>`;
   box.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 function readEditor() {

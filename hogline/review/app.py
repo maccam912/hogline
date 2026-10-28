@@ -33,6 +33,14 @@ from hogline.db import (
 )
 from hogline.domain.catalog import Conflict, catalog_in_session, save_game
 from hogline.domain.models import GameEdit, Model, ScanRequest
+from hogline.domain.reconciliation import (
+    ReconcileCommit,
+    ReconcileRequest,
+    UndoReconciliation,
+    commit_reconciliation,
+    preview_reconciliation,
+    undo_reconciliation,
+)
 from hogline.evaluation.datasets import dataset_catalog, freeze_dataset
 from hogline.evaluation.labels import label_id, labels_catalog, save_labels
 from hogline.evaluation.metrics import evaluate_dataset, run_catalog
@@ -129,6 +137,7 @@ def create_app(settings: Settings | None = None, start_worker=False):
             broadcast = broadcast_catalog_in_session(session, db.settings.data_dir)
             return {
                 **data,
+                "app_version": __version__,
                 "jobs": jobs_in_session(session),
                 "batches": batches_in_session(session),
                 "observations": observations_in_session(session),
@@ -351,6 +360,18 @@ def create_app(settings: Settings | None = None, start_worker=False):
         if body.game.id != game_id:
             raise ValueError("Game ID does not match the URL")
         return save_game(db, body)
+
+    @app.post("/api/reconciliations/preview")
+    def reconcile_preview(body: ReconcileRequest):
+        return preview_reconciliation(db, body)
+
+    @app.post("/api/reconciliations")
+    def reconcile_publish(body: ReconcileCommit):
+        return commit_reconciliation(db, body)
+
+    @app.post("/api/reconciliations/{identifier}/undo")
+    def reconcile_undo(identifier: str, body: UndoReconciliation):
+        return undo_reconciliation(db, identifier, body)
 
     @app.get("/api/games/{game_id}/revisions")
     def revisions(game_id: str):

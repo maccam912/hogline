@@ -1486,3 +1486,22 @@ dialog .primary {
   border-top: 2px solid var(--muted);
   padding-top: 1px;
 }
+.reconcile-game,
+.reconcile-conflict {
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 12px;
+  margin: 12px 0;
+}
+.reconcile-choice {
+  display: flex;
+  flex-direction: row;
+  gap: 10px;
+  align-items: center;
+}
+.reconcile-choice input {
+  width: auto;
+}
+#reconcile-preview {
+  margin: 16px 0;
+}

@@ -154,6 +154,16 @@ class ReviewTask(Base):
     state: Mapped[str] = mapped_column(String, default="open")
 
 
+class Reconciliation(Base):
+    __tablename__ = "game_reconciliation"
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    state: Mapped[str] = mapped_column(String, default="active")
+    document: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[str] = mapped_column(String, default=now)
+    __mapper_args__ = {"version_id_col": revision}
+
+
 class Release(Base):
     __tablename__ = "dataset_release"
     id: Mapped[str] = mapped_column(String, primary_key=True, default=uid)

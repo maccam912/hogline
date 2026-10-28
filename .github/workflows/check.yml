@@ -30,4 +30,5 @@ jobs:
       - run: node --check hogline/review/static/boundaries.js
       - run: node --check hogline/review/static/windows.js
       - run: node --check hogline/review/static/adaptive.js
+      - run: node --check hogline/review/static/reconciliation.js
       - run: uv build
