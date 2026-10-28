@@ -196,7 +196,19 @@ def publish_batch(session, plan):
     for unit in plan["units"]:
         job = enqueue_in_session(session, unit["payload"], batch.id)
         units.append({**unit, "job_id": job.id})
-    batch.document = {**batch.document, "units": units}
+    batch.document = {
+        **batch.document,
+        "units": units,
+        **(
+            {
+                "phase_history": [
+                    {**phase, "job_ids": [u["job_id"] for u in units]} for phase in plan["phase_history"]
+                ]
+            }
+            if plan.get("kind") == "automatic" and plan.get("phase_history")
+            else {}
+        ),
+    }
     if plan.get("kind") != "automatic" and all(
         session.get(Job, u["job_id"]).state == "succeeded" for u in units
     ):

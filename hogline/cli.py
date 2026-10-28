@@ -15,6 +15,11 @@ from hogline.evaluation.metrics import evaluate_dataset
 from hogline.evaluation.models import DatasetCreate, EvaluationRequest, LabelEdit
 from hogline.orchestration.adaptive import AdaptiveRequest, create_adaptive_batch, preview_adaptive
 from hogline.orchestration.automatic import AutomaticRequest, create_automatic_batch, preview_automatic
+from hogline.orchestration.board_refinement import (
+    RefinementRequest,
+    create_refinement_batch,
+    preview_refinement,
+)
 from hogline.orchestration.discovery import (
     FeedControl,
     FeedCreate,
@@ -115,6 +120,12 @@ def main():
     )
     adaptive.add_argument("path", help="AdaptiveRequest JSON file")
     adaptive.add_argument("--enqueue", action="store_true")
+    refine = commands.add_parser("refine-board", help="Inspect short windows inside a posted-board gap")
+    refine.add_argument("change_id")
+    refine.add_argument("--windows", type=int, default=3)
+    refine.add_argument("--max-worker-seconds", type=int, default=300)
+    refine.add_argument("--max-growth-mb", type=int, default=96)
+    refine.add_argument("--enqueue", action="store_true")
     automatic = commands.add_parser("automatic-plan", help="Plan one bounded scan, detail and OCR campaign")
     automatic.add_argument("path", help="AutomaticRequest JSON file")
     automatic.add_argument("--enqueue", action="store_true")
@@ -215,6 +226,16 @@ def main():
             case "plan":
                 request = PlanRequest.model_validate_json(Path(args.path).read_text())
                 result = create_batch(db, request) if args.enqueue else preview_plan(db, request)
+            case "refine-board":
+                request = RefinementRequest(
+                    change_id=args.change_id,
+                    max_windows=args.windows,
+                    max_worker_seconds=args.max_worker_seconds,
+                    max_image_growth_mb=args.max_growth_mb,
+                )
+                result = (
+                    create_refinement_batch(db, request) if args.enqueue else preview_refinement(db, request)
+                )
             case "automatic-plan":
                 request = AutomaticRequest.model_validate_json(Path(args.path).read_text())
                 result = (

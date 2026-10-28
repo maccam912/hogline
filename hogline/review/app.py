@@ -58,6 +58,12 @@ from hogline.orchestration.automatic import (
     create_automatic_batch,
     preview_automatic,
 )
+from hogline.orchestration.board_refinement import (
+    RefinementRequest,
+    RefinementStart,
+    create_refinement_batch,
+    preview_refinement,
+)
 from hogline.orchestration.discovery import (
     FeedControl,
     FeedCreate,
@@ -337,6 +343,14 @@ def create_app(settings: Settings | None = None, start_worker=False):
     @app.post("/api/scans")
     def add_scan(body: ScanRequest):
         return enqueue(db, body)
+
+    @app.post("/api/board-refinement/preview")
+    def board_refinement_preview(body: RefinementRequest):
+        return preview_refinement(db, body)
+
+    @app.post("/api/board-refinement/batches")
+    def board_refinement_start(body: RefinementStart):
+        return create_refinement_batch(db, body.request, body.expected_plan_sha256)
 
     @app.post("/api/automatic/preview")
     def automatic_preview(body: AutomaticRequest):

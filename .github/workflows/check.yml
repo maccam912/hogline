@@ -33,4 +33,5 @@ jobs:
       - run: node --check hogline/review/static/reconciliation.js
       - run: node --check hogline/review/static/automatic.js
       - run: node --check hogline/review/static/board-timeline.js
+      - run: node --check hogline/review/static/board-refinement.js
       - run: uv build

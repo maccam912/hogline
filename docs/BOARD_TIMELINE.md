@@ -2,6 +2,8 @@
 
 The recording view now has a **Posted board changes** timeline. It groups repeated card readings separately for red and yellow, then compares consecutive stable row states. **Compare board evidence** shows both board crops, full-frame disclosures, and direct YouTube links to the last earlier observation and first later observation.
 
+Use **Narrow this gap automatically** to inspect a few bounded short windows inside that interval and read their boards; see [gap refinement](BOARD_REFINEMENT.md).
+
 The interval between those anchors is an uncertainty bracket. It is not an exact event timestamp, an end-completion time, or a game boundary. Cards may be posted late, moved for a correction, obscured, or cleared. A row with no readable cards does not establish a zero score or clear visibility. Added cards, removed readings, moved card positions, and mixed changes remain proposed observations without a score, game ID, or accepted result.
 
 `posted-board-change-brackets-v1` requires:

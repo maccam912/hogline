@@ -75,6 +75,8 @@
           ${anchor.youtube_url ? `<a class="evidence-link" href="${escapeHTML(anchor.youtube_url)}" target="_blank" rel="noopener">Double-check ${stamp(anchor.source_seconds)} on YouTube ↗</a>` : ""}</figure>`;
         })
         .join("")}`;
+    $("#board-change-comparison").innerHTML +=
+      `<button class="button primary" data-refine-board="${change.id}">Narrow this gap automatically →</button>`;
     $("#board-change-dialog").showModal();
   }
   document.addEventListener("click", (event) => {

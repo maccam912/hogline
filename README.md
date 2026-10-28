@@ -73,7 +73,7 @@ To revise camera crops, copy/edit `profiles/wausau-v1.json` and set `HOGLINE_PRO
 
 ## Automation in this build
 
-**Posted board changes** compares repeated red/yellow card states with before-and-after crops and timestamped YouTube links. Long gaps remain explicit uncertainty intervals; no end-completion time or final score is inferred. See [board timelines](docs/BOARD_TIMELINE.md).
+**Posted board changes** compares repeated red/yellow card states with before-and-after crops and timestamped YouTube links. Long gaps remain explicit uncertainty intervals; no end-completion time or final score is inferred. See [board timelines](docs/BOARD_TIMELINE.md). **Narrow this gap automatically** selects a few short windows inside an uncertain change interval, then reads their retained frames under one shared budget; see [targeted refinement](docs/BOARD_REFINEMENT.md).
 
 A single bounded campaign can now advance from coarse scans to activity-selected detail and local OCR without separate stage launches. Source-balanced admission, quiet audits, phase history, cumulative costs, and deferred work remain visible; [campaign controls and limits](docs/AUTOMATIC.md).
 

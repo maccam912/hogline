@@ -5,7 +5,7 @@ from sqlalchemy import select
 
 from hogline.adapters.sources import digest, video_link
 from hogline.config import profile
-from hogline.db import Evidence, FrameObservation, Job, ProcessingBatch, now
+from hogline.db import AnalysisWindow, Evidence, FrameObservation, Job, ProcessingBatch, now
 from hogline.domain.catalog import Conflict, source_or_error
 from hogline.domain.models import Model
 from hogline.orchestration.adaptive import AdaptiveRequest, adaptive_in_session
@@ -144,7 +144,7 @@ def create_automatic_batch(db, request, expected_plan_sha256=None):
         return publish_batch(session, plan)
 
 
-def ocr_units(session, root, request, hashes):
+def ocr_units(session, root, request, hashes, allowed_evidence_ids=None):
     layout = profile()
     context = broadcast_context(session, root, layout)
     version = context["version"]
@@ -155,7 +155,8 @@ def ocr_units(session, root, request, hashes):
     for frame in session.scalars(select(Evidence).where(Evidence.source_id.in_(request.source_ids))):
         doc = frame.document
         if (
-            frame.id not in processed
+            (allowed_evidence_ids is None or frame.id in allowed_evidence_ids)
+            and frame.id not in processed
             and doc.get("acquisition_tier") != "coarse"
             and doc.get("source_metadata_sha256") == hashes[frame.source_id]
             and request.start_seconds <= doc["source_seconds"] < request.end_seconds
@@ -241,6 +242,11 @@ def advance_automatic(db):
                     or doc["reserved_image_bytes"] >= limits["max_image_growth_mb"] * 1024**2
                 ):
                     raise ValueError("Shared campaign budget reached before the next stage")
+                if doc.get("campaign_purpose") == "board_change_refinement":
+                    from hogline.orchestration.board_refinement import VERSION as REFINEMENT_VERSION
+
+                    if doc["selection_version"] != REFINEMENT_VERSION:
+                        raise ValueError("Board refinement method changed; preview a current refinement")
                 request = AutomaticRequest.model_validate(doc["request"])
                 # At most two transitions; empty stages do not need another poll.
                 while batch.document["phase"] != "ocr":
@@ -272,8 +278,18 @@ def advance_automatic(db):
                         }
                     else:
                         phase = "ocr"
+                        allowed = None
+                        if doc.get("campaign_purpose") == "board_change_refinement":
+                            job_ids = [u["job_id"] for u in doc["units"]]
+                            allowed = {
+                                i
+                                for w in session.scalars(
+                                    select(AnalysisWindow).where(AnalysisWindow.job_id.in_(job_ids))
+                                )
+                                for i in w.document["anchor_evidence_ids"]
+                            }
                         units, summary = ocr_units(
-                            session, db.settings.data_dir, request, doc["source_hashes"]
+                            session, db.settings.data_dir, request, doc["source_hashes"], allowed
                         )
                     added = []
                     for unit in units:

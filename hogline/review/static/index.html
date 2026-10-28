@@ -15,6 +15,7 @@
     <script src="/static/reconciliation.js" defer></script>
     <script src="/static/automatic.js" defer></script>
     <script src="/static/board-timeline.js" defer></script>
+    <script src="/static/board-refinement.js" defer></script>
   </head>
   <body>
     <header>
@@ -915,6 +916,71 @@
       <span class="eyebrow">POSTED CARDS · PROPOSED CHANGE</span>
       <h2>Check both sides of the change</h2>
       <div id="board-change-comparison"></div>
+    </dialog>
+    <dialog id="board-refinement-dialog" class="wide-dialog">
+      <form id="board-refinement-form">
+        <button
+          type="button"
+          class="close-dialog"
+          aria-label="Close gap refinement"
+        >
+          ×
+        </button>
+        <span class="eyebrow">TARGETED EVIDENCE</span>
+        <h2>Narrow a board-change gap</h2>
+        <p id="refinement-context"></p>
+        <div class="form-grid">
+          <label
+            >Maximum windows<input
+              name="windows"
+              type="number"
+              min="1"
+              max="8"
+              required
+          /></label>
+          <label
+            >Window seconds<input
+              name="duration"
+              type="number"
+              min="4"
+              max="30"
+              required
+          /></label>
+          <label
+            >Retained growth (MB)<input
+              name="growth"
+              type="number"
+              min="1"
+              max="4096"
+              required
+          /></label>
+          <label
+            >Worker seconds<input
+              name="worker"
+              type="number"
+              min="10"
+              max="86400"
+              required
+          /></label>
+        </div>
+        <div
+          id="refinement-preview"
+          class="plan-preview"
+          aria-live="polite"
+        ></div>
+        <div class="dialog-actions">
+          <button type="submit" class="button secondary">
+            Preview gap samples</button
+          ><button
+            type="button"
+            class="button primary"
+            id="start-refinement"
+            disabled
+          >
+            Start gap refinement
+          </button>
+        </div>
+      </form>
     </dialog>
   </body>
 </html>

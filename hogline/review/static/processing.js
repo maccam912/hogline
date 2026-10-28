@@ -58,9 +58,9 @@
       .filter((b) => b.request.source_ids.includes(state.source))
       .map((b) => {
         const mb = b.reserved_image_bytes / 1024 ** 2;
-        return `<article class="batch-card"><div class="batch-heading"><strong>${b.kind === "automatic" ? "Automatic analysis · " + escapeHTML(b.phase) : b.kind === "adaptive_windows" ? "Selected detail windows" : "Recording batch"}</strong><span class="pill ${b.state === "paused" ? "amber" : ""}">${escapeHTML(b.state)}</span></div>
-        <p>${b.succeeded_units} / ${b.units.length} work units complete · ${b.deferred_units} ${b.kind === "automatic" ? "scan chunks" : "units"} deferred to a later plan</p>
-        ${b.kind === "automatic" ? `<p class="fine-print">${b.phase_history.map((p) => (p.phase === "detail" ? `Detail: ${p.job_ids.length} windows, ${p.selected_quiet_audits} quiet audits, ${p.deferred_units} candidates deferred.` : `OCR: ${p.selected_frames} frames selected, ${p.deferred_frames} deferred.`)).join(" ")} ${b.state === "completed" ? "Bounded work finished; this does not establish full recording coverage." : "Stages advance automatically while the local worker runs."}</p>` : ""}
+        return `<article class="batch-card"><div class="batch-heading"><strong>${b.kind === "automatic" ? (b.campaign_purpose === "board_change_refinement" ? "Board-change refinement · " : "Automatic analysis · ") + escapeHTML(b.phase) : b.kind === "adaptive_windows" ? "Selected detail windows" : "Recording batch"}</strong><span class="pill ${b.state === "paused" ? "amber" : ""}">${escapeHTML(b.state)}</span></div>
+        <p>${b.succeeded_units} / ${b.units.length} work units complete · ${b.deferred_units} ${b.kind === "automatic" && b.campaign_purpose !== "board_change_refinement" ? "scan chunks" : "units"} deferred to a later plan</p>
+        ${b.kind === "automatic" ? `<p class="fine-print">${b.phase_history.map((p) => (p.phase === "detail" ? (p.kind === "board_change_refinement" ? `Board gap: ${p.selected_windows} selected windows. Unselected gaps remain unknown.` : `Detail: ${p.job_ids.length} windows, ${p.selected_quiet_audits} quiet audits, ${p.deferred_units} candidates deferred.`) : `OCR: ${p.selected_frames} frames selected, ${p.deferred_frames} deferred.`)).join(" ")} ${b.state === "completed" ? "Bounded work finished; this does not establish full recording coverage." : "Stages advance automatically while the local worker runs."}</p>` : ""}
         <p class="fine-print">${mb.toFixed(2)} / ${b.limits.max_image_growth_mb} MB reserved · ${Math.ceil(b.spent_worker_seconds)} / ${b.limits.max_worker_seconds} worker seconds · ${b.executions.length} attempts</p>
         ${b.pause_reason ? `<p class="job-error">${escapeHTML(b.pause_reason)}</p>` : ""}
         <div class="batch-actions">${b.state === "active" ? `<button class="button quiet" data-batch-action="pause" data-batch="${b.id}">Pause</button>` : ""}
@@ -119,11 +119,13 @@
       const batch = state.data.batches.find(
         (b) => b.id === button.dataset.nextPlan,
       );
-      return batch.kind === "automatic"
-        ? window.hoglineAutomatic.open(batch.request)
-        : batch.kind === "adaptive_windows"
-          ? window.hoglineAdaptive.open(batch.request)
-          : open(batch.request);
+      return batch.campaign_purpose === "board_change_refinement"
+        ? window.hoglineRefinement.open(batch.refinement_request)
+        : batch.kind === "automatic"
+          ? window.hoglineAutomatic.open(batch.request)
+          : batch.kind === "adaptive_windows"
+            ? window.hoglineAdaptive.open(batch.request)
+            : open(batch.request);
     }
     if (button.id === "start-batch" && preview) {
       button.disabled = true;
