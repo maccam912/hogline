@@ -123,6 +123,8 @@ def main():
     refine = commands.add_parser("refine-board", help="Inspect short windows inside a posted-board gap")
     refine.add_argument("change_id")
     refine.add_argument("--windows", type=int, default=3)
+    refine.add_argument("--rounds", type=int, default=3)
+    refine.add_argument("--target-seconds", type=int, default=60)
     refine.add_argument("--max-worker-seconds", type=int, default=300)
     refine.add_argument("--max-growth-mb", type=int, default=96)
     refine.add_argument("--enqueue", action="store_true")
@@ -230,6 +232,8 @@ def main():
                 request = RefinementRequest(
                     change_id=args.change_id,
                     max_windows=args.windows,
+                    max_rounds=args.rounds,
+                    target_bracket_seconds=args.target_seconds,
                     max_worker_seconds=args.max_worker_seconds,
                     max_image_growth_mb=args.max_growth_mb,
                 )

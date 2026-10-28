@@ -393,7 +393,13 @@ def finish_execution(session, token, state, elapsed=None):
             batch.document = {**batch.document, "pause_reason": "A work unit failed; inspect and retry it"}
         if (
             batch.state == "active"
-            and (batch.document.get("kind") != "automatic" or batch.document.get("phase") == "ocr")
+            and (
+                batch.document.get("kind") != "automatic"
+                or (
+                    batch.document.get("phase") == "ocr"
+                    and batch.document.get("campaign_purpose") != "board_change_refinement"
+                )
+            )
             and all(session.get(Job, u["job_id"]).state == "succeeded" for u in batch.document["units"])
         ):
             batch.state = "completed"

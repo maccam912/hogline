@@ -89,7 +89,7 @@ def media(monkeypatch):
 
 
 def test_preview_selects_largest_gaps_without_fetching_media_or_enqueuing(db, change):
-    request = RefinementRequest(change_id=change["id"], max_windows=3)
+    request = RefinementRequest(max_rounds=1, change_id=change["id"], max_windows=3)
     result = preview_refinement(db, request)
     assert result["sha256"] == preview_refinement(db, request)["sha256"]
     spans = [
@@ -106,7 +106,7 @@ def test_preview_selects_largest_gaps_without_fetching_media_or_enqueuing(db, ch
 
 def test_refinement_only_reads_selected_anchors_under_one_batch_budget(db, sources, change, media):
     unrelated = frame(db, sources[0], 90)
-    request = RefinementRequest(change_id=change["id"], max_windows=1)
+    request = RefinementRequest(max_rounds=1, change_id=change["id"], max_windows=1)
     result = create_refinement_batch(db, request)
     assert result["phase"] == "detail" and len(result["units"]) == 1
     for _ in range(4):
@@ -134,7 +134,7 @@ def test_completed_windows_with_unread_anchors_are_reused_then_new_gaps_selected
         db, windows.WindowRequest(source_id=sources[0]["id"], start_seconds=55, end_seconds=65)
     )
     assert worker.run_one(db)["state"] == "succeeded"
-    request = RefinementRequest(change_id=change["id"], max_windows=2)
+    request = RefinementRequest(max_rounds=1, change_id=change["id"], max_windows=2)
     result = preview_refinement(db, request)
     assert result["reused_succeeded_units"] == 1
     assert result["units"][0]["selection"]["reason"] == "read_pending_board_anchors"
@@ -147,7 +147,7 @@ def test_completed_windows_with_unread_anchors_are_reused_then_new_gaps_selected
 
 
 def test_changed_readings_invalidate_preview_and_existing_work_is_not_stolen(db, change):
-    request = RefinementRequest(change_id=change["id"], max_windows=1)
+    request = RefinementRequest(max_rounds=1, change_id=change["id"], max_windows=1)
     preview = preview_refinement(db, request)
     batch = create_refinement_batch(db, request, preview["sha256"])
     other = preview_refinement(db, request)
@@ -164,7 +164,7 @@ def test_changed_readings_invalidate_preview_and_existing_work_is_not_stolen(db,
 
 
 def test_api_requires_current_preview_and_reports_a_too_narrow_gap(db, change):
-    request = RefinementRequest(change_id=change["id"], max_windows=1)
+    request = RefinementRequest(max_rounds=1, change_id=change["id"], max_windows=1)
     with TestClient(create_app(db.settings)) as client:
         preview = client.post("/api/board-refinement/preview", json=request.model_dump())
         assert preview.status_code == 200
@@ -179,7 +179,158 @@ def test_api_requires_current_preview_and_reports_a_too_narrow_gap(db, change):
             row = session.get(FrameObservation, f"ocr-{seconds}")
             row.document = {**row.document, "source_seconds": seconds - 98}
     new_change = broadcast_catalog(db)["board_timeline"]["changes"][0]
-    narrow = RefinementRequest(change_id=new_change["id"])
+    narrow = RefinementRequest(max_rounds=1, change_id=new_change["id"])
     assert preview_refinement(db, narrow)["units"] == []
     with pytest.raises(ValueError, match="No new windows fit"):
         create_refinement_batch(db, narrow)
+
+
+def drain(db):
+    results = []
+    for _ in range(100):
+        result = worker.run_one(db)
+        if result is None:
+            return results
+        assert result["state"] == "succeeded", result
+        results.append(result)
+    pytest.fail("Refinement did not honor its round bound")
+
+
+def test_multiple_rounds_survive_restart_and_stop_unresolved_at_round_limit(db, change, media):
+    from hogline.db import Database
+
+    request = RefinementRequest(
+        change_id=change["id"], max_windows=1, max_rounds=2, target_bracket_seconds=10
+    )
+    result = create_refinement_batch(db, request)
+    for _ in range(4):
+        assert worker.run_one(db)["state"] == "succeeded"
+    with db.session() as session:
+        row = session.get(ProcessingBatch, result["id"])
+        assert row.state == "active" and row.document["phase"] == "ocr"
+        first_cost = row.document["spent_worker_seconds"]
+    restarted = Database(db.settings)
+    assert len(drain(restarted)) == 4
+    with db.session() as session:
+        row = session.get(ProcessingBatch, result["id"])
+        doc = row.document
+        assert row.state == "completed" and doc["refinement_round"] == 2
+        assert doc["refinement_outcome"]["status"] == "round_limit"
+        assert doc["refinement_outcome"]["widest_bracket_seconds"] == 100
+        assert doc["spent_worker_seconds"] > first_cost > 0
+        assert [h["round"] for h in doc["phase_history"]] == [1, 1, 2, 2]
+        assert len(doc["refinement_round_outcomes"]) == 2
+        requests = [u["payload"]["request"] for u in doc["units"] if u["payload"]["kind"] == "dense_window"]
+        assert [(r["start_seconds"], r["end_seconds"]) for r in requests] == [(55, 65), (27.5, 37.5)]
+        assert doc["board_change"] == change
+
+
+def test_target_reached_ends_rounds_early_without_accepting_a_score(db, change, media, monkeypatch):
+    original = ocr_jobs.analyze_broadcast_frame
+
+    def readable(*args, **kwargs):
+        result = original(*args, **kwargs)
+        session = args[0]
+        result = {
+            **result,
+            "scoreboard": {
+                "status": "observed",
+                "cards": []
+                if result["source_seconds"] < 60
+                else [{"color": "red", "end_number": 1, "cumulative_points": 2}],
+                "unreadable_slots": [],
+                "conflicting_end_numbers": [],
+            },
+        }
+        session.get(FrameObservation, result["id"]).document = result
+        return result
+
+    monkeypatch.setattr(ocr_jobs, "analyze_broadcast_frame", readable)
+    result = create_refinement_batch(
+        db, RefinementRequest(change_id=change["id"], max_windows=1, max_rounds=4, target_bracket_seconds=10)
+    )
+    assert len(drain(db)) == 4
+    with db.session() as session:
+        doc = session.get(ProcessingBatch, result["id"]).document
+        assert doc["refinement_round"] == 1
+        assert doc["refinement_outcome"]["status"] == "target_reached"
+        assert doc["refinement_outcome"]["widest_bracket_seconds"] == 5
+    event = broadcast_catalog(db)["board_timeline"]["changes"][0]
+    assert event["before"]["source_seconds"] == 55 and event["after"]["source_seconds"] == 60
+    assert event["acceptance"] == "proposed" and event["played_end_time_seconds"] is None
+
+
+def test_budget_between_rounds_pauses_without_enqueuing_and_resume_keeps_costs(db, change, media):
+    from hogline.orchestration.plans import BatchControl, control_batch
+
+    result = create_refinement_batch(
+        db, RefinementRequest(change_id=change["id"], max_windows=1, max_rounds=2, max_worker_seconds=300)
+    )
+    for _ in range(4):
+        assert worker.run_one(db)["state"] == "succeeded"
+    with db.session() as session:
+        row = session.get(ProcessingBatch, result["id"])
+        row.document = {**row.document, "spent_worker_seconds": 300}
+    assert worker.run_one(db) is None
+    with db.session() as session:
+        row = session.get(ProcessingBatch, result["id"])
+        assert row.state == "paused" and row.document["refinement_round"] == 1
+        assert len(row.document["units"]) == 4
+    control_batch(db, result["id"], BatchControl(action="resume", max_worker_seconds=600))
+    assert len(drain(db)) == 4
+    with db.session() as session:
+        doc = session.get(ProcessingBatch, result["id"]).document
+        assert doc["spent_worker_seconds"] > 300
+        assert [h["round"] for h in doc["refinement_round_outcomes"]] == [1, 2]
+
+
+def test_next_round_never_expands_original_color_source_or_interval(db, change, monkeypatch):
+    from hogline.orchestration import board_refinement
+
+    other = []
+    for field, value in (("color", "yellow"), ("source_id", "another"), ("model_version", "another")):
+        other.append({**change, field: value})
+    other.append({**change, "before": {**change["before"], "source_seconds": 0}})
+    monkeypatch.setattr(
+        board_refinement, "broadcast_catalog_in_session", lambda *args: {"board_timeline": {"changes": other}}
+    )
+    with db.session() as session:
+        plan, outcome = board_refinement.next_refinement(
+            session,
+            db.settings.data_dir,
+            {
+                "board_change": change,
+                "refinement_round": 1,
+                "refinement_request": RefinementRequest(change_id=change["id"]).model_dump(),
+            },
+        )
+    assert plan is None and outcome["status"] == "no_current_matching_bracket"
+    assert outcome["remaining_brackets"] == []
+
+
+def test_failed_round_publication_leaves_no_orphan_jobs_or_round_increment(db, change, media, monkeypatch):
+    from hogline.orchestration import automatic
+    from hogline.orchestration.plans import BatchControl, control_batch
+
+    result = create_refinement_batch(
+        db, RefinementRequest(change_id=change["id"], max_windows=1, max_rounds=2, target_bracket_seconds=10)
+    )
+    for _ in range(4):
+        assert worker.run_one(db)["state"] == "succeeded"
+    original = automatic.enqueue_in_session
+
+    def failure(*args, **kwargs):
+        original(*args, **kwargs)
+        raise ValueError("injected publication failure")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(automatic, "enqueue_in_session", failure)
+        assert worker.run_one(db) is None
+    with db.session() as session:
+        row = session.get(ProcessingBatch, result["id"])
+        assert row.state == "paused" and row.document["refinement_round"] == 1
+        assert row.document["phase"] == "ocr"
+        assert len(row.document["units"]) == 4
+        assert session.scalar(select(func.count()).select_from(Job)) == 4
+    control_batch(db, result["id"], BatchControl(action="resume"))
+    assert len(drain(db)) == 4

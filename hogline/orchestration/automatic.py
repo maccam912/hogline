@@ -219,100 +219,149 @@ def ocr_units(session, root, request, hashes, allowed_evidence_ids=None):
     }
 
 
+def append_phase(session, batch, phase, units, summary):
+    doc = batch.document
+    added = []
+    for unit in units:
+        job = enqueue_in_session(session, unit["payload"], batch.id)
+        added.append({**unit, "job_id": job.id})
+    batch.document = {
+        **doc,
+        "phase": phase,
+        "units": [*doc["units"], *added],
+        "phase_history": [
+            *doc["phase_history"],
+            {
+                "phase": phase,
+                "at": now(),
+                "job_ids": [u["job_id"] for u in added],
+                **({"round": doc["refinement_round"]} if "refinement_round" in doc else {}),
+                **summary,
+            },
+        ],
+        **(
+            {"refinement_current_job_ids": [u["job_id"] for u in added]}
+            if phase == "detail" and doc.get("campaign_purpose") == "board_change_refinement"
+            else {}
+        ),
+    }
+
+
 def advance_automatic(db):
-    """Called by the worker before claiming. Stage publication is atomic and restart safe."""
+    """Atomically advance ready stages; finite rounds also handle all-cached stages."""
     with db.snapshot_session(write=True) as session:
         for batch in session.scalars(select(ProcessingBatch).where(ProcessingBatch.state == "active")):
-            doc = batch.document
-            if doc.get("kind") != "automatic" or doc.get("active_execution"):
-                continue
-            if any(session.get(Job, u["job_id"]).state != "succeeded" for u in doc["units"]):
+            if batch.document.get("kind") != "automatic":
                 continue
             try:
-                if doc["method_pin"] != method_pin():
-                    raise ValueError(
-                        "Automatic processing methods changed; cancel and preview a new campaign"
-                    )
-                for sid, sha in doc["source_hashes"].items():
-                    if source_or_error(session, sid)["metadata_sha256"] != sha:
-                        raise ValueError("Source metadata changed; cancel and preview a new campaign")
-                limits = doc.get("limits", doc["request"])
-                if (
-                    doc["spent_worker_seconds"] >= limits["max_worker_seconds"]
-                    or doc["reserved_image_bytes"] >= limits["max_image_growth_mb"] * 1024**2
-                ):
-                    raise ValueError("Shared campaign budget reached before the next stage")
-                if doc.get("campaign_purpose") == "board_change_refinement":
-                    from hogline.orchestration.board_refinement import VERSION as REFINEMENT_VERSION
-
-                    if doc["selection_version"] != REFINEMENT_VERSION:
-                        raise ValueError("Board refinement method changed; preview a current refinement")
-                request = AutomaticRequest.model_validate(doc["request"])
-                # At most two transitions; empty stages do not need another poll.
-                while batch.document["phase"] != "ocr":
-                    doc = batch.document
-                    if doc["phase"] == "scan":
-                        planned = adaptive_in_session(
-                            session,
-                            AdaptiveRequest(
-                                source_ids=request.source_ids,
-                                start_seconds=request.start_seconds,
-                                end_seconds=request.end_seconds,
-                                max_jobs=request.detail_jobs,
-                                window_seconds=request.window_seconds,
-                                quiet_audit_fraction=0.2,
-                                max_image_growth_mb=request.max_image_growth_mb,
-                                max_worker_seconds=request.max_worker_seconds,
-                            ),
-                        )
-                        phase, units = "detail", planned["units"]
-                        summary = {
-                            k: planned[k]
-                            for k in (
-                                "sha256",
-                                "eligible_sparse_samples",
-                                "deferred_units",
-                                "exclusions",
-                                "selected_quiet_audits",
-                            )
-                        }
-                    else:
-                        phase = "ocr"
-                        allowed = None
-                        if doc.get("campaign_purpose") == "board_change_refinement":
-                            job_ids = [u["job_id"] for u in doc["units"]]
-                            allowed = {
-                                i
-                                for w in session.scalars(
-                                    select(AnalysisWindow).where(AnalysisWindow.job_id.in_(job_ids))
-                                )
-                                for i in w.document["anchor_evidence_ids"]
-                            }
-                        units, summary = ocr_units(
-                            session, db.settings.data_dir, request, doc["source_hashes"], allowed
-                        )
-                    added = []
-                    for unit in units:
-                        job = enqueue_in_session(session, unit["payload"], batch.id)
-                        added.append({**unit, "job_id": job.id})
-                    batch.document = {
-                        **doc,
-                        "phase": phase,
-                        "units": [*doc["units"], *added],
-                        "phase_history": [
-                            *doc["phase_history"],
-                            {"phase": phase, "at": now(), "job_ids": [u["job_id"] for u in added], **summary},
-                        ],
-                    }
-                    if added:
-                        break
-                if (
-                    all(session.get(Job, u["job_id"]).state == "succeeded" for u in batch.document["units"])
-                    and batch.document["phase"] == "ocr"
-                ):
-                    batch.state = "completed"
-                    freeze_outcomes(session, batch)
+                with session.begin_nested():
+                    advance_ready_batch(session, db.settings.data_dir, batch)
             except ValueError as exc:
                 batch.state = "paused"
                 batch.document = {**batch.document, "pause_reason": str(exc)}
         session.flush()
+
+
+def advance_ready_batch(session, root, batch):
+    for _ in range(12):  # Maximum four refinement rounds, each detail + OCR.
+        doc = batch.document
+        if doc.get("active_execution") or any(
+            session.get(Job, u["job_id"]).state != "succeeded" for u in doc["units"]
+        ):
+            break
+        if doc["method_pin"] != method_pin():
+            raise ValueError("Automatic processing methods changed; cancel and preview a new campaign")
+        for sid, sha in doc["source_hashes"].items():
+            if source_or_error(session, sid)["metadata_sha256"] != sha:
+                raise ValueError("Source metadata changed; cancel and preview a new campaign")
+        refining = doc.get("campaign_purpose") == "board_change_refinement"
+        if refining:
+            from hogline.orchestration.board_refinement import VERSION as REFINEMENT_VERSION
+            from hogline.orchestration.board_refinement import next_refinement
+
+            if doc["selection_version"] != REFINEMENT_VERSION:
+                raise ValueError("Board refinement method changed; preview a current refinement")
+        next_plan = None
+        if doc["phase"] == "ocr":
+            if refining:
+                next_plan, outcome = next_refinement(session, root, doc)
+                history = doc.get("refinement_round_outcomes", [])
+                batch.document = {
+                    **doc,
+                    "refinement_outcome": outcome,
+                    "refinement_round_outcomes": [h for h in history if h["round"] != outcome["round"]]
+                    + [outcome],
+                }
+                doc = batch.document
+            if next_plan is None:
+                batch.state = "completed"
+                freeze_outcomes(session, batch)
+                break
+        limits = doc.get("limits", doc["request"])
+        if (
+            doc["spent_worker_seconds"] >= limits["max_worker_seconds"]
+            or doc["reserved_image_bytes"] >= limits["max_image_growth_mb"] * 1024**2
+        ):
+            raise ValueError("Shared campaign budget reached before the next stage")
+        request = AutomaticRequest.model_validate(doc["request"])
+        if next_plan is not None:
+            batch.document = {**doc, "refinement_round": doc.get("refinement_round", 1) + 1}
+            append_phase(
+                session,
+                batch,
+                "detail",
+                next_plan["units"],
+                {
+                    "kind": "board_change_refinement",
+                    "selected_windows": len(next_plan["units"]),
+                    "selected_quiet_audits": 0,
+                    "deferred_units": 0,
+                    "selection_sha256": next_plan["sha256"],
+                    "board_change": next_plan["board_change"],
+                    "excluded_intervals": next_plan["excluded_intervals"],
+                    "unselected_gap_intervals": next_plan["unselected_gap_intervals"],
+                },
+            )
+        elif doc["phase"] == "scan":
+            planned = adaptive_in_session(
+                session,
+                AdaptiveRequest(
+                    source_ids=request.source_ids,
+                    start_seconds=request.start_seconds,
+                    end_seconds=request.end_seconds,
+                    max_jobs=request.detail_jobs,
+                    window_seconds=request.window_seconds,
+                    quiet_audit_fraction=0.2,
+                    max_image_growth_mb=request.max_image_growth_mb,
+                    max_worker_seconds=request.max_worker_seconds,
+                ),
+            )
+            append_phase(
+                session,
+                batch,
+                "detail",
+                planned["units"],
+                {
+                    k: planned[k]
+                    for k in (
+                        "sha256",
+                        "eligible_sparse_samples",
+                        "deferred_units",
+                        "exclusions",
+                        "selected_quiet_audits",
+                    )
+                },
+            )
+        else:
+            allowed = None
+            if refining:
+                job_ids = doc.get("refinement_current_job_ids") or [u["job_id"] for u in doc["units"]]
+                allowed = {
+                    i
+                    for w in session.scalars(select(AnalysisWindow).where(AnalysisWindow.job_id.in_(job_ids)))
+                    for i in w.document["anchor_evidence_ids"]
+                }
+            units, summary = ocr_units(session, root, request, doc["source_hashes"], allowed)
+            append_phase(session, batch, "ocr", units, summary)
+    else:
+        raise ValueError("Automatic stage transition limit reached; inspect this campaign")

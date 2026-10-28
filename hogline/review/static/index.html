@@ -686,7 +686,7 @@
             </select></label
           >
           <label
-            >Maximum windows<input
+            >Windows per round<input
               name="jobs"
               type="number"
               min="1"
@@ -931,11 +931,27 @@
         <p id="refinement-context"></p>
         <div class="form-grid">
           <label
-            >Maximum windows<input
+            >Windows per round<input
               name="windows"
               type="number"
               min="1"
               max="8"
+              required
+          /></label>
+          <label
+            >Maximum rounds<input
+              name="rounds"
+              type="number"
+              min="1"
+              max="4"
+              required
+          /></label>
+          <label
+            >Target gap (seconds)<input
+              name="target"
+              type="number"
+              min="5"
+              max="600"
               required
           /></label>
           <label

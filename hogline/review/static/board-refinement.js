@@ -23,6 +23,8 @@
     f.dataset.change = change.id;
     for (const [name, value] of Object.entries({
       windows: request.max_windows ?? 3,
+      rounds: request.max_rounds ?? 3,
+      target: request.target_bracket_seconds ?? 60,
       duration: request.window_seconds ?? 10,
       growth: request.max_image_growth_mb ?? 96,
       worker: request.max_worker_seconds ?? 300,
@@ -40,6 +42,8 @@
     return {
       change_id: f.dataset.change,
       max_windows: Number(d.get("windows")),
+      max_rounds: Number(d.get("rounds")),
+      target_bracket_seconds: Number(d.get("target")),
       window_seconds: Number(d.get("duration")),
       max_image_growth_mb: Number(d.get("growth")),
       max_worker_seconds: Number(d.get("worker")),
@@ -58,8 +62,8 @@
       if (JSON.stringify(read()) !== signature) return;
       preview = { request, expected_plan_sha256: plan.sha256 };
       $("#refinement-preview").innerHTML =
-        `<h3>${plan.admitted_new_units} new short windows · ${plan.reused_succeeded_units} reused for reading</h3>
-        <p>${escapeHTML(plan.notice)}</p><p><strong>Decode and OCR share ${request.max_image_growth_mb} MB and ${request.max_worker_seconds} worker seconds.</strong></p>
+        `<h3>First round: ${plan.admitted_new_units} new short window${plan.admitted_new_units === 1 ? "" : "s"} · ${plan.reused_succeeded_units} reused for reading</h3>
+        <p>${escapeHTML(plan.notice)}</p><p>Up to ${request.max_rounds} round${request.max_rounds === 1 ? "" : "s"} of ${request.max_windows} window${request.max_windows === 1 ? "" : "s"} (${plan.maximum_total_windows} total), aiming for gaps of ${request.target_bracket_seconds} seconds or less in the original row and interval.</p><p><strong>Decode and OCR share ${request.max_image_growth_mb} MB and ${request.max_worker_seconds} worker seconds.</strong></p>
         ${plan.units
           .map((u) => {
             const r = u.payload.request;

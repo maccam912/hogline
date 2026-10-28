@@ -13,12 +13,14 @@ from hogline.orchestration.plans import publish_batch
 from hogline.orchestration.windows import WindowRequest, window_payload
 from hogline.perception.broadcast import broadcast_catalog_in_session
 
-VERSION = "largest-board-evidence-gap-selection-v1"
+VERSION = "largest-board-evidence-gap-selection-v2"
 
 
 class RefinementRequest(Model):
     change_id: str = Field(min_length=1, max_length=80)
     max_windows: int = Field(default=3, ge=1, le=8)
+    max_rounds: int = Field(default=3, ge=1, le=4)
+    target_bracket_seconds: int = Field(default=60, ge=5, le=600)
     window_seconds: int = Field(default=10, ge=4, le=30)
     max_image_growth_mb: int = Field(default=96, ge=1, le=4096)
     max_worker_seconds: int = Field(default=300, ge=10, le=86400)
@@ -187,6 +189,9 @@ def refinement_in_session(session, root, request):
         "request": campaign.model_dump(),
         "refinement_request": request.model_dump(),
         "selection_version": VERSION,
+        "refinement_round": 1,
+        "maximum_total_windows": request.max_windows * request.max_rounds,
+        "refinement_round_outcomes": [],
         "method_pin": method_pin(),
         "source_hashes": {source["id"]: source["metadata_sha256"]},
         "board_change": change,
@@ -207,6 +212,7 @@ def refinement_in_session(session, root, request):
             {
                 "phase": "detail",
                 "kind": "board_change_refinement",
+                "round": 1,
                 "at": now(),
                 "selected_windows": len(units),
                 "deferred_units": 0,
@@ -216,6 +222,7 @@ def refinement_in_session(session, root, request):
         "created_at": now(),
         "notice": (
             "Inspect a few short gaps, then read only their retained frames. "
+            "Later rounds inspect remaining wide gaps within the original source interval and shared budget. "
             "The result may narrow, split, or leave the bracket unchanged; "
             "it never timestamps end completion."
         ),
@@ -242,3 +249,59 @@ def create_refinement_batch(db, request, expected_plan_sha256=None):
             )
         result = publish_batch(session, plan)
         return result
+
+
+def next_refinement(session, root, document):
+    """Inspect the completed round before deciding whether more bounded work is useful."""
+    request = RefinementRequest.model_validate(document["refinement_request"])
+    original = document["board_change"]
+    timeline = broadcast_catalog_in_session(session, root)["board_timeline"]
+    left, right = original["before"]["source_seconds"], original["after"]["source_seconds"]
+    matching = sorted(
+        [
+            c
+            for c in timeline["changes"]
+            if c["source_id"] == original["source_id"]
+            and c["color"] == original["color"]
+            and c["source_metadata_sha256"] == original["source_metadata_sha256"]
+            and c["model_version"] == original["model_version"]
+            and left - 1e-6 <= c["before"]["source_seconds"] < c["after"]["source_seconds"] <= right + 1e-6
+        ],
+        key=lambda c: (-c["bracket_seconds"], c["before"]["source_seconds"], c["id"]),
+    )
+    wide = [c for c in matching if c["bracket_seconds"] > request.target_bracket_seconds]
+    outcome = {
+        "round": document.get("refinement_round", 1),
+        "at": now(),
+        "target_bracket_seconds": request.target_bracket_seconds,
+        "remaining_brackets": [
+            {
+                "change_id": c["id"],
+                "color": c["color"],
+                "start_seconds": c["before"]["source_seconds"],
+                "end_seconds": c["after"]["source_seconds"],
+                "bracket_seconds": c["bracket_seconds"],
+            }
+            for c in matching
+        ],
+        "remaining_wide_brackets": len(wide),
+        "widest_bracket_seconds": max((c["bracket_seconds"] for c in matching), default=None),
+    }
+    if not matching:
+        return None, {**outcome, "status": "no_current_matching_bracket"}
+    if not wide:
+        return None, {**outcome, "status": "target_reached"}
+    if outcome["round"] >= request.max_rounds:
+        return None, {**outcome, "status": "round_limit"}
+    # A previous round may reveal several changes; tackle the widest remaining
+    # bracket first. The original color/source interval remains the scope limit.
+    for change in wide[:64]:
+        planned = refinement_in_session(session, root, request.model_copy(update={"change_id": change["id"]}))
+        if planned["units"]:
+            return planned, {
+                **outcome,
+                "status": "continue",
+                "next_change_id": change["id"],
+                "next_plan_sha256": planned["sha256"],
+            }
+    return None, {**outcome, "status": "no_available_windows"}
