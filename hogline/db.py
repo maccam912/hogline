@@ -250,6 +250,17 @@ class BoardEvaluation(Base):
     created_at: Mapped[str] = mapped_column(String, default=now)
 
 
+class WindowTracks(Base):
+    __tablename__ = "window_tracks"
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    window_id: Mapped[str] = mapped_column(ForeignKey("analysis_window.id"))
+    version: Mapped[str] = mapped_column(String)
+    sha256: Mapped[str] = mapped_column(String)
+    document: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[str] = mapped_column(String, default=now)
+    __table_args__ = (UniqueConstraint("window_id", "version"),)
+
+
 class Database:
     def __init__(self, settings: Settings):
         self.settings = settings

@@ -12,6 +12,7 @@
     <script src="/static/discovery.js" defer></script>
     <script src="/static/boundaries.js" defer></script>
     <script src="/static/windows.js" defer></script>
+    <script src="/static/tracks.js" defer></script>
     <script src="/static/adaptive.js" defer></script>
     <script src="/static/reconciliation.js" defer></script>
     <script src="/static/automatic.js" defer></script>
@@ -1034,6 +1035,18 @@
           </button>
         </div>
       </form>
+    </dialog>
+    <dialog id="tracks-dialog" class="wide-dialog">
+      <button
+        type="button"
+        class="close-dialog"
+        aria-label="Close handle fragments"
+      >
+        ×
+      </button>
+      <span class="eyebrow">CACHED OBSERVATIONS · PROPOSED ASSOCIATIONS</span>
+      <h2>Trace visible handle fragments</h2>
+      <div id="tracks-content" aria-live="polite"></div>
     </dialog>
   </body>
 </html>

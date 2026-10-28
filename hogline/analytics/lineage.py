@@ -80,6 +80,33 @@ def validate_references(payload):
         )
         if any(evidence[e]["source_id"] != window["source_id"] for e in window["anchor_evidence_ids"]):
             raise ValueError("Release window anchor/source mismatch; publication was rolled back")
+    windows = {w["id"]: w for w in payload["analysis_windows"]}
+    for result in payload.get("window_tracks", []):
+        require([result["window_id"]], windows, "handle fragments")
+        window = windows[result["window_id"]]
+        if (
+            result["source_id"] != window["source_id"]
+            or result["source_metadata_sha256"] != window["source_metadata_sha256"]
+            or result["input_parquet"] != window["parquet"]
+        ):
+            raise ValueError("Release handle fragments disagree with their source window")
+        require(result["context_anchor_evidence_ids"], window["anchor_evidence_ids"], "track context anchor")
+        for track in result["tracks"]:
+            points = track["points"]
+            if (
+                len(points) < result["minimum_samples"]
+                or track["start_seconds"] != points[0]["source_seconds"]
+                or track["end_seconds"] != points[-1]["source_seconds"]
+                or not window["observed_first_seconds"]
+                <= track["start_seconds"]
+                < track["end_seconds"]
+                <= window["observed_last_seconds"]
+                or any(
+                    b["source_seconds"] <= a["source_seconds"]
+                    for a, b in zip(points, points[1:], strict=False)
+                )
+            ):
+                raise ValueError("Release handle fragment timestamps disagree with their window")
     for scan in payload["processing_scans"]:
         require([scan["source_id"]], sources, "processing scan")
         require([s["evidence_id"] for s in scan.get("samples", [])], evidence, "processing sample")

@@ -16,6 +16,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from hogline import __version__
 from hogline.adapters.sources import import_youtube
 from hogline.analytics.exports import csv_export, snapshot
+from hogline.analytics.tracks import derive_window_tracks, tracks_in_session
 from hogline.config import Settings
 from hogline.db import (
     AnalysisWindow,
@@ -30,6 +31,7 @@ from hogline.db import (
     Release,
     Revision,
     Source,
+    WindowTracks,
 )
 from hogline.domain.catalog import Conflict, catalog_in_session, save_game
 from hogline.domain.models import GameEdit, Model, ScanRequest
@@ -89,6 +91,7 @@ from hogline.perception.ocr import normalized_crop
 from hogline.perception.pipeline import analyze_cached, observations_in_session
 from hogline.perception.stones import VERSION as DETECTOR_VERSION
 from hogline.perception.temporal import VERSION as WINDOW_VERSION
+from hogline.perception.tracking import VERSION as TRACKING_VERSION
 from hogline.perception.visibility import VERSION as VISIBILITY_VERSION
 from hogline.reconstruction.boundaries import boundary_links
 from hogline.review.board_evaluation import register_board_evaluation
@@ -157,6 +160,8 @@ def create_app(settings: Settings | None = None, start_worker=False):
                 "observations": observations_in_session(session),
                 "board_locations": board_locations_in_session(session),
                 "window_version": WINDOW_VERSION,
+                "window_tracking_version": TRACKING_VERSION,
+                "window_tracks": tracks_in_session(session),
                 "window_detector_version": DETECTOR_VERSION,
                 "window_visibility_version": VISIBILITY_VERSION,
                 "window_decoder_version": DECODER_VERSION,
@@ -193,6 +198,27 @@ def create_app(settings: Settings | None = None, start_worker=False):
         return FileResponse(
             path, media_type="application/vnd.apache.parquet", filename=f"hogline-{window_id}.parquet"
         )
+
+    @app.post("/api/windows/{window_id}/tracks")
+    def create_window_tracks(window_id: str):
+        return derive_window_tracks(db, window_id)
+
+    @app.get("/api/window-tracks/{identifier}")
+    def get_window_tracks(identifier: str):
+        from hogline.adapters.sources import digest
+
+        with db.session() as session:
+            row = session.get(WindowTracks, identifier)
+            if row is None:
+                raise HTTPException(404, "Handle fragment analysis not found")
+            if digest(row.document) != row.sha256:
+                raise ValueError("Stored handle fragment checksum mismatch")
+            return JSONResponse(
+                {"id": row.id, "sha256": row.sha256, **row.document},
+                headers={
+                    "Content-Disposition": f'attachment; filename="hogline-tracks-{identifier}.json"',
+                },
+            )
 
     @app.get("/api/labels/{evidence_id}/{view}")
     def get_labels(evidence_id: str, view: str):

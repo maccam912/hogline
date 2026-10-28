@@ -5,6 +5,7 @@ from uuid import uuid4
 
 from hogline.adapters.sources import import_local, import_youtube, inventory
 from hogline.analytics.exports import csv_export, snapshot
+from hogline.analytics.tracks import derive_window_tracks
 from hogline.config import Settings
 from hogline.db import Database
 from hogline.domain.catalog import catalog
@@ -97,6 +98,8 @@ def main():
     board_freeze.add_argument("path", help="DatasetCreate JSON file")
     board_evaluate = commands.add_parser("evaluate-board", help="Evaluate cached board reader outputs")
     board_evaluate.add_argument("path", help="BoardEvaluationRequest JSON file")
+    trace = commands.add_parser("trace-window", help="Associate handles using cached dense observations only")
+    trace.add_argument("window_id")
     commands.add_parser("labels", help="List saved label views and recording/day groups")
     label_import = commands.add_parser("label-import", help="Import a revisioned label-edit JSON document")
     label_import.add_argument("path")
@@ -221,6 +224,8 @@ def main():
                 result = evaluate_board_dataset(
                     db, BoardEvaluationRequest.model_validate_json(Path(args.path).read_text())
                 )
+            case "trace-window":
+                result = derive_window_tracks(db, args.window_id)
             case "labels":
                 result = labels_catalog(db)
             case "label-import":

@@ -23,15 +23,9 @@ jobs:
       - run: uv run ruff check hogline tests scripts
       - run: uv run ruff format --check hogline tests scripts
       - run: uv run pytest -q
-      - run: node --check hogline/review/static/app.js
-      - run: node --check hogline/review/static/evaluation.js
-      - run: node --check hogline/review/static/processing.js
-      - run: node --check hogline/review/static/discovery.js
-      - run: node --check hogline/review/static/boundaries.js
-      - run: node --check hogline/review/static/windows.js
-      - run: node --check hogline/review/static/adaptive.js
-      - run: node --check hogline/review/static/reconciliation.js
-      - run: node --check hogline/review/static/automatic.js
-      - run: node --check hogline/review/static/board-timeline.js
-      - run: node --check hogline/review/static/board-refinement.js
+      - name: Check browser scripts
+        run: |
+          for script in hogline/review/static/*.js; do
+            node --check "$script"
+          done
       - run: uv build
