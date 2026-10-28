@@ -50,6 +50,12 @@ def violations(path: str, content: bytes):
         errors.append("environment file")
     if len(content) > MAX_BYTES:
         errors.append("file exceeds the 1 MiB repository limit")
+    try:
+        content.decode("utf-8")
+        if b"\0" in content:
+            errors.append("binary artifact; keep generated media, archives, and catalogs outside Git")
+    except UnicodeDecodeError:
+        errors.append("binary artifact; keep generated media, archives, and catalogs outside Git")
     if any(pattern.search(content) for pattern in SECRET_PATTERNS):
         errors.append("possible credential, signed media URL, or private key")
     return errors

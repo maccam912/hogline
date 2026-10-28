@@ -84,3 +84,5 @@ node --check hogline/review/static/app.js
 Tests use synthetic data and local FFmpeg fixtures, never download YouTube media. They cover multiple games/uploads, idempotent import/job execution, interrupted-job reuse, stale review edits, unknown/blank scores, score evidence validation, immutable releases, timestamp precision, cache corruption, color/shape discrimination, and evidence budgets.
 
 The review API is documented at `/docs`. Its main routes are `GET /api/catalog`, `POST /api/sources`, `POST /api/scans`, `PUT /api/games/{id}`, `POST /api/perception/analyze`, and `POST /api/releases`.
+
+The public repository contains text source and documentation. Local data, media, model weights, environment files, and build outputs are ignored. `python3 scripts/check_repository.py` checks staged Git blobs for private/artifact paths, binary content, files over 1 MiB, and common credential patterns; CI checks every tracked blob. Enable the local hook after cloning with `git config core.hooksPath .githooks`, and review the staged diff before publishing.
