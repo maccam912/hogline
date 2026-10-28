@@ -72,6 +72,7 @@ def method_pin():
                 "decoder_version",
                 "perception_version",
                 "visibility_version",
+                "retention_version",
             )
         },
     }

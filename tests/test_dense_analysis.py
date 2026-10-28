@@ -89,9 +89,9 @@ def test_dense_window_has_columnar_rows_bounded_anchors_and_no_games(db, sources
     window = data["analysis_windows"][0]
     assert window["sample_count"] == 10
     assert window["coverage_kind"] == "discrete_dense_samples"
-    assert len(data["evidence"]) == 2
+    assert len(data["evidence"]) == 3
     assert window["candidates"][0]["candidate_count"] == 2
-    assert set(window["candidates"][0]["evidence_ids"]) == set(window["anchor_evidence_ids"])
+    assert set(window["candidates"][0]["evidence_ids"]) < set(window["anchor_evidence_ids"])
     assert window["candidates"][0]["youtube_url"].endswith("&t=100s")
     artifact = db.settings.data_dir / window["parquet"]["path"]
     assert hashlib.sha256(artifact.read_bytes()).hexdigest() == window["parquet"]["sha256"]
@@ -195,3 +195,34 @@ def test_explicit_reanalysis_preserves_old_logical_window(db, sources, fake_wind
     assert worker.run_one(db)["state"] == "succeeded"
     with db.session() as session:
         assert session.scalar(select(func.count()).select_from(AnalysisWindow)) == 2
+
+
+@pytest.mark.parametrize(
+    "seconds,expected", [([100, 100.7, 102.2, 104.8], [100, 102.2, 104.8]), ([100, 104.8], [100, 104.8])]
+)
+def test_temporal_anchors_use_real_nearest_midpoint_even_without_house_candidates(
+    db, sources, monkeypatch, seconds, expected
+):
+    monkeypatch.setattr(windows, "resolve_media", lambda source: {"uri": "fixture"})
+
+    def decode(*args, **kwargs):
+        for value in seconds:
+            yield (
+                Image.new("RGB", (640, 360), "white"),
+                {"pts": round(value * 1000), "time_base_num": 1, "time_base_den": 1000},
+            )
+
+    monkeypatch.setattr(windows, "decode_window", decode)
+    windows.enqueue_window(
+        db, windows.WindowRequest(source_id=sources[0]["id"], start_seconds=100, end_seconds=105)
+    )
+    assert worker.run_one(db)["state"] == "succeeded"
+    data = catalog(db)
+    window = data["analysis_windows"][0]
+    evidence = {e["id"]: e for e in data["evidence"]}
+    anchors = [evidence[i] for i in window["temporal_anchor_evidence_ids"]]
+    assert [e["source_seconds"] for e in anchors] == expected
+    assert [e["pts"] for e in anchors] == [round(t * 1000) for t in expected]
+    assert not window["candidates"]
+    assert window["retention_version"] == windows.RETENTION_VERSION
+    assert len(window["anchor_evidence_ids"]) == len(expected)

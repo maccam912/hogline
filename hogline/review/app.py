@@ -75,7 +75,7 @@ from hogline.orchestration.plans import (
     create_batch,
     preview_plan,
 )
-from hogline.orchestration.windows import WindowRequest, enqueue_window
+from hogline.orchestration.windows import RETENTION_VERSION, WindowRequest, enqueue_window
 from hogline.orchestration.worker import enqueue, jobs_in_session, retry, run_one
 from hogline.perception.board_locator import board_locations_in_session
 from hogline.perception.broadcast import analyze_broadcast, broadcast_catalog_in_session
@@ -152,6 +152,7 @@ def create_app(settings: Settings | None = None, start_worker=False):
                 "window_detector_version": DETECTOR_VERSION,
                 "window_visibility_version": VISIBILITY_VERSION,
                 "window_decoder_version": DECODER_VERSION,
+                "window_retention_version": RETENTION_VERSION,
                 "broadcast": broadcast,
                 "source_boundary_links": boundary_links(
                     data["sources"],

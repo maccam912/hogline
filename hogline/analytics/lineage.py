@@ -73,6 +73,11 @@ def validate_references(payload):
         require([window["source_id"]], sources, "analysis window")
         require(window["anchor_evidence_ids"], evidence, "window anchor")
         require(
+            window.get("temporal_anchor_evidence_ids", []),
+            set(window["anchor_evidence_ids"]),
+            "temporal anchor",
+        )
+        require(
             [e for c in window["candidates"] for e in c["evidence_ids"]],
             set(window["anchor_evidence_ids"]),
             "window candidate",

@@ -99,8 +99,8 @@ def test_full_campaign_across_eight_sheets_survives_restart_and_preserves_lineag
     assert doc["state"] == "completed" and doc["phase"] == "ocr"
     assert [p["phase"] for p in doc["phase_history"]] == ["detail", "ocr"]
     assert doc["phase_history"][0]["selected_quiet_audits"] >= 2
-    assert doc["phase_history"][1]["selected_frames"] == 16
-    assert len(remaining) == 24  # Eight detail windows, sixteen retained frames.
+    assert doc["phase_history"][1]["selected_frames"] == 24
+    assert len(remaining) == 32  # Eight detail windows, twenty-four retained frames.
     assert 0 < doc["reserved_image_bytes"] < request.max_image_growth_mb * 1024**2
     with db.session() as session:
         runs = list(session.scalars(select(JobExecution)))
@@ -110,7 +110,7 @@ def test_full_campaign_across_eight_sheets_survives_restart_and_preserves_lineag
             for o in session.scalars(select(FrameObservation))
             if o.document.get("kind") == "broadcast_observation"
         ]
-        assert len(observations) == 16 and {o["sheet"] for o in observations} == set(range(1, 9))
+        assert len(observations) == 24 and {o["sheet"] for o in observations} == set(range(1, 9))
         assert all(o["acceptance"] == "proposed" and "&t=" in o["youtube_url"] for o in observations)
     assert not catalog(db)["games"]
     assert worker.run_one(db) is None
@@ -214,7 +214,7 @@ def test_ocr_budget_stop_keeps_prior_observations_and_resumes_without_duplicates
                 .select_from(FrameObservation)
                 .where(FrameObservation.document["kind"].as_string() == "broadcast_observation")
             )
-            == 2
+            == 3
         )
         assert sum(e.document["wall_seconds"] for e in session.scalars(select(JobExecution))) > 0
 

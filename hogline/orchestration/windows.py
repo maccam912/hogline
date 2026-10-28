@@ -25,6 +25,8 @@ from hogline.perception.temporal import VERSION, ConfigurationTracker
 from hogline.perception.visibility import VERSION as VISIBILITY_VERSION
 from hogline.perception.visibility import visibility_observation
 
+RETENTION_VERSION = "endpoints-midpoint-and-configuration-anchors-v2"
+
 
 class WindowRequest(Model):
     source_id: str
@@ -58,6 +60,7 @@ def window_payload(source, request, layout=None):
         "decoder_version": DECODER_VERSION,
         "perception_version": HSVHandleDetector.version,
         "visibility_version": VISIBILITY_VERSION,
+        "retention_version": RETENTION_VERSION,
     }
 
 
@@ -82,11 +85,13 @@ def execute_window(db, job):
         job["decoder_version"],
         job["perception_version"],
         job.get("visibility_version"),
+        job.get("retention_version"),
     ) != (
         VERSION,
         DECODER_VERSION,
         HSVHandleDetector.version,
         VISIBILITY_VERSION,
+        RETENTION_VERSION,
     ):
         raise ValueError("Window processing version changed; enqueue current work")
     started, last_tick, token = time.monotonic(), 0, job["lease_token"]
@@ -105,7 +110,8 @@ def execute_window(db, job):
     tick()
     layout, detector, tracker = job["profile"], HSVHandleDetector(), ConfigurationTracker()
     rows, previous, recent, retained = [], {}, deque(maxlen=8), {}
-    first = last = None
+    first = last = middle = None
+    midpoint = (request.start_seconds + request.end_seconds) / 2
     media_selection = {k: v for k, v in handle.items() if k != "uri"}
     with_decoder = decode_window(
         handle["uri"],
@@ -125,6 +131,8 @@ def execute_window(db, job):
             frame = (index, image, timing)
             recent.append(frame)
             first, last = first or frame, frame
+            if middle is None or abs(seconds - midpoint) < abs(source_seconds(middle[2], source) - midpoint):
+                middle = frame
             rgb_sha = hashlib.sha256(image.tobytes()).hexdigest()
             for view in ("house_top", "house_bottom"):
                 bounds = layout["views"][view]
@@ -182,7 +190,7 @@ def execute_window(db, job):
     candidates = tracker.results()
     selected_candidates = [c for c in candidates if (c["view"], c["sample_indices"][0]) in retained]
     anchors = {f[0]: f for pair in retained.values() for f in pair}
-    anchors[first[0]], anchors[last[0]] = first, last
+    anchors[first[0]], anchors[last[0]], anchors[middle[0]] = first, last, middle
     budget = EvidenceBudget(db.settings.data_dir, request.max_evidence_mb, db.settings.max_cache_mb)
     budget.reserve_growth = lambda size: check_execution(db, token, time.monotonic() - started, size)
     evidence, anchor_ids = {}, {}
@@ -209,6 +217,7 @@ def execute_window(db, job):
                 "decoder_version",
                 "perception_version",
                 "visibility_version",
+                "retention_version",
             )
         },
         db.settings.data_dir,
@@ -227,12 +236,14 @@ def execute_window(db, job):
         "decoder_version": DECODER_VERSION,
         "model_version": detector.version,
         "visibility_version": VISIBILITY_VERSION,
+        "retention_version": RETENTION_VERSION,
         "sample_count": len(rows) // 2,
         "observed_first_seconds": rows[0]["source_seconds"],
         "observed_last_seconds": rows[-1]["source_seconds"],
         "coverage_kind": "discrete_dense_samples",
         "parquet": artifact,
         "anchor_evidence_ids": sorted(evidence),
+        "temporal_anchor_evidence_ids": list(dict.fromkeys(anchor_ids[f[0]] for f in (first, middle, last))),
         "candidates": selected_candidates,
         "deferred_candidate_count": len(candidates) - len(selected_candidates),
         "diagnostics": {
