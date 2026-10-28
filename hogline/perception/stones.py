@@ -4,7 +4,7 @@ from typing import Protocol
 import cv2
 import numpy as np
 
-VERSION = "opencv-hsv-handles-v3"
+VERSION = "opencv-hsv-handles-v4"
 
 
 class StoneDetector(Protocol):
@@ -34,6 +34,12 @@ class HSVHandleDetector:
         }
         detections = []
         for color, mask in colors.items():
+            # Composite borders can join a partly visible handle into one enormous
+            # component. Remove long straight color bands before finding objects.
+            length = max(15, round(min(width, height) * 0.3))
+            horizontal = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((1, length), np.uint8))
+            vertical = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((length, 1), np.uint8))
+            mask = cv2.bitwise_and(mask, cv2.bitwise_not(horizontal | vertical))
             # Opening rejects isolated noise without joining adjacent handles.
             mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
             # A red broadcast border can enclose otherwise disconnected red handles.
@@ -58,7 +64,7 @@ class HSVHandleDetector:
                         "area_px2": area,
                         "shape_score": min(1.0, circularity),
                         "score_kind": "uncalibrated_circularity",
-                        "boundary_clipped": x <= 1 or y <= 1 or x + w >= width - 1 or y + h >= height - 1,
+                        "boundary_clipped": min(x, y, width - x - w, height - y - h) <= max(w, h) / 2,
                         "acceptance": "proposed",
                         "object_kind": "colored_handle_candidate",
                     }

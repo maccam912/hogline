@@ -46,6 +46,16 @@ def test_reanalyze_cached_frames_without_media_fetch_preserves_observations(db, 
     assert len(catalog(db)["games"]) == 0
 
 
+def test_partly_clipped_handle_connected_to_broadcast_border_survives():
+    image = np.full((480, 480, 3), 220, dtype=np.uint8)
+    cv2.rectangle(image, (0, 0), (479, 479), (150, 40, 40), thickness=10)
+    cv2.circle(image, (233, 18), 13, (200, 55, 45), thickness=-1)
+    detections = HSVHandleDetector().detect(image)
+    assert len(detections) == 1 and detections[0]["color"] == "red"
+    assert np.linalg.norm(np.array(detections[0]["center_px"]) - [233, 18]) < 8
+    assert detections[0]["boundary_clipped"]
+
+
 def test_evidence_budget_stops_before_writing_past_limit(db, sources, monkeypatch):
     random = np.random.default_rng(1).integers(0, 256, (512, 512, 3), dtype=np.uint8)
     monkeypatch.setattr(worker, "resolve_media", lambda s: {"uri": "fixture", "format_id": "fixture"})

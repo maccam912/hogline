@@ -46,4 +46,6 @@ Label revisions, frozen datasets, evaluation reports, original images, and all a
 
 The Sheet 4 frame at [source 5:00](https://www.youtube.com/watch?v=es9urvYvLiE&t=300s) has an assistant-audited development label set: eight visible/partially visible handles and two ignored player occlusions. Seven model seeds were visually checked and the missing top-border red handle was added. A later revision marks that handle partially visible.
 
-The frozen **validation** case reports seven matched handles, one miss, and no extras for `opencv-hsv-handles-v3`. This is one development view with assistant provenance, not an independently labeled held-out accuracy result. It documents a reproducible failure to improve and is deliberately ineligible for confirmed evaluation.
+The frozen **validation** case reports seven matched handles, one miss, and no extras for `opencv-hsv-handles-v3`. Version 4 removes long straight colored border bands before contour extraction and recovers the clipped red handle: eight matches, no misses, no extras on the same case. Both versions' observations/reports remain available, and no video was reacquired to compare them.
+
+This is a targeted fix on one development view with assistant provenance, not an independently labeled held-out accuracy result. It is deliberately ineligible for confirmed evaluation. The source corpus is also rerun across all eight sheets to surface changed candidates; those unlabeled views are not assigned accuracy scores.
