@@ -31,6 +31,8 @@ Open **http://127.0.0.1:8765**. The server starts one bounded worker. Data is ke
 
 The [house-state benchmark](docs/HOUSE_EVALUATION.md) freezes independently reviewed interval labels and whole recording/day groups, then reports stability errors, abstentions, overlap exclusions and coverage from cached observations. Retained context frames alone cannot label an entire interval.
 
+**Automatic person fragments** add perspective-camera body observations to new detailed windows when the pinned local model is available. This is the first stage toward automatic thrower attribution; fragments remain anonymous until delivery and participant evidence establish the association. See [person processing and limits](docs/ACTORS.md).
+
 **Score disagreements** flags new pinned board proposals that differ from saved numbered ends. Review both evidence sets, acknowledge a reader error, or open the game to make an explicit correction. Decisions are revisioned and never automatically overwrite saved scores; see [disagreement review](docs/SCORE_DISAGREEMENTS.md).
 
 The default catalog is SQLite for a zero-service local pilot. SQLAlchemy models support a PostgreSQL connection through `HOGLINE_DATABASE_URL`; the PostgreSQL runtime has **not** been exercised yet. Install its driver with `uv sync --extra postgres`. Schema creation currently uses `create_all`; use explicit migrations before evolving a deployed database.

@@ -163,6 +163,9 @@ def adaptive_in_session(session, request):
                     "perception_version",
                     "visibility_version",
                     "retention_version",
+                    "actor_version",
+                    "person_version",
+                    "person_model_sha256",
                 )
             )
             and j.document["request"]["source_id"] == sid

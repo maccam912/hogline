@@ -76,6 +76,9 @@ def method_pin():
                 "perception_version",
                 "visibility_version",
                 "retention_version",
+                "actor_version",
+                "person_version",
+                "person_model_sha256",
             )
         },
     }

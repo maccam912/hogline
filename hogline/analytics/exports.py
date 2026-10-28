@@ -3,6 +3,7 @@ import io
 import json
 
 from hogline.adapters.sources import digest
+from hogline.analytics.actors import actors_in_session
 from hogline.analytics.house_states import house_states_in_session
 from hogline.analytics.lineage import source_lineage, validate_references
 from hogline.analytics.tracks import tracks_in_session
@@ -51,6 +52,7 @@ def snapshot_in_session(session, mode, root):
         "analysis_windows": data["analysis_windows"],
         "window_tracks": tracks_in_session(session, full=True),
         "window_house_states": house_states_in_session(session, full=True),
+        "window_actors": actors_in_session(session, full=True),
         "evidence": data["evidence"],
         "observations": observations_in_session(session),
         "broadcast": broadcast,

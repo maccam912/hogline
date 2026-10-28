@@ -70,10 +70,10 @@ SCHEMA = pa.schema(
 )
 
 
-def save_dense(rows, manifest, root, max_bytes, budget):
-    schema = SCHEMA.with_metadata(
+def save_dense(rows, manifest, root, max_bytes, budget, *, schema=SCHEMA, schema_version=SCHEMA_VERSION):
+    schema = schema.with_metadata(
         {
-            b"hogline.schema_version": SCHEMA_VERSION.encode(),
+            b"hogline.schema_version": schema_version.encode(),
             b"hogline.input_manifest": json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode(),
         }
     )
@@ -98,5 +98,5 @@ def save_dense(rows, manifest, root, max_bytes, budget):
         "sha256": sha,
         "bytes": len(content),
         "rows": len(rows),
-        "schema": SCHEMA_VERSION,
+        "schema": schema_version,
     }

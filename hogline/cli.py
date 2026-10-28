@@ -4,6 +4,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from hogline.adapters.sources import import_local, import_youtube, inventory
+from hogline.analytics.actors import derive_window_actors
 from hogline.analytics.exports import csv_export, snapshot
 from hogline.analytics.house_states import derive_house_states
 from hogline.analytics.moments import MomentQuery, search_moments
@@ -135,6 +136,10 @@ def main():
     trace.add_argument("window_id")
     states = commands.add_parser("house-states", help="Derive sampled house states from cached observations")
     states.add_argument("window_id")
+    actors = commands.add_parser(
+        "trace-actors", help="Derive anonymous person fragments from cached observations"
+    )
+    actors.add_argument("window_id")
     house_label = commands.add_parser("label-house", help="Save independent sampled-interval labels")
     house_label.add_argument("window_id")
     house_label.add_argument("view", choices=["house_top", "house_bottom"])
@@ -290,6 +295,8 @@ def main():
                 result = derive_window_tracks(db, args.window_id)
             case "house-states":
                 result = derive_house_states(db, args.window_id)
+            case "trace-actors":
+                result = derive_window_actors(db, args.window_id)
             case "label-house":
                 result = save_house_labels(
                     db,

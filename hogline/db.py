@@ -272,6 +272,17 @@ class WindowHouseStates(Base):
     __table_args__ = (UniqueConstraint("window_id", "version"),)
 
 
+class WindowActors(Base):
+    __tablename__ = "window_actors"
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    window_id: Mapped[str] = mapped_column(ForeignKey("analysis_window.id"))
+    version: Mapped[str] = mapped_column(String)
+    sha256: Mapped[str] = mapped_column(String)
+    document: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[str] = mapped_column(String, default=now)
+    __table_args__ = (UniqueConstraint("window_id", "version"),)
+
+
 class HouseLabels(Base):
     __tablename__ = "house_labels"
     id: Mapped[str] = mapped_column(String, primary_key=True)

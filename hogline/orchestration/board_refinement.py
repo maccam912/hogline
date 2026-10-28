@@ -77,6 +77,9 @@ def refinement_in_session(session, root, request):
         "perception_version",
         "visibility_version",
         "retention_version",
+        "actor_version",
+        "person_version",
+        "person_model_sha256",
     )
     intervals, units, excluded = [(left, right)], [], []
     observed = set(

@@ -107,6 +107,36 @@ def validate_references(payload):
                 )
             ):
                 raise ValueError("Release handle fragment timestamps disagree with their window")
+    for result in payload.get("window_actors", []):
+        require([result["window_id"]], windows, "actor fragments")
+        window = windows[result["window_id"]]
+        if result["input"] != window.get("actor_input") or any(
+            result[key] != window[key]
+            for key in (
+                "source_id",
+                "source_metadata_sha256",
+                "profile_sha256",
+            )
+        ):
+            raise ValueError("Release actor fragments disagree with their source window")
+        require(result["context_anchor_evidence_ids"], window["anchor_evidence_ids"], "actor context")
+        for track in result["tracks"]:
+            points = track["points"]
+            if (
+                len(points) < 3
+                or track["view"] not in ("perspective_left", "perspective_right")
+                or track["start_seconds"] != points[0]["source_seconds"]
+                or track["end_seconds"] != points[-1]["source_seconds"]
+                or not window["observed_first_seconds"]
+                <= track["start_seconds"]
+                < track["end_seconds"]
+                <= window["observed_last_seconds"]
+                or any(
+                    b["source_seconds"] <= a["source_seconds"]
+                    for a, b in zip(points, points[1:], strict=False)
+                )
+            ):
+                raise ValueError("Release actor fragment timestamps disagree with their source window")
     for result in payload.get("window_house_states", []):
         require([result["window_id"]], windows, "house states")
         window = windows[result["window_id"]]

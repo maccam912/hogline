@@ -15,6 +15,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from hogline import __version__
 from hogline.adapters.sources import import_youtube
+from hogline.analytics.actors import actors_in_session, checked_actor_result, derive_window_actors
 from hogline.analytics.exports import csv_export, snapshot
 from hogline.analytics.house_states import checked_result, derive_house_states, house_states_in_session
 from hogline.analytics.moments import MomentQuery, search_moments
@@ -33,6 +34,7 @@ from hogline.db import (
     Release,
     Revision,
     Source,
+    WindowActors,
     WindowHouseStates,
     WindowTracks,
 )
@@ -89,6 +91,7 @@ from hogline.orchestration.plans import (
 )
 from hogline.orchestration.windows import RETENTION_VERSION, WindowRequest, enqueue_window
 from hogline.orchestration.worker import enqueue, jobs_in_session, retry, run_one
+from hogline.perception.actors import VERSION as ACTOR_VERSION
 from hogline.perception.board_locator import board_locations_in_session
 from hogline.perception.broadcast import analyze_broadcast, broadcast_catalog_in_session
 from hogline.perception.ocr import normalized_crop
@@ -180,6 +183,8 @@ def create_app(settings: Settings | None = None, start_worker=False):
                 "window_tracks": tracks_in_session(session),
                 "window_house_states": house_states_in_session(session),
                 "house_states_version": HOUSE_STATES_VERSION,
+                "window_actors": actors_in_session(session),
+                "actor_version": ACTOR_VERSION,
                 "window_detector_version": DETECTOR_VERSION,
                 "window_visibility_version": VISIBILITY_VERSION,
                 "window_decoder_version": DECODER_VERSION,
@@ -225,6 +230,18 @@ def create_app(settings: Settings | None = None, start_worker=False):
     @app.post("/api/windows/{window_id}/house-states")
     def create_house_states(window_id: str):
         return derive_house_states(db, window_id)
+
+    @app.post("/api/windows/{window_id}/actors")
+    def create_window_actors(window_id: str):
+        return derive_window_actors(db, window_id)
+
+    @app.get("/api/window-actors/{identifier}")
+    def get_window_actors(identifier: str):
+        with db.session() as session:
+            row = session.get(WindowActors, identifier)
+            if row is None:
+                raise HTTPException(404, "Actor analysis not found")
+            return checked_actor_result(row)
 
     @app.get("/api/window-house-states/{identifier}")
     def get_house_states(identifier: str):

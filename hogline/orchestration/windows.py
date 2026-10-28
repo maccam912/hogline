@@ -6,10 +6,12 @@ import time
 from collections import deque
 from uuid import NAMESPACE_URL, uuid5
 
+import cv2
 import numpy as np
 from pydantic import Field, model_validator
 
 from hogline.adapters.sources import digest, video_link
+from hogline.analytics.actors import save_actor_observations, save_actors_in_session
 from hogline.analytics.dense import save_dense
 from hogline.analytics.house_states import save_house_states_in_session
 from hogline.analytics.tracks import save_tracks_in_session
@@ -21,6 +23,9 @@ from hogline.media.frames import EvidenceBudget, observe, resolve_media, source_
 from hogline.media.windows import VERSION as DECODER_VERSION
 from hogline.media.windows import decode_window
 from hogline.orchestration.plans import check_execution, enqueue_in_session, finish_execution
+from hogline.perception.actors import VERSION as ACTOR_VERSION
+from hogline.perception.people import MODEL_SHA256, optional_person_detector
+from hogline.perception.people import VERSION as PERSON_VERSION
 from hogline.perception.pipeline import analyze_frame
 from hogline.perception.stones import HSVHandleDetector
 from hogline.perception.temporal import VERSION, ConfigurationTracker
@@ -39,6 +44,7 @@ class WindowRequest(Model):
     max_evidence_mb: int = Field(default=64, ge=1, le=256)
     max_worker_seconds: int = Field(default=120, ge=10, le=600)
     run_nonce: str | None = Field(default=None, min_length=1, max_length=80)
+    analyze_actors: bool = True
 
     @model_validator(mode="after")
     def bounded(self):
@@ -63,6 +69,9 @@ def window_payload(source, request, layout=None):
         "perception_version": HSVHandleDetector.version,
         "visibility_version": VISIBILITY_VERSION,
         "retention_version": RETENTION_VERSION,
+        "actor_version": ACTOR_VERSION,
+        "person_version": PERSON_VERSION,
+        "person_model_sha256": MODEL_SHA256,
     }
 
 
@@ -88,12 +97,18 @@ def execute_window(db, job):
         job["perception_version"],
         job.get("visibility_version"),
         job.get("retention_version"),
+        job.get("actor_version"),
+        job.get("person_version"),
+        job.get("person_model_sha256"),
     ) != (
         VERSION,
         DECODER_VERSION,
         HSVHandleDetector.version,
         VISIBILITY_VERSION,
         RETENTION_VERSION,
+        ACTOR_VERSION,
+        PERSON_VERSION,
+        MODEL_SHA256,
     ):
         raise ValueError("Window processing version changed; enqueue current work")
     started, last_tick, token = time.monotonic(), 0, job["lease_token"]
@@ -112,6 +127,13 @@ def execute_window(db, job):
     tick()
     layout, detector, tracker = job["profile"], HSVHandleDetector(), ConfigurationTracker()
     rows, previous, recent, retained = [], {}, deque(maxlen=8), {}
+    actor_rows = []
+    person_detector, actor_info = (
+        optional_person_detector(db.settings.data_dir)
+        if request.analyze_actors
+        else (None, {"status": "disabled", "missing_reason": "disabled_by_request"})
+    )
+    actor_info = {**actor_info, "detector_version": PERSON_VERSION, "actor_version": ACTOR_VERSION}
     first = last = middle = None
     midpoint = (request.start_seconds + request.end_seconds) / 2
     media_selection = {k: v for k, v in handle.items() if k != "uri"}
@@ -174,6 +196,51 @@ def execute_window(db, job):
                     elif len(retained) < 3:
                         beginning = next(f for f in recent if f[0] == key[1])
                         retained[key] = [beginning, frame]
+            if person_detector is not None:
+                for view in ("perspective_left", "perspective_right"):
+                    tick()
+                    bounds = layout["views"][view]
+                    crop = image.crop(
+                        tuple(
+                            round(v * (image.width if n % 2 == 0 else image.height))
+                            for n, v in enumerate(bounds)
+                        )
+                    )
+                    try:
+                        people = person_detector.detect(np.asarray(crop))
+                    except (cv2.error, ValueError):
+                        # Model failures abstain; budget and lease checks stay outside this catch.
+                        person_detector, actor_rows = None, []
+                        actor_info = {
+                            **actor_info,
+                            "status": "unavailable",
+                            "missing_reason": "person_inference_failed",
+                        }
+                        break
+                    actor_rows.append(
+                        {
+                            **{
+                                k: row[k]
+                                for k in (
+                                    "sample_index",
+                                    "source_id",
+                                    "source_metadata_sha256",
+                                    "profile_sha256",
+                                    "pts",
+                                    "time_base_num",
+                                    "time_base_den",
+                                    "source_seconds",
+                                    "requested_interval_seconds",
+                                    "decoded_rgb_sha256",
+                                    "youtube_url",
+                                )
+                            },
+                            "view": view,
+                            "crop_width": crop.width,
+                            "crop_height": crop.height,
+                            "people": people,
+                        }
+                    )
             update_owned(
                 db,
                 job["id"],
@@ -226,6 +293,20 @@ def execute_window(db, job):
         min(16 * 1024**2, request.max_evidence_mb * 1024**2),
         budget,
     )
+    if actor_info["status"] == "available":
+        actor_info["parquet"] = save_actor_observations(
+            actor_rows,
+            {
+                "request": request.model_dump(),
+                "source_hash": source["metadata_sha256"],
+                "profile_sha256": job["profile_sha256"],
+                "detector_version": PERSON_VERSION,
+                "model_sha256": MODEL_SHA256,
+            },
+            db.settings.data_dir,
+            min(16 * 1024**2, request.max_evidence_mb * 1024**2),
+            budget,
+        )
     tick()
     result = {
         "id": str(uuid5(NAMESPACE_URL, f"dense-window:{job['id']}")),
@@ -239,6 +320,8 @@ def execute_window(db, job):
         "model_version": detector.version,
         "visibility_version": VISIBILITY_VERSION,
         "retention_version": RETENTION_VERSION,
+        "actor_version": ACTOR_VERSION,
+        "actor_input": actor_info,
         "sample_count": len(rows) // 2,
         "observed_first_seconds": rows[0]["source_seconds"],
         "observed_last_seconds": rows[-1]["source_seconds"],
@@ -302,6 +385,7 @@ def execute_window(db, job):
         session.flush()
         save_tracks_in_session(session, result, rows)
         save_house_states_in_session(session, result, rows)
+        save_actors_in_session(session, result, actor_rows)
         row.state, row.lease_until = "succeeded", None
         row.document = {
             **row.document,
