@@ -21,6 +21,13 @@ from hogline.evaluation.boards import (
     save_board_labels,
 )
 from hogline.evaluation.datasets import freeze_dataset
+from hogline.evaluation.house_states import (
+    HouseEvaluationRequest,
+    HouseLabelEdit,
+    evaluate_house_dataset,
+    freeze_house_dataset,
+    save_house_labels,
+)
 from hogline.evaluation.labels import labels_catalog, save_labels
 from hogline.evaluation.metrics import evaluate_dataset
 from hogline.evaluation.models import DatasetCreate, EvaluationRequest, LabelEdit
@@ -112,7 +119,15 @@ def main():
     moments.add_argument("--sheet", type=int)
     moments.add_argument(
         "--kind",
-        choices=["board_change", "score_proposal", "handle_motion", "house_configuration", "reviewed_end"],
+        choices=[
+            "board_change",
+            "score_proposal",
+            "handle_motion",
+            "house_configuration",
+            "reviewed_end",
+            "sampled_house_state",
+            "house_change",
+        ],
     )
     moments.add_argument("--limit", type=int, default=25)
     moments.add_argument("--include-earlier-inputs", action="store_true")
@@ -120,6 +135,14 @@ def main():
     trace.add_argument("window_id")
     states = commands.add_parser("house-states", help="Derive sampled house states from cached observations")
     states.add_argument("window_id")
+    house_label = commands.add_parser("label-house", help="Save independent sampled-interval labels")
+    house_label.add_argument("window_id")
+    house_label.add_argument("view", choices=["house_top", "house_bottom"])
+    house_label.add_argument("path", help="HouseLabelEdit JSON file")
+    house_freeze = commands.add_parser("freeze-house-dataset", help="Freeze house interval labels and groups")
+    house_freeze.add_argument("path", help="DatasetCreate JSON file")
+    house_evaluate = commands.add_parser("evaluate-house", help="Evaluate frozen sampled house-state labels")
+    house_evaluate.add_argument("path", help="HouseEvaluationRequest JSON file")
     commands.add_parser("labels", help="List saved label views and recording/day groups")
     label_import = commands.add_parser("label-import", help="Import a revisioned label-edit JSON document")
     label_import.add_argument("path")
@@ -267,6 +290,21 @@ def main():
                 result = derive_window_tracks(db, args.window_id)
             case "house-states":
                 result = derive_house_states(db, args.window_id)
+            case "label-house":
+                result = save_house_labels(
+                    db,
+                    args.window_id,
+                    args.view,
+                    HouseLabelEdit.model_validate_json(Path(args.path).read_text()),
+                )
+            case "freeze-house-dataset":
+                result = freeze_house_dataset(
+                    db, DatasetCreate.model_validate_json(Path(args.path).read_text())
+                )
+            case "evaluate-house":
+                result = evaluate_house_dataset(
+                    db, HouseEvaluationRequest.model_validate_json(Path(args.path).read_text())
+                )
             case "labels":
                 result = labels_catalog(db)
             case "label-import":

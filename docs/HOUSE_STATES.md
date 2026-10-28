@@ -10,6 +10,8 @@ Changes between stable configurations carry the last before and first after orig
 
 Runs stay scoped to one bounded window and overhead view. No cross-window identity or physical A/B mapping is inferred. Retained context anchors may be at different times from state endpoints: original endpoint links remain available, and an image from a different instant must not be presented as the exact state. Result size is limited to one MiB; exceeding it publishes an explicit abstention and preserves the original dense observations.
 
+Independent interval labels, frozen day/recording cohorts, and sample-level stability/abstention checks are available through the [house-state benchmark](HOUSE_EVALUATION.md). Retained-anchor-only labels cannot become interval ground truth.
+
 ## Development checkpoint, October 28, 2026
 
 A cached-only pass over 28 compatible local windows produced 55 stable runs, predominantly zero-detection runs, and no change brackets. Another 29 windows had older or unavailable dense inputs. This measures output coverage on selectively sampled development data, not detection accuracy or completed-end coverage. No new media was fetched and no games, ends, or accepted scores were created. Synthetic checks cover clearing/appearance/configuration changes, drift, obstruction, gaps, repeated images, timing, immutable reruns, result limits, and release lineage. Independent labels and real clearing footage remain necessary before these proposals can support automatic end reconstruction.

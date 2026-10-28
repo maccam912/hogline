@@ -100,6 +100,7 @@ from hogline.perception.visibility import VERSION as VISIBILITY_VERSION
 from hogline.reconstruction.boundaries import boundary_links
 from hogline.reconstruction.house_states import VERSION as HOUSE_STATES_VERSION
 from hogline.review.board_evaluation import register_board_evaluation
+from hogline.review.house_evaluation import register_house_evaluation
 from hogline.review.score_conflicts import conflicts_in_session, register_score_conflicts
 
 
@@ -139,6 +140,7 @@ def create_app(settings: Settings | None = None, start_worker=False):
     app = FastAPI(title="Hogline", version=__version__, lifespan=lifespan)
     app.state.db = db
     register_board_evaluation(app, db)
+    register_house_evaluation(app, db)
     register_score_conflicts(app, db)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "testserver"])
 
