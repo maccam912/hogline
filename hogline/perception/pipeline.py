@@ -12,6 +12,10 @@ from hogline.perception.stones import VERSION, HSVHandleDetector, StoneDetector
 
 
 def analyze_frame(session, evidence, root, detector: StoneDetector | None = None):
+    if evidence.document.get("acquisition_tier") == "coarse":
+        raise ValueError(
+            "Coarse scans only support activity; acquire a detailed evidence frame for perception"
+        )
     detector = detector or HSVHandleDetector()
     observation_id = str(uuid5(NAMESPACE_URL, f"{evidence.id}:{detector.version}"))
     existing = session.get(FrameObservation, observation_id)
@@ -63,7 +67,9 @@ def analyze_cached(db):
     """Reprocess retained frames with no video acquisition or interpretation edits."""
     with db.session() as session:
         return [
-            analyze_frame(session, frame, db.settings.data_dir) for frame in session.scalars(select(Evidence))
+            analyze_frame(session, frame, db.settings.data_dir)
+            for frame in session.scalars(select(Evidence))
+            if frame.document.get("acquisition_tier") != "coarse"
         ]
 
 

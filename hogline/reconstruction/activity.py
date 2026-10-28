@@ -1,6 +1,6 @@
 import numpy as np
 
-VERSION = "sparse-panel-motion-v1"
+VERSION = "sparse-panel-motion-v2"
 
 
 def classify(previous, current):

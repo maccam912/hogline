@@ -127,6 +127,10 @@ class ScanRequest(Model):
     max_frames: int = Field(default=120, ge=2, le=1000)
     max_evidence_mb: int = Field(default=200, ge=1, le=512)
     max_worker_seconds: int = Field(default=600, ge=5, le=1800)
+    acquisition_tier: Literal["coarse", "evidence"] = "evidence"
+    propose_games: bool = False
+    ownership_start_seconds: float | None = Field(default=None, ge=0)
+    ownership_end_seconds: float | None = Field(default=None, gt=0)
 
     @model_validator(mode="after")
     def bounded(self):
@@ -136,4 +140,16 @@ class ScanRequest(Model):
             raise ValueError("Work units are limited to 20 minutes; enqueue adjacent chunks")
         if math.ceil((self.end_seconds - self.start_seconds) / self.interval_seconds) > self.max_frames:
             raise ValueError("Scan exceeds the frame budget; shorten it or increase the interval")
+        a, b = self.ownership_start_seconds, self.ownership_end_seconds
+        if (a is None) != (b is None):
+            raise ValueError("Both central ownership bounds are required together")
+        if a is not None and not self.start_seconds <= a < b <= self.end_seconds:
+            raise ValueError("Central ownership must be an ordered interval inside the context scan")
         return self
+
+    @property
+    def ownership(self):
+        return (
+            self.ownership_start_seconds if self.ownership_start_seconds is not None else self.start_seconds,
+            self.ownership_end_seconds if self.ownership_end_seconds is not None else self.end_seconds,
+        )

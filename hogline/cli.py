@@ -50,6 +50,7 @@ def main():
     scan.add_argument("--start", type=float, default=0)
     scan.add_argument("--end", type=float, required=True)
     scan.add_argument("--interval", type=float, default=10)
+    scan.add_argument("--tier", choices=["coarse", "evidence"], default="coarse")
     scan.add_argument("--max-frames", type=int, default=120)
     scan.add_argument("--max-evidence-mb", type=int, default=200)
     worker = commands.add_parser("work", help="Process queued jobs (bounded retries; no automatic backfill)")
@@ -112,6 +113,7 @@ def main():
                         start_seconds=args.start,
                         end_seconds=args.end,
                         interval_seconds=args.interval,
+                        acquisition_tier=args.tier,
                         max_frames=args.max_frames,
                         max_evidence_mb=args.max_evidence_mb,
                     ),

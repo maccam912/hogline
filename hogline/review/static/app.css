@@ -632,6 +632,31 @@ input::placeholder {
   bottom: 5px;
   background: #a9bf94;
 }
+.time-segment.activity {
+  top: 6px;
+  bottom: 7px;
+  background: #677d81;
+  border-color: #506368;
+}
+.legend-activity {
+  background: #677d81;
+}
+.activity-card {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  border-bottom: 1px solid #dde4d3;
+  padding: 12px 0;
+  font-size: 12px;
+}
+.activity-card > div {
+  flex: 1;
+  min-width: 160px;
+}
+.activity-card p {
+  margin-bottom: 0;
+}
 .timeline-block input {
   padding: 0;
   height: 15px;

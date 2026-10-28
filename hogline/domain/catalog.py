@@ -2,8 +2,9 @@ from sqlalchemy import select
 from sqlalchemy.orm.exc import StaleDataError
 
 from hogline.adapters.sources import video_link
-from hogline.db import Evidence, GameRow, ReviewTask, Revision, Scan, Source
+from hogline.db import Evidence, GameRow, Job, ReviewTask, Revision, Scan, Source
 from hogline.domain.models import Game, GameEdit
+from hogline.reconstruction.timeline import reconstruct_source
 
 
 class Conflict(ValueError):
@@ -158,7 +159,15 @@ def catalog(db):
             for r in session.scalars(select(GameRow))
             if not r.document.get("retired_into")
         ]
-        scans = [{"id": r.id, "source_id": r.source_id, **r.document} for r in session.scalars(select(Scan))]
+        scans = [
+            {
+                "id": r.id,
+                "source_id": r.source_id,
+                "source_metadata_sha256": j.document["source_hash"],
+                **r.document,
+            }
+            for r, j in session.execute(select(Scan, Job).join(Job, Scan.job_id == Job.id))
+        ]
         evidence = [{"id": r.id, **r.document} for r in session.scalars(select(Evidence))]
         tasks = [
             {"id": r.id, "game_id": r.game_id, "reason": r.reason, "state": r.state}
@@ -170,4 +179,12 @@ def catalog(db):
             "scans": scans,
             "evidence": evidence,
             "review_tasks": tasks,
+            "timelines": [
+                reconstruct_source(
+                    s,
+                    [scan for scan in scans if scan["source_id"] == s["id"]],
+                    {e["id"]: e for e in evidence},
+                )
+                for s in sources.values()
+            ],
         }

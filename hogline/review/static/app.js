@@ -80,18 +80,21 @@ const frames = () =>
   state.data.evidence
     .filter((e) => e.source_id === state.source)
     .sort((a, b) => a.source_seconds - b.source_seconds);
+const sourceTimeline = () =>
+  state.data.timelines?.find((t) => t.source_id === state.source);
 const currentFrame = () => {
   const locked = window.hoglineLabels?.evidenceId();
   if (locked) return state.data.evidence.find((e) => e.id === locked);
-  return frames().reduce(
-    (best, e) =>
-      !best ||
-      Math.abs(e.source_seconds - state.seconds) <
-        Math.abs(best.source_seconds - state.seconds)
-        ? e
-        : best,
-    null,
-  );
+  return frames().reduce((best, e) => {
+    if (!best) return e;
+    const distance = Math.abs(e.source_seconds - state.seconds),
+      previous = Math.abs(best.source_seconds - state.seconds);
+    return distance < previous ||
+      (Math.abs(distance - previous) < 0.001 &&
+        e.image.width * e.image.height > best.image.width * best.image.height)
+      ? e
+      : best;
+  }, null);
 };
 const youtube = (src, seconds) =>
   src?.platform === "youtube"
@@ -204,9 +207,9 @@ function renderFrame() {
   }
   $("#frame-time").textContent = time(selectedTime);
   $("#pts-label").textContent = frame
-    ? `PTS ${frame.pts} × ${frame.time_base_num}/${frame.time_base_den} · wall clock unresolved`
+    ? `${frame.image.width} × ${frame.image.height} · ${frame.acquisition_tier === "coarse" ? "coarse activity scan" : "detailed evidence"} · PTS ${frame.pts} × ${frame.time_base_num}/${frame.time_base_den} · wall clock unresolved`
     : "Source time · wall clock unresolved";
-  $("#cache-frame").textContent = `Cache at ${time(state.seconds)}`;
+  $("#cache-frame").textContent = `Detailed frame at ${time(state.seconds)}`;
   const link = $("#youtube-link");
   link.href =
     youtube(src, selectedTime) || `/api/media/${src.id}#t=${selectedTime}`;
@@ -223,14 +226,22 @@ function renderFrame() {
         0,
       )
     : 0;
-  $("#perception-caption").innerHTML = observation
-    ? `<span class="pill green">OPENCV BASELINE</span><span>${count} colored-handle candidates · uncalibrated · scores unknown</span>`
-    : `<span class="fine-print">${frame ? "This cached frame has not been analyzed." : "Evidence will be analyzed with OpenCV when cached."}</span>${frame ? '<button class="button quiet" id="analyze-cached">Analyze cached frames →</button>' : ""}`;
+  $("#perception-caption").innerHTML =
+    frame?.acquisition_tier === "coarse"
+      ? '<p class="fine-print">Coarse scan · activity only. Request a detailed frame to inspect handles and the scoreboard.</p>'
+      : observation
+        ? `<span class="pill green">OPENCV BASELINE</span><span>${count} colored-handle candidates · uncalibrated · scores unknown</span>`
+        : `<span class="fine-print">${frame ? "This cached frame has not been analyzed." : "Evidence will be analyzed with OpenCV when cached."}</span>${frame ? '<button class="button quiet" id="analyze-cached">Analyze cached frames →</button>' : ""}`;
   renderBroadcast(frame);
 }
 function renderBroadcast(frame) {
   const panel = $("#broadcast-content"),
     data = state.data.broadcast;
+  if (frame?.acquisition_tier === "coarse") {
+    panel.innerHTML =
+      '<p class="fine-print">Clock and scoreboard reading need a detailed frame. This coarse image is retained for activity screening.</p>';
+    return;
+  }
   const observation = data?.observations.find(
     (o) => o.evidence_id === frame?.id,
   );
@@ -340,19 +351,37 @@ function renderTimeline(duration) {
       .filter((s) => s.source_id === state.source)
       .map((s) => ({ ...s, label: g.label, kind: "game" })),
   );
-  const scans = state.data.scans
-    .filter((s) => s.source_id === state.source)
-    .map((s) => ({
-      ...s.request,
-      label: "Sparse scan · unvalidated activity",
+  const timeline = sourceTimeline();
+  const scans = (timeline?.sparse_scanned_intervals || []).map(
+    ([start_seconds, end_seconds]) => ({
+      start_seconds,
+      end_seconds,
+      label: "Sparse sampled span · time between samples is unobserved",
       kind: "scan",
-    }));
-  $("#timeline-track").innerHTML = [...spans, ...scans]
+    }),
+  );
+  const activity = (timeline?.activity_runs || []).map((r) => ({
+    ...r,
+    label: "Motion activity · boundaries unconfirmed",
+    kind: "activity",
+  }));
+  $("#timeline-track").innerHTML = [...scans, ...activity, ...spans]
     .map(
       (s) =>
         `<span class="time-segment ${s.kind}" style="left:${(100 * s.start_seconds) / duration}%;width:${(100 * (s.end_seconds - s.start_seconds)) / duration}%" title="${escapeHTML(s.label)} · ${time(s.start_seconds)}–${time(s.end_seconds)}"></span>`,
     )
     .join("");
+  $("#coverage-summary").textContent = timeline
+    ? `${time(timeline.sparse_scanned_seconds)} of requested spans sampled · ${timeline.unique_owned_samples} sample times · gaps remain unknown${timeline.stale_scans_excluded ? ` · ${timeline.stale_scans_excluded} outdated scans excluded` : ""}`
+    : "No sampled coverage yet.";
+  $("#activity-list").innerHTML =
+    activity
+      .map(
+        (r) =>
+          `<article class="activity-card"><div><strong>${time(r.start_seconds)}–${time(r.end_seconds)}</strong><p class="fine-print">Motion activity · ±${r.boundary_uncertainty_seconds}s sample spacing · ${r.evidence_ids.length} supporting frames</p></div>${r.youtube_url ? `<a class="evidence-link" href="${escapeHTML(r.youtube_url)}" target="_blank" rel="noopener">YouTube ↗</a>` : ""}<button class="button quiet" data-activity="${r.id}">Review interval →</button></article>`,
+      )
+      .join("") ||
+    '<p class="fine-print">No motion runs yet. A quiet sample does not prove the sheet is empty.</p>';
 }
 function renderGames() {
   $("#game-list").innerHTML =
@@ -420,7 +449,7 @@ function evidenceOptions(game) {
       ]),
   ];
 }
-function newGame() {
+function newGame(activity = null) {
   const src = source();
   if (!src?.sheet)
     return toast(
@@ -428,7 +457,7 @@ function newGame() {
       true,
     );
   const start = Math.min(
-    state.seconds,
+    activity?.start_seconds ?? state.seconds,
     Math.max(0, (src.duration_seconds || 3600) - 1),
   );
   state.audit = {};
@@ -449,11 +478,12 @@ function newGame() {
           source_id: src.id,
           start_seconds: start,
           end_seconds: Math.min(
-            start + 600,
+            activity?.end_seconds ?? start + 600,
             src.duration_seconds || start + 600,
           ),
           relationship: "primary",
-          boundary_uncertainty_seconds: null,
+          boundary_uncertainty_seconds:
+            activity?.boundary_uncertainty_seconds ?? null,
         },
       ],
       ends: [],
@@ -464,7 +494,9 @@ function newGame() {
         acceptance: "unknown",
         evidence_ids: [],
       },
-      note: "",
+      note: activity
+        ? "Proposed from sparse motion activity; game boundaries still need review."
+        : "",
       retired_into: [],
     },
   };
@@ -648,6 +680,7 @@ async function queueFrame() {
     interval_seconds: 1,
     max_frames: 2,
     max_evidence_mb: 20,
+    acquisition_tier: "evidence",
   });
   toast("Frame queued. Its original PTS and YouTube link will be retained.");
   await refresh();
@@ -686,6 +719,15 @@ document.addEventListener("click", async (event) => {
     }
     if (button.dataset.scoreProposal)
       useScoreProposal(button.dataset.scoreProposal);
+    if (button.dataset.activity) {
+      if (window.hoglineLabels && !window.hoglineLabels.beforeNavigate())
+        return;
+      newGame(
+        sourceTimeline().activity_runs.find(
+          (r) => r.id === button.dataset.activity,
+        ),
+      );
+    }
     if (button.dataset.retry) {
       await api(`/jobs/${button.dataset.retry}/retry`, "POST");
       await refresh();
@@ -853,6 +895,7 @@ document.addEventListener("submit", async (event) => {
         interval_seconds: Number(data.get("interval")),
         max_frames: 120,
         max_evidence_mb: Number(data.get("budget")),
+        acquisition_tier: data.get("tier"),
       });
       form.closest("dialog").close();
       toast("Section queued. Existing matching work is reused.");

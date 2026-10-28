@@ -35,6 +35,7 @@ def snapshot(db, mode="confirmed"):
         "evidence": data["evidence"],
         "observations": observations(db),
         "broadcast": broadcast_catalog(db),
+        "activity_timelines": data["timelines"],
         "coverage": {
             "inventoried_recordings": len(data["sources"]),
             "canonical_games": len(data["games"]),

@@ -33,4 +33,6 @@ The broadcast clock lacks AM/PM. Both twelve-hour alternatives remain in the pro
 
 ## Remaining validation
 
+A second acquisition tier was exercised on the same active/quiet source moments on Sheets 2 and 3: three coarse samples at 5400, 5415, and 5430 seconds per recording. The retained coarse images are 640×360, separately identified from the existing 1280×720 and 1920×1080 detailed evidence. They are restricted to activity screening; no handle or scoreboard observations are published from them. These six new images are local cache data, not repository assets.
+
 Fully label a long day and a confirmed overlapping/continuation pair. Add per-sheet board templates with dated validity episodes; independently annotate end/score truth, missed stones, people/clothing false positives, and boundary-clipped handles. Split evaluation by recording day/game and duplicate-upload family. The synthetic regression suite and these source smoke checks do not establish the design's release gates.

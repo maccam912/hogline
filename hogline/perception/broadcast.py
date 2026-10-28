@@ -21,6 +21,8 @@ def broadcast_version(layout):
 
 
 def analyze_broadcast_frame(session, frame, root, layout, reader, budget):
+    if frame.document.get("acquisition_tier") == "coarse":
+        return {"evidence_id": frame.id, "status": "skipped", "missing_reason": "coarse_scan_only"}
     version = broadcast_version(layout)
     identifier = str(uuid5(NAMESPACE_URL, f"{frame.id}:{version}"))
     existing = session.get(FrameObservation, identifier)

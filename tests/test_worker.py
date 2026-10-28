@@ -53,7 +53,13 @@ def test_repeat_enqueue_and_retry_keep_one_logical_output(db, sources, fake_medi
 
 
 def test_new_scan_revision_protects_human_corrections(db, sources, fake_media):
-    req = ScanRequest(source_id=sources[0]["id"], start_seconds=100, end_seconds=140, interval_seconds=10)
+    req = ScanRequest(
+        source_id=sources[0]["id"],
+        start_seconds=100,
+        end_seconds=140,
+        interval_seconds=10,
+        propose_games=True,
+    )
     worker.enqueue(db, req)
     assert worker.run_one(db)["state"] == "succeeded"
     existing = catalog(db)["games"]

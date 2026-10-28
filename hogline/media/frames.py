@@ -12,7 +12,7 @@ from hogline.adapters.sources import digest, video_link
 from hogline.config import profile
 
 
-def resolve_media(source):
+def resolve_media(source, max_height=1080):
     if source["platform"] == "local":
         path = Path(source["local_path"])
         if not path.is_file():
@@ -32,7 +32,7 @@ def resolve_media(source):
                 "--retries",
                 "1",
                 "-f",
-                "best[height<=1080]/bestvideo[height<=1080]",
+                f"best[height<={max_height}]/bestvideo[height<={max_height}]",
                 "--print",
                 "%(format_id)s\t%(url)s",
                 source["url"],
@@ -96,19 +96,35 @@ def capture(media: str, seconds: float):
     }
 
 
+class EvidenceLimitError(ValueError):
+    def __init__(self, message, scope):
+        super().__init__(message)
+        self.scope = scope
+
+
 class EvidenceBudget:
     def __init__(self, root, job_mb, cache_mb):
         self.job_limit, self.cache_limit = job_mb * 1024**2, cache_mb * 1024**2
         self.logical_bytes = 0
         self.cache_bytes = sum(p.stat().st_size for p in (root / "evidence").rglob("*.png"))
+        self.initial_cache_bytes = self.cache_bytes
+        self.new_bytes_limit = None
 
     def consume(self, size, additional_bytes=0):
         if self.logical_bytes + size > self.job_limit:
-            raise ValueError("Evidence budget reached. Shorten the scan or explicitly raise its budget.")
-        if self.cache_bytes + additional_bytes > self.cache_limit:
-            raise ValueError(
-                "Shared evidence cache is full. Increase HOGLINE_MAX_CACHE_MB or archive cached media."
+            raise EvidenceLimitError(
+                "Evidence budget reached. Shorten the scan or explicitly raise its budget.", "job"
             )
+        if self.cache_bytes + additional_bytes > self.cache_limit:
+            raise EvidenceLimitError(
+                "Shared evidence cache is full. Increase HOGLINE_MAX_CACHE_MB or archive cached media.",
+                "shared",
+            )
+        if (
+            self.new_bytes_limit is not None
+            and self.cache_bytes - self.initial_cache_bytes + additional_bytes > self.new_bytes_limit
+        ):
+            raise EvidenceLimitError("Batch image-growth budget reached; raise its limit to resume.", "batch")
         self.logical_bytes += size
         self.cache_bytes += additional_bytes
 
@@ -139,14 +155,21 @@ def save_image(image, root, budget=None):
     }
 
 
-def observe(image, timing, source, root, budget=None, layout=None):
-    layout = layout or profile()
-    pts_seconds = timing["pts"] * timing["time_base_num"] / timing["time_base_den"]
+def source_seconds(timing, source):
     info = source.get("probe", {})
-    start_seconds = info.get("start_pts", 0) * info.get("time_base_num", 1) / info.get("time_base_den", 1)
-    seconds = pts_seconds - start_seconds
+    return timing["pts"] * timing["time_base_num"] / timing["time_base_den"] - (
+        info.get("start_pts", 0) * info.get("time_base_num", 1) / info.get("time_base_den", 1)
+    )
+
+
+def observe(
+    image, timing, source, root, budget=None, layout=None, composite_asset=None, acquisition_tier="evidence"
+):
+    layout = layout or profile()
+    seconds = source_seconds(timing, source)
     result = {
         "source_id": source["id"],
+        "source_metadata_sha256": source["metadata_sha256"],
         **timing,
         "source_seconds": seconds,
         "youtube_url": video_link(source, seconds),
@@ -155,7 +178,11 @@ def observe(image, timing, source, root, budget=None, layout=None):
         "layout_profile": layout["id"],
         "profile_sha256": digest(layout),
         "crop_status": "unverified_seed_crops",
-        "image": save_image(image, root, budget),
+        "acquisition_tier": acquisition_tier,
+        "measurement_quality": "coarse_scan_only"
+        if acquisition_tier == "coarse"
+        else "native_selected_encode",
+        "image": composite_asset or save_image(image, root, budget),
         "crops": {},
     }
     vectors = {}
@@ -171,12 +198,13 @@ def observe(image, timing, source, root, budget=None, layout=None):
         )
         result["crops"][name] = {**save_image(crop, root, budget), "normalized_bounds": bounds}
         vectors[name] = np.asarray(crop.convert("L").resize((96, 96)), dtype=np.float32)
-    result["evidence_key"] = digest(
-        {
-            "source": source["id"],
-            **timing,
-            "image": result["image"]["sha256"],
-            "profile_sha256": digest(layout),
-        }
-    )
+    key = {
+        "source": source["id"],
+        **timing,
+        "image": result["image"]["sha256"],
+        "profile_sha256": digest(layout),
+    }
+    if acquisition_tier == "coarse":
+        key["acquisition_tier"] = "coarse-v1"
+    result["evidence_key"] = digest(key)
     return result, vectors

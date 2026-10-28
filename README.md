@@ -14,8 +14,8 @@ uv run hogline serve
 Open **http://127.0.0.1:8765**. The server starts one bounded worker. Data is kept in `data/`, which is excluded from version control. The web app is a local operator tool; leave it bound to loopback.
 
 1. **Add recording** imports YouTube metadata without downloading video.
-2. **Scan a section** seeks individual source frames on demand. The default is ten minutes sampled every ten seconds. No complete stream is stored.
-3. Inspect activity proposals and OpenCV handle candidates. Use **Check on YouTube** to open the precise source timestamp. Switch between composite and overhead seed crops; toggle the detection overlay.
+2. **Scan a section** seeks individual source frames on demand. The UI and CLI default to coarse activity frames, up to 640×360, sampled every ten seconds. No complete stream is stored.
+3. Inspect the activity timeline, then request a **Detailed frame** for OpenCV handle candidates and scoreboard reading. Detailed acquisition uses a separate cache and the best available encode up to 1080p. Use **Check on YouTube** to verify the source timestamp. Switch between composite and overhead seed crops; toggle the detection overlay.
 4. Review game spans, link continuation/overlap recordings, and record end scores with supporting frames. Mark boundaries separately from coverage, game completion, and the final result.
 5. **Export dataset** creates an immutable JSON or CSV snapshot. Confirmed mode excludes unreviewed games/scores; exploratory mode includes proposals explicitly. Unknown scores remain null.
 6. **Label an overhead view** records visible handle centers, partial visibility, and ignored occlusions. **Evaluate CV** freezes whole recording/day groups and exact label revisions, then compares detector versions with explicit misses, extras, and coverage. See the [evaluation guide](docs/EVALUATION.md).
@@ -37,6 +37,8 @@ uv run hogline import-local /absolute/path/recording.mp4 --sheet 5
 # Copy a source ID from the catalog. Times below are source seconds.
 uv run hogline scan SOURCE_ID --start 1800 --end 2400 --interval 10 --max-evidence-mb 200
 uv run hogline work --once
+# Request original selected-encode detail at a particular moment.
+uv run hogline scan SOURCE_ID --start 1815 --end 1816 --interval 1 --tier evidence
 
 # Rerun the detector on retained evidence without accessing any video.
 uv run hogline analyze
@@ -51,6 +53,8 @@ Inventory is bounded to 50 entries per request. It is a first page, **not** a co
 Each scan is limited to 20 source minutes, a declared frame count, an evidence-byte budget, and a worker-time budget (default ten worker minutes; a currently running decoder may take up to its 45-second timeout to return). The shared evidence cache defaults to 2 GiB, configurable with `HOGLINE_MAX_CACHE_MB`. These are retained-image and worker limits, **not measured network-byte quotas**: remote seeks can fetch surrounding codec/keyframe data. Successful frame caches survive a failed attempt. Retry failed jobs with `uv run hogline retry JOB_ID`; retries are bounded to three attempts. Repeating an identical successful job reuses it.
 
 Every frame stores its original integer PTS and rational timebase, source-relative seconds, SHA-256, crop provenance, and a YouTube `&t=…s` link. YouTube playback links use whole seconds; the retained PTS is the precise reference. Source links survive removal of a local cache. Upload dates, dates parsed from titles, and recording clocks are separate fields; wall-clock mapping remains unresolved.
+
+Sparse scans now publish activity separately from games. The timeline joins motion runs across contiguous work units, counts only each chunk's central ownership region, and leaves gaps unknown. A sampled span means the requested range has discrete samples, not continuous observation. Motion runs can seed a game review draft; saving a game requires a separate decision. Earlier pilot game proposals remain in local revision history. Coarse frames are excluded from handle/house and scoreboard analysis. Cached originals survive crop-budget failures; changing source metadata cannot silently reuse an acquisition pinned to the old manifest.
 
 Configure `HOGLINE_DATA_DIR` or use `hogline --data-dir /absolute/path …` to isolate datasets. Keep the catalog and evidence together when backing up; local originals are registered by reference and need their own backup.
 

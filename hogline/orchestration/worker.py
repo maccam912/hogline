@@ -7,12 +7,12 @@ import numpy as np
 from PIL import Image
 from sqlalchemy import or_, select, update
 
-from hogline.adapters.sources import digest
+from hogline.adapters.sources import digest, video_link
 from hogline.config import profile
 from hogline.db import Evidence, Job, Scan, now
 from hogline.domain.catalog import propose_games, source_or_error
 from hogline.domain.models import ScanRequest, uid
-from hogline.media.frames import EvidenceBudget, capture, observe, resolve_media
+from hogline.media.frames import EvidenceBudget, capture, observe, resolve_media, save_image, source_seconds
 from hogline.perception.pipeline import analyze_frame
 from hogline.perception.stones import VERSION as DETECTOR_VERSION
 from hogline.reconstruction.activity import VERSION, classify, propose
@@ -94,23 +94,45 @@ def update_owned(db, job_id, token, **changes):
         job.lease_until = (datetime.now(UTC) + timedelta(seconds=120)).isoformat()
 
 
-def cached_frame(db, source, seconds, layout=None):
-    key = digest(
-        {
-            "source": source["id"],
-            "metadata": source["metadata_sha256"],
-            "second": seconds,
-            "version": "original-pts-frame-v1",
-        }
-    )
+def cached_frame(db, source, seconds, layout=None, acquisition_tier="evidence"):
+    cache_key = {
+        "source": source["id"],
+        "metadata": source["metadata_sha256"],
+        "second": seconds,
+        "version": "original-pts-frame-v1",
+    }
+    if acquisition_tier == "coarse":
+        cache_key["acquisition_tier"] = "coarse-v1"
+    key = digest(cache_key)
     path = db.settings.data_dir / "cache" / f"{key}.json"
-    if not path.exists():
-        # Reuse pre-acquisition-cache pilot frames without downloading them again.
-        for legacy in path.parent.glob("*.json"):
+    if not path.exists() and acquisition_tier == "evidence":
+        # Pre-acquisition-cache pilot keys included the profile/stage. Only inspect
+        # exact keys pinned to this metadata snapshot, never arbitrary manifests
+        # that happen to have the same source ID and timestamp.
+        with db.session() as session:
+            old_jobs = session.scalars(
+                select(Job).where(
+                    Job.document["request"]["source_id"].as_string() == source["id"],
+                    Job.document["source_hash"].as_string() == source["metadata_sha256"],
+                )
+            )
+            variants = {(j.document["profile_sha256"], j.document["stage_version"]) for j in old_jobs}
+        for profile_hash, stage_version in variants:
+            legacy_key = digest(
+                {
+                    "source": source["id"],
+                    "metadata": source["metadata_sha256"],
+                    "second": seconds,
+                    "profile": profile_hash,
+                    "version": stage_version,
+                }
+            )
+            legacy = path.parent / f"{legacy_key}.json"
             try:
                 candidate = json.loads(legacy.read_text())
                 if (
                     candidate.get("source_id") == source["id"]
+                    and candidate.get("acquisition_tier", "evidence") == acquisition_tier
                     and abs(
                         candidate.get("requested_seconds", candidate.get("source_seconds", -1000)) - seconds
                     )
@@ -120,11 +142,13 @@ def cached_frame(db, source, seconds, layout=None):
                     break
             except (OSError, ValueError, TypeError):
                 continue
-        if not path.exists():
-            return None, path
+    if not path.exists():
+        return None, path
     try:
         doc = json.loads(path.read_text())
     except (OSError, json.JSONDecodeError):
+        return None, path
+    if doc.get("source_metadata_sha256", source["metadata_sha256"]) != source["metadata_sha256"]:
         return None, path
     import hashlib
 
@@ -155,6 +179,10 @@ def execute(db, job):
         source = source_or_error(session, request.source_id)
     if source["metadata_sha256"] != job["source_hash"]:
         raise ValueError("Source manifest changed after enqueue. Enqueue a job against the current metadata.")
+    if job["stage_version"] != VERSION or job["perception_version"] != DETECTOR_VERSION:
+        raise ValueError(
+            "Processing version changed; enqueue current work instead of changing an old job meaning."
+        )
     layout = job.get("profile") or profile()
     token, started = job["lease_token"], time.monotonic()
     samples, previous, evidence_docs = [], None, {}
@@ -167,7 +195,7 @@ def execute(db, job):
                 "Worker time budget reached. Retry to resume cached frames or shorten this work unit."
             )
         seconds = request.start_seconds + index * request.interval_seconds
-        doc, cache_path = cached_frame(db, source, seconds, layout)
+        doc, cache_path = cached_frame(db, source, seconds, layout, request.acquisition_tier)
         if doc and not doc.pop("_recrop_required", False):
             vectors = vectors_from_doc(db, doc)
             cache_hits += 1
@@ -179,13 +207,56 @@ def execute(db, job):
                 timing = {name: doc[name] for name in ("pts", "time_base_num", "time_base_den")}
                 media_selection = doc.get("media_selection", {})
                 cache_hits += 1
+                composite_asset = doc["image"]
+                budget.consume(composite_asset["bytes"])
             else:
                 if media is None:
-                    handle = resolve_media(source)
+                    handle = (
+                        resolve_media(source, max_height=360)
+                        if request.acquisition_tier == "coarse"
+                        else resolve_media(source)
+                    )
                     media = handle["uri"]
                     media_selection = {key: value for key, value in handle.items() if key != "uri"}
                 image, timing = capture(media, seconds)
-            doc, vectors = observe(image, timing, source, db.settings.data_dir, budget, layout)
+                decoded_size = list(image.size)
+                if request.acquisition_tier == "coarse":
+                    image.thumbnail((640, 360))
+                media_selection = {
+                    **media_selection,
+                    "decoded_frame_size": decoded_size,
+                    "retained_frame_size": list(image.size),
+                }
+                composite_asset = save_image(image, db.settings.data_dir, budget)
+                # Persist acquisition before crop/perception work. A later quota/failure
+                # can resume from this image without accessing the recording again.
+                raw = {
+                    "source_id": source["id"],
+                    "source_metadata_sha256": source["metadata_sha256"],
+                    **timing,
+                    "source_seconds": source_seconds(timing, source),
+                    "youtube_url": video_link(source, source_seconds(timing, source)),
+                    "image": composite_asset,
+                    "crops": {},
+                    "profile_sha256": None,
+                    "requested_seconds": seconds,
+                    "acquisition_tier": request.acquisition_tier,
+                    "media_selection": media_selection,
+                }
+                cache_path.parent.mkdir(parents=True, exist_ok=True)
+                raw_temp = cache_path.with_suffix(f".{token}.tmp")
+                raw_temp.write_text(json.dumps(raw))
+                raw_temp.replace(cache_path)
+            doc, vectors = observe(
+                image,
+                timing,
+                source,
+                db.settings.data_dir,
+                budget,
+                layout,
+                composite_asset=composite_asset,
+                acquisition_tier=request.acquisition_tier,
+            )
             doc["media_selection"] = media_selection
             doc["requested_seconds"] = seconds
             cache_path.parent.mkdir(parents=True, exist_ok=True)
@@ -198,7 +269,16 @@ def execute(db, job):
         doc["id"] = str(uuid5(NAMESPACE_URL, doc["evidence_key"]))
         evidence_docs[doc["id"]] = doc
         observation = classify(previous, vectors)
-        samples.append({"seconds": doc["source_seconds"], "evidence_id": doc["id"], **observation})
+        owner_start, owner_end = request.ownership
+        samples.append(
+            {
+                "seconds": doc["source_seconds"],
+                "requested_seconds": seconds,
+                "owned": owner_start <= seconds < owner_end,
+                "evidence_id": doc["id"],
+                **observation,
+            }
+        )
         previous = vectors
         update_owned(
             db,
@@ -211,10 +291,13 @@ def execute(db, job):
         )
     result = {
         "request": request.model_dump(),
+        "source_metadata_sha256": source["metadata_sha256"],
         "version": VERSION,
         "profile": layout,
         "samples": samples,
-        "candidates": propose(samples, request.start_seconds, request.end_seconds, request.interval_seconds),
+        "candidates": propose(
+            [s for s in samples if s["owned"]], *request.ownership, request.interval_seconds
+        ),
         "processed_span_kind": "sparse_sampled",
         "clock_status": "unresolved",
         "wall_seconds": time.monotonic() - started,
@@ -234,9 +317,10 @@ def execute(db, job):
                     )
                 )
         session.flush()
-        for doc in evidence_docs.values():
-            analyze_frame(session, session.get(Evidence, doc["id"]), db.settings.data_dir)
-        result["game_ids"] = propose_games(session, source, result, row.id)
+        if request.acquisition_tier == "evidence":
+            for doc in evidence_docs.values():
+                analyze_frame(session, session.get(Evidence, doc["id"]), db.settings.data_dir)
+        result["game_ids"] = propose_games(session, source, result, row.id) if request.propose_games else []
         session.add(Scan(job_id=row.id, source_id=source["id"], document=result))
         row.state, row.lease_until = "succeeded", None
         row.document = {
