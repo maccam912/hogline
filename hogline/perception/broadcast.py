@@ -18,7 +18,7 @@ from hogline.perception.ocr import OCRBudgetReached, TesseractOCR, normalized_cr
 from hogline.perception.overlay_clock import read_clock
 from hogline.perception.scoreboard import persistent_board_claims, read_board
 
-VERSION = "traditional-board-clock-v8"
+VERSION = "traditional-board-clock-v10"
 
 
 def broadcast_version(layout, reference_manifest=None):

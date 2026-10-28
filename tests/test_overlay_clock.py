@@ -42,3 +42,34 @@ def test_eight_observed_date_digits_can_survive_missing_separators():
     assert result["date_syntax"] == "eight_digit_mdy_missing_separator"
     assert not parse_overlay("0182026", "12:48:38")["candidates"]
     assert not parse_overlay("103/17/2026", "12:48:38")["candidates"]
+
+
+def test_full_gray_date_remains_distinct_from_thresholded_and_trimmed_reads():
+    from PIL import Image
+
+    from hogline.perception.overlay_clock import read_clock
+
+    class Reader:
+        def read(self, image, *, whitelist, psm, preprocessing="otsu"):
+            if "/" not in whitelist:
+                return {"text": "12:48:38"}
+            return {
+                "text": "0182026"
+                if preprocessing == "otsu"
+                else "101/16/2026"
+                if image.width < 150
+                else "01/16/2026"
+            }
+
+    result, tight = read_clock(
+        Image.new("RGB", (150, 30)), Image.new("RGB", (100, 30)), Reader(), "America/Chicago"
+    )
+    assert result["local_date"] == "2026-01-16"
+    assert len(result["candidates"]) == 2  # No AM/PM evidence was added.
+    assert [r["text"] for r in result["date_reads"]] == ["0182026", "101/16/2026", "01/16/2026"]
+    assert result["alternatives"][0]["supporting_reads"] == [
+        {"date_read": 2, "time_read": 0},
+        {"date_read": 2, "time_read": 1},
+        {"date_read": 2, "time_read": 2},
+    ]
+    assert tight.width == 142

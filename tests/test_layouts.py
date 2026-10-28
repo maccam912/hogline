@@ -120,7 +120,7 @@ def test_same_sheet_new_recording_does_not_inherit_board_reader(db, sources):
         )
         assert result["sheet"] == 4
         assert result["scoreboard"]["missing_reason"] == "retained_header_reference_unavailable"
-        assert reader.calls == 4  # date/time alternatives only; no board-cell OCR
+        assert reader.calls == 6  # date/time alternatives only; no board-cell OCR
 
 
 def test_static_board_alignment_translates_small_shifts_and_declines_large_changes():

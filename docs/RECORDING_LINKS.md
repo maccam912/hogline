@@ -37,3 +37,11 @@ The workbench's **Clock readings and layout checks** disclosure shows competing 
 Each proposal includes input source hashes, reader/model versions, conditional uncertainty, clock alternatives, supporting frame IDs, and YouTube links. `GET /api/catalog` and immutable JSON releases include `source_boundary_links`. Proposals create no games or accepted statistics.
 
 **Compare recordings** opens both retained anchors. **Use these spans in a game draft** adds short evidence spans with partial coverage and unresolved membership; it preserves existing score edits and requires a separate save. Extending or joining canonical game boundaries still needs review. Independently verified real overlap/continuation labels, full-day reconstruction, and season-scale association accuracy remain release-gate work.
+
+## Full grayscale line readings
+
+`traditional-board-clock-v10` adds a grayscale line-mode date and time read while retaining the original thresholded and raw-line alternatives. The two date crops and every preprocessing/segmentation choice remain visible. This recovers the January 16 date where thresholding had collapsed digits and the trimmed raw-line read added a spurious leading digit. No title-based repair or digit padding is used.
+
+On the 99 retained detailed frames, 97 now have at least one parseable clock candidate, compared with 90 under v8. Parseability is not accuracy: the January frame at 00:30:03 still yields an isolated incorrect time, which fails the consecutive-offset requirement; 00:30:09.5 remains unreadable. Four later frames from 00:30:15 through 00:30:34.5 support two offset hypotheses, preserving the unresolved AM/PM alternatives. These are development checks, not an independent OCR accuracy evaluation.
+
+The first 45-second bounded pass completed 96 frames and reported three pending. A second pass resumed those three, preserving the previously completed observations.

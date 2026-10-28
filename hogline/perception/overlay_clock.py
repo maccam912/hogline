@@ -43,7 +43,7 @@ def combine_clock_reads(date_reads, time_reads, timezone):
         "ocr_conflict": len(alternatives) > 1,
         "date_reads": date_reads,
         "time_reads": time_reads,
-        "method": "dual_clock_crop_preprocessing_v1",
+        "method": "multi_clock_crop_preprocessing_v3",
     }
 
 
@@ -58,6 +58,10 @@ def read_clock(date_image, time_image, reader, timezone):
             **reader.read(tight, whitelist="0123456789/", psm=13, preprocessing="gray"),
             "crop": "clock_date_tight",
         },
+        {
+            **reader.read(date_image, whitelist="0123456789/", psm=7, preprocessing="gray"),
+            "crop": "clock_date",
+        },
     ]
     time_reads = [
         {**reader.read(time_image, whitelist="0123456789:APM", psm=7), "crop": "clock_time"},
@@ -66,6 +70,12 @@ def read_clock(date_image, time_image, reader, timezone):
             "crop": "clock_time",
         },
     ]
+    time_reads.append(
+        {
+            **reader.read(time_image, whitelist="0123456789:APM", psm=7, preprocessing="gray"),
+            "crop": "clock_time",
+        }
+    )
     result = combine_clock_reads(date_reads, time_reads, timezone)
     result["date_tight_crop_transform"] = {"parent": "clock_date", "left_px": trim}
     return result, tight
