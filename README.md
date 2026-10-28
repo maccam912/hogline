@@ -2,6 +2,8 @@
 
 An evidence-first curling archive. This is the first local implementation of [DESIGN.md](DESIGN.md), focused on metadata-first ingestion, bounded processing, automated observations, and revisable game records.
 
+For the latest development checkpoint and next steps, see [HANDOFF.md](HANDOFF.md).
+
 ## Run it
 
 Requires Python 3.12+, [uv](https://docs.astral.sh/uv/), [FFmpeg/ffprobe](https://ffmpeg.org/), and [yt-dlp](https://github.com/yt-dlp/yt-dlp) on `PATH`.
