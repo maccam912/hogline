@@ -33,6 +33,7 @@ from hogline.evaluation.house_states import (
 from hogline.evaluation.labels import labels_catalog, save_labels
 from hogline.evaluation.metrics import evaluate_dataset
 from hogline.evaluation.models import DatasetCreate, EvaluationRequest, LabelEdit
+from hogline.learning.handles import HandleTrainingRequest, train_handle_model
 from hogline.orchestration.adaptive import AdaptiveRequest, create_adaptive_batch, preview_adaptive
 from hogline.orchestration.automatic import AutomaticRequest, create_automatic_batch, preview_automatic
 from hogline.orchestration.board_refinement import (
@@ -161,6 +162,10 @@ def main():
         "freeze-dataset", help="Freeze exact label revisions and whole-group partitions"
     )
     freeze.add_argument("path", help="DatasetCreate JSON document")
+    train = commands.add_parser(
+        "train-handles", help="Train an experimental local classifier on frozen train views"
+    )
+    train.add_argument("path", help="HandleTrainingRequest JSON document")
     evaluation = commands.add_parser("evaluate", help="Evaluate a detector on a frozen dataset partition")
     evaluation.add_argument("dataset_id")
     evaluation.add_argument("--partition", choices=["train", "validation", "test"], default="test")
@@ -327,6 +332,10 @@ def main():
             case "freeze-dataset":
                 frozen = freeze_dataset(db, DatasetCreate.model_validate_json(Path(args.path).read_text()))
                 result = {"id": frozen["id"], "sha256": frozen["sha256"], "records": len(frozen["records"])}
+            case "train-handles":
+                result = train_handle_model(
+                    db, HandleTrainingRequest.model_validate_json(Path(args.path).read_text())
+                )
             case "evaluate":
                 if args.output and Path(args.output).exists():
                     raise ValueError("Evaluation destination exists; choose a new filename")

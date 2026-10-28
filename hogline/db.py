@@ -295,6 +295,25 @@ class WindowDeliveries(Base):
     __table_args__ = (UniqueConstraint("window_id", "version", "actor_result_id"),)
 
 
+class HandleModel(Base):
+    __tablename__ = "handle_model"
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=uid)
+    version: Mapped[str] = mapped_column(String, unique=True)
+    sha256: Mapped[str] = mapped_column(String)
+    document: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[str] = mapped_column(String, default=now)
+
+
+class HandleTrainingRun(Base):
+    __tablename__ = "handle_training_run"
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=uid)
+    dataset_id: Mapped[str] = mapped_column(ForeignKey("evaluation_dataset.id"))
+    model_id: Mapped[str] = mapped_column(ForeignKey("handle_model.id"))
+    sha256: Mapped[str] = mapped_column(String)
+    document: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[str] = mapped_column(String, default=now)
+
+
 class HouseLabels(Base):
     __tablename__ = "house_labels"
     id: Mapped[str] = mapped_column(String, primary_key=True)

@@ -37,6 +37,8 @@ The [house-state benchmark](docs/HOUSE_EVALUATION.md) freezes independently revi
 
 **Delivery evidence** adds optional limb poses, perspective handle motion and conservative hand-control/separation hypotheses automatically. Missing control or ambiguous actors remain explicit; see [release associations and validation](docs/DELIVERIES.md). Physical timing and named player statistics still need reliable stone, geometry and identity evidence.
 
+**Local model training** learns a small context classifier from frozen corrected handle labels, with checksummed weights and recording/day leakage checks. It stays an experimental benchmark until independent validation; see [training experiments](docs/TRAINING.md).
+
 **Score disagreements** flags new pinned board proposals that differ from saved numbered ends. Review both evidence sets, acknowledge a reader error, or open the game to make an explicit correction. Decisions are revisioned and never automatically overwrite saved scores; see [disagreement review](docs/SCORE_DISAGREEMENTS.md).
 
 The default catalog is SQLite for a zero-service local pilot. SQLAlchemy models support a PostgreSQL connection through `HOGLINE_DATABASE_URL`; the PostgreSQL runtime has **not** been exercised yet. Install its driver with `uv sync --extra postgres`. Schema creation currently uses `create_all`; use explicit migrations before evolving a deployed database.

@@ -10,6 +10,7 @@ from hogline.adapters.sources import digest
 from hogline.db import EvaluationDataset, EvaluationRun, Evidence, FrameObservation, now
 from hogline.evaluation.labels import inside
 from hogline.evaluation.models import EvaluationRequest
+from hogline.learning.handles import registered_detector, validate_training_separation
 from hogline.perception.pipeline import analyze_frame
 from hogline.perception.stones import VERSION
 
@@ -125,21 +126,27 @@ def evaluate_dataset(db, request: EvaluationRequest):
         dataset = session.get(EvaluationDataset, request.dataset_id)
         if dataset is None:
             raise ValueError("Frozen evaluation dataset not found")
+        if digest(dataset.document) != dataset.sha256:
+            raise ValueError("Frozen evaluation dataset checksum mismatch")
         frozen, dataset_sha = dataset.document, dataset.sha256
     records = [r for r in frozen["records"] if r["partition"] == request.partition]
     if not records:
         raise ValueError("The requested partition has no eligible frozen label views")
+    with db.snapshot_session() as session:
+        detector, manifest = registered_detector(session, db.settings.data_dir, version)
+        if manifest:
+            validate_training_separation(manifest, records, request.partition, session)
     rows, exclusions = [], []
     for record in records:
         labels, frame = record["labels"], record["evidence"]
         identifier = str(uuid5(NAMESPACE_URL, f"{labels['evidence_id']}:{version}"))
         with db.session() as session:
             observation = session.get(FrameObservation, identifier)
-            if observation is None and version == VERSION:
+            if observation is None and (version == VERSION or detector is not None):
                 evidence = session.get(Evidence, labels["evidence_id"])
                 if evidence is not None:
                     try:
-                        analyze_frame(session, evidence, db.settings.data_dir)
+                        analyze_frame(session, evidence, db.settings.data_dir, detector)
                         session.flush()
                         observation = session.get(FrameObservation, identifier)
                     except (ValueError, OSError) as exc:
@@ -202,6 +209,8 @@ def evaluate_dataset(db, request: EvaluationRequest):
         "mode": frozen["mode"],
         "model_version": version,
         "partition": request.partition,
+        "learned_model_manifest_sha256": manifest["sha256"] if manifest else None,
+        "training_overlap_allowed_for_development": bool(manifest and request.partition == "train"),
         "definition": {
             "object_kind": "colored_handle_center",
             "matching": "one_to_one_max_cardinality_min_distance",
