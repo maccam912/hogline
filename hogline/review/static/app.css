@@ -1231,3 +1231,117 @@ dialog .primary {
 .score-proposal button {
   margin-left: auto;
 }
+.label-entry {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin: -8px 0 16px;
+  flex-wrap: wrap;
+}
+.frame-image svg.label-overlay {
+  pointer-events: all;
+  touch-action: none;
+  cursor: crosshair;
+}
+.label-modes,
+.label-actions,
+.label-points {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+.label-modes .button,
+.label-actions .button {
+  font-size: 10px;
+  padding: 8px 10px;
+}
+.label-chip {
+  font: 9px var(--mono);
+  border: 1px solid #cedbbf;
+  background: #fff;
+  border-radius: 3px;
+  padding: 5px 8px;
+  color: var(--green);
+}
+.label-points {
+  margin: 12px 0 18px;
+}
+.check-label {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  line-height: 1.5;
+  margin: 10px 0;
+}
+.check-label input {
+  width: auto;
+  margin: 0;
+}
+.label-actions {
+  margin-top: 12px;
+}
+.label-form {
+  margin: 0 0 20px;
+}
+#evaluation-dialog {
+  max-width: 640px;
+  max-height: calc(100vh - 40px);
+  overflow: auto;
+}
+#evaluation-dialog h3 {
+  font-size: 14px;
+  margin: 24px 0 13px;
+}
+.partition-groups {
+  max-height: 240px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  padding: 10px;
+  border-radius: 4px;
+}
+.partition-groups label {
+  padding: 5px 0;
+}
+.partition-groups label .fine-print {
+  display: block;
+}
+.evaluation-result {
+  padding: 18px;
+  background: #eef3e6;
+  border: 1px solid #d0ddbf;
+  border-radius: 5px;
+  margin-top: 20px;
+}
+.evaluation-result table {
+  font-size: 11px;
+  width: 100%;
+  border-collapse: collapse;
+  margin: 15px 0;
+}
+.evaluation-result th,
+.evaluation-result td {
+  text-align: left;
+  padding: 7px;
+  border-bottom: 1px solid #d6e1ca;
+}
+.evaluation-rows {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  margin-bottom: 15px;
+}
+.heading-actions {
+  flex-wrap: wrap;
+}
+.label-chip button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  padding: 0 3px;
+}
+.label-chip button + button {
+  border-left: 1px solid var(--line);
+  margin-left: 4px;
+  padding-left: 6px;
+}

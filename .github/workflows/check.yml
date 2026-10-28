@@ -24,4 +24,5 @@ jobs:
       - run: uv run ruff format --check hogline tests scripts
       - run: uv run pytest -q
       - run: node --check hogline/review/static/app.js
+      - run: node --check hogline/review/static/evaluation.js
       - run: uv build

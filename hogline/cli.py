@@ -8,6 +8,10 @@ from hogline.config import Settings
 from hogline.db import Database
 from hogline.domain.catalog import catalog
 from hogline.domain.models import ScanRequest
+from hogline.evaluation.datasets import freeze_dataset
+from hogline.evaluation.labels import labels_catalog, save_labels
+from hogline.evaluation.metrics import evaluate_dataset
+from hogline.evaluation.models import DatasetCreate, EvaluationRequest, LabelEdit
 from hogline.orchestration.worker import enqueue, retry, run_one
 from hogline.perception.broadcast import analyze_broadcast
 from hogline.perception.pipeline import analyze_cached
@@ -29,6 +33,18 @@ def main():
     commands.add_parser("catalog")
     commands.add_parser("analyze", help="Run OpenCV on cached evidence; never downloads video")
     commands.add_parser("analyze-broadcast", help="Read clock/scoreboard crops on up to 120 cached frames")
+    commands.add_parser("labels", help="List saved label views and recording/day groups")
+    label_import = commands.add_parser("label-import", help="Import a revisioned label-edit JSON document")
+    label_import.add_argument("path")
+    freeze = commands.add_parser(
+        "freeze-dataset", help="Freeze exact label revisions and whole-group partitions"
+    )
+    freeze.add_argument("path", help="DatasetCreate JSON document")
+    evaluation = commands.add_parser("evaluate", help="Evaluate a detector on a frozen dataset partition")
+    evaluation.add_argument("dataset_id")
+    evaluation.add_argument("--partition", choices=["train", "validation", "test"], default="test")
+    evaluation.add_argument("--model", default=None)
+    evaluation.add_argument("--output", default=None)
     scan = commands.add_parser("scan", help="Enqueue a sparse, on-demand evidence scan")
     scan.add_argument("source_id")
     scan.add_argument("--start", type=float, default=0)
@@ -65,6 +81,29 @@ def main():
                 result = analyze_cached(db)
             case "analyze-broadcast":
                 result = analyze_broadcast(db)
+            case "labels":
+                result = labels_catalog(db)
+            case "label-import":
+                result = save_labels(db, LabelEdit.model_validate_json(Path(args.path).read_text()))
+            case "freeze-dataset":
+                frozen = freeze_dataset(db, DatasetCreate.model_validate_json(Path(args.path).read_text()))
+                result = {"id": frozen["id"], "sha256": frozen["sha256"], "records": len(frozen["records"])}
+            case "evaluate":
+                if args.output and Path(args.output).exists():
+                    raise ValueError("Evaluation destination exists; choose a new filename")
+                result = evaluate_dataset(
+                    db,
+                    EvaluationRequest(
+                        dataset_id=args.dataset_id, partition=args.partition, model_version=args.model
+                    ),
+                )
+                if args.output:
+                    Path(args.output).write_text(json.dumps(result, indent=2))
+                    result = {
+                        "id": result["id"],
+                        "summary": result["summary"],
+                        "path": str(Path(args.output).resolve()),
+                    }
             case "scan":
                 result = enqueue(
                     db,

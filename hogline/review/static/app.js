@@ -80,8 +80,10 @@ const frames = () =>
   state.data.evidence
     .filter((e) => e.source_id === state.source)
     .sort((a, b) => a.source_seconds - b.source_seconds);
-const currentFrame = () =>
-  frames().reduce(
+const currentFrame = () => {
+  const locked = window.hoglineLabels?.evidenceId();
+  if (locked) return state.data.evidence.find((e) => e.id === locked);
+  return frames().reduce(
     (best, e) =>
       !best ||
       Math.abs(e.source_seconds - state.seconds) <
@@ -90,6 +92,7 @@ const currentFrame = () =>
         : best,
     null,
   );
+};
 const youtube = (src, seconds) =>
   src?.platform === "youtube"
     ? `https://www.youtube.com/watch?v=${encodeURIComponent(src.platform_id)}&t=${Math.floor(Math.max(0, seconds))}s`
@@ -186,11 +189,11 @@ function renderFrame() {
   );
   const selectedTime = frame?.source_seconds ?? state.seconds;
   const stage = $("#frame-stage");
-  const key = `${frame?.id || "none"}:${state.view}:${observation?.id || "none"}:${state.overlay}`;
+  const key = `${frame?.id || "none"}:${state.view}:${observation?.id || "none"}:${state.overlay}:${window.hoglineLabels?.key() || ""}`;
   if (stage.dataset.key !== key) {
     stage.dataset.key = key;
     stage.innerHTML = frame
-      ? `<div class="frame-image"><img src="/api/evidence/${frame.id}/${state.view}" alt="Evidence from ${escapeHTML(src.title)} at ${time(selectedTime)}">${state.overlay && observation ? renderDetections(frame, observation) : ""}</div><span class="frame-stamp">SOURCE ${time(selectedTime)} · ${state.view === "composite" ? "ORIGINAL FRAME" : "SEED CROP"}</span>`
+      ? `<div class="frame-image"><img src="/api/evidence/${frame.id}/${state.view}" alt="Evidence from ${escapeHTML(src.title)} at ${time(selectedTime)}">${state.overlay && observation ? renderDetections(frame, observation) : ""}${window.hoglineLabels?.overlay(frame, state.view) || ""}</div><span class="frame-stamp">SOURCE ${time(selectedTime)} · ${state.view === "composite" ? "ORIGINAL FRAME" : "SEED CROP"}</span>`
       : '<div class="frame-placeholder"><span>NO CACHED FRAME</span><p>Open the source on YouTube, or cache a frame at this moment.</p></div>';
     const img = $("img", stage);
     if (img)
@@ -655,6 +658,8 @@ document.addEventListener("click", async (event) => {
   if (!button) return;
   try {
     if (button.dataset.source) {
+      if (window.hoglineLabels && !window.hoglineLabels.beforeNavigate())
+        return;
       state.source = button.dataset.source;
       state.seconds = frames()[0]?.source_seconds || 0;
       state.draft = null;
@@ -669,10 +674,16 @@ document.addEventListener("click", async (event) => {
       render();
     }
     if (button.dataset.view) {
+      if (window.hoglineLabels && !window.hoglineLabels.beforeNavigate())
+        return;
       state.view = button.dataset.view;
       renderFrame();
     }
-    if (button.dataset.edit) editGame(button.dataset.edit);
+    if (button.dataset.edit) {
+      if (window.hoglineLabels && !window.hoglineLabels.beforeNavigate())
+        return;
+      editGame(button.dataset.edit);
+    }
     if (button.dataset.scoreProposal)
       useScoreProposal(button.dataset.scoreProposal);
     if (button.dataset.retry) {
@@ -808,6 +819,10 @@ document.addEventListener("click", async (event) => {
 });
 $("#search").addEventListener("input", render);
 $("#scrubber").addEventListener("input", (event) => {
+  if (window.hoglineLabels && !window.hoglineLabels.beforeNavigate()) {
+    event.target.value = state.seconds;
+    return;
+  }
   state.seconds = Number(event.target.value);
   $("#timeline-duration").textContent =
     `${time(state.seconds)} / ${time(source().duration_seconds)}`;

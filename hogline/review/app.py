@@ -15,12 +15,28 @@ from hogline import __version__
 from hogline.adapters.sources import import_youtube
 from hogline.analytics.exports import csv_export, snapshot
 from hogline.config import Settings
-from hogline.db import Database, Evidence, FrameObservation, Release, Revision, Source
+from hogline.db import (
+    Database,
+    EvaluationDataset,
+    EvaluationRun,
+    Evidence,
+    FrameLabels,
+    FrameObservation,
+    LabelRevision,
+    Release,
+    Revision,
+    Source,
+)
 from hogline.domain.catalog import Conflict, catalog, save_game
 from hogline.domain.models import GameEdit, Model, ScanRequest
+from hogline.evaluation.datasets import dataset_catalog, freeze_dataset
+from hogline.evaluation.labels import label_id, labels_catalog, save_labels
+from hogline.evaluation.metrics import evaluate_dataset, run_catalog
+from hogline.evaluation.models import DatasetCreate, EvaluationRequest, LabelEdit
 from hogline.orchestration.worker import enqueue, jobs, retry, run_one
 from hogline.perception.broadcast import analyze_broadcast, broadcast_catalog
 from hogline.perception.pipeline import analyze_cached, observations
+from hogline.perception.stones import VERSION as DETECTOR_VERSION
 
 
 class SourceImport(Model):
@@ -83,6 +99,79 @@ def create_app(settings: Settings | None = None, start_worker=False):
     @app.post("/api/perception/analyze")
     def analyze():
         return {"observations": analyze_cached(db)}
+
+    @app.get("/api/labels/{evidence_id}/{view}")
+    def get_labels(evidence_id: str, view: str):
+        with db.session() as session:
+            row = session.get(FrameLabels, label_id(evidence_id, view))
+            return {"id": row.id, "revision": row.revision, **row.document} if row else None
+
+    @app.put("/api/labels/{evidence_id}/{view}")
+    def put_labels(evidence_id: str, view: str, body: LabelEdit):
+        if body.labels.evidence_id != evidence_id or body.labels.view != view:
+            raise ValueError("Label target does not match the evidence/view URL")
+        return save_labels(db, body)
+
+    @app.get("/api/labels/{evidence_id}/{view}/history")
+    def label_history(evidence_id: str, view: str):
+        with db.session() as session:
+            return [
+                {
+                    "revision": r.number,
+                    "author": r.author,
+                    "reason": r.reason,
+                    "created_at": r.created_at,
+                    "labels": r.document,
+                }
+                for r in session.scalars(
+                    select(LabelRevision)
+                    .where(LabelRevision.labels_id == label_id(evidence_id, view))
+                    .order_by(LabelRevision.number.desc())
+                )
+            ]
+
+    @app.get("/api/evaluation")
+    def evaluation_state():
+        labels = labels_catalog(db)
+        with db.session() as session:
+            versions = list(
+                session.scalars(
+                    select(FrameObservation.model_version)
+                    .where(FrameObservation.model_version.like("opencv-hsv-handles-%"))
+                    .distinct()
+                )
+            )
+        return {
+            "groups": labels["groups"],
+            "suggested_source_groups": labels["suggested_source_groups"],
+            "datasets": dataset_catalog(db),
+            "runs": run_catalog(db),
+            "default_model_version": DETECTOR_VERSION,
+            "model_versions": sorted(set([DETECTOR_VERSION, *versions])),
+        }
+
+    @app.post("/api/evaluation/datasets")
+    def create_dataset(body: DatasetCreate):
+        result = freeze_dataset(db, body)
+        return {"id": result["id"], "sha256": result["sha256"], "records": len(result["records"])}
+
+    @app.post("/api/evaluation/runs")
+    def evaluate(body: EvaluationRequest):
+        return evaluate_dataset(db, body)
+
+    @app.get("/api/evaluation/{kind}/{identifier}.json")
+    def evaluation_export(kind: str, identifier: str):
+        table = {"datasets": EvaluationDataset, "runs": EvaluationRun}.get(kind)
+        if table is None:
+            raise HTTPException(404, "Use datasets or runs")
+        with db.session() as session:
+            row = session.get(table, identifier)
+            if row is None:
+                raise HTTPException(404, "Evaluation artifact not found")
+            return JSONResponse(
+                {"id": row.id, "sha256": row.sha256, **row.document},
+                headers={"Content-Disposition": f'attachment; filename="hogline-{kind}-{identifier}.json"'},
+            )
 
     @app.post("/api/perception/broadcast")
     def read_broadcast(body: BroadcastRequest):
