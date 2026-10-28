@@ -163,3 +163,40 @@ def test_motion_search_excludes_stationary_fragments_and_old_methods_by_default(
     old = build_moments(data, {}, [result])
     assert search_index(data, old, MomentQuery())["total"] == 0
     assert search_index(data, old, MomentQuery(include_earlier_inputs=True))["total"] == 1
+
+
+def test_house_moments_preserve_state_intervals_changes_and_method_boundaries():
+    from hogline.adapters.sources import digest
+    from hogline.config import profile
+    from hogline.perception.stones import VERSION as detector
+    from hogline.perception.visibility import VERSION as visibility
+    from hogline.reconstruction.house_states import house_states
+    from tests.test_house_states import row
+
+    data, _ = fixture()
+    result = {
+        **house_states([row(i, (30,) if i < 4 else ()) for i in range(8)], "input"),
+        "id": "house-result",
+        "window_id": "window",
+        "source_id": "source-1",
+        "source_metadata_sha256": "manifest-1",
+        "detector_version": detector,
+        "visibility_version": visibility,
+        "profile_sha256": digest(profile()),
+        "context_anchor_evidence_ids": ["frame-10"],
+    }
+    moments = build_moments(data, {}, [], [result])
+    changes = search_index(data, moments, MomentQuery(kinds=["house_change"]))
+    assert changes["total"] == 1
+    moment = changes["moments"][0]
+    assert (moment["start_seconds"], moment["end_seconds"]) == (1.5, 2)
+    assert moment["reference"]["house_item_id"] == result["transitions"][0]["id"]
+    assert moment["reference"]["house_result_id"] == "house-result"
+    assert moment["evidence"][0]["source_seconds"] == 10  # Context, not the exact transition endpoint.
+    states = search_index(data, moments, MomentQuery(kinds=["sampled_house_state"]))
+    assert states["total"] == 2
+    assert all(m["acceptance"] == "proposed" for m in states["moments"])
+    result["version"] = "old-method"
+    old = build_moments(data, {}, [], [result])
+    assert search_index(data, old, MomentQuery())["total"] == 0
+    assert search_index(data, old, MomentQuery(include_earlier_inputs=True))["total"] == 3

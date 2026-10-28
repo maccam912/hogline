@@ -12,6 +12,8 @@
     handle_motion: "Handle position change",
     house_configuration: "Persistent configuration",
     reviewed_end: "Saved end review",
+    sampled_house_state: "Sampled house state",
+    house_change: "House configuration change",
   };
   async function search(offset = 0) {
     if (pending) return;
@@ -141,6 +143,12 @@
           moment.reference.window_id,
           moment.reference.track_id,
           moment.reference.track_result_id,
+        );
+      else if (moment.reference.house_result_id)
+        await window.hoglineHouseStates.open(
+          moment.reference.window_id,
+          moment.reference.house_item_id,
+          moment.reference.house_result_id,
         );
       else
         $("#frame-stage").scrollIntoView({

@@ -7,6 +7,7 @@ from typing import Literal
 from pydantic import Field, model_validator
 
 from hogline.adapters.sources import digest, video_link
+from hogline.analytics.house_states import house_states_in_session
 from hogline.analytics.tracks import tracks_in_session
 from hogline.config import profile
 from hogline.domain.catalog import Conflict, catalog_in_session
@@ -17,9 +18,18 @@ from hogline.perception.stones import VERSION as DETECTOR_VERSION
 from hogline.perception.temporal import VERSION as WINDOW_VERSION
 from hogline.perception.tracking import VERSION as TRACKING_VERSION
 from hogline.perception.visibility import VERSION as VISIBILITY_VERSION
+from hogline.reconstruction.house_states import VERSION as HOUSE_STATES_VERSION
 
-VERSION = "evidence-moment-search-v1"
-Kind = Literal["board_change", "score_proposal", "handle_motion", "house_configuration", "reviewed_end"]
+VERSION = "evidence-moment-search-v2"
+Kind = Literal[
+    "board_change",
+    "score_proposal",
+    "handle_motion",
+    "house_configuration",
+    "reviewed_end",
+    "sampled_house_state",
+    "house_change",
+]
 
 
 class MomentQuery(Model):
@@ -28,7 +38,7 @@ class MomentQuery(Model):
     source_id: str | None = None
     title_date_from: date | None = None
     title_date_to: date | None = None
-    kinds: list[Kind] = Field(default_factory=list, max_length=5)
+    kinds: list[Kind] = Field(default_factory=list, max_length=7)
     acceptance: Acceptance | None = None
     include_earlier_inputs: bool = False
     offset: int = Field(default=0, ge=0, le=1000000)
@@ -42,7 +52,7 @@ class MomentQuery(Model):
         return self
 
 
-def build_moments(data, broadcast, track_results):
+def build_moments(data, broadcast, track_results, house_results=()):
     profile_sha256 = digest(profile())
     sources = {s["id"]: s for s in data["sources"]}
     evidence = {e["id"]: e for e in data["evidence"]}
@@ -185,6 +195,45 @@ def build_moments(data, broadcast, track_results):
                     "track_id": t["id"],
                 },
             )
+    for result in house_results:
+        current = (
+            result["version"] == HOUSE_STATES_VERSION
+            and result["detector_version"] == DETECTOR_VERSION
+            and result["visibility_version"] == VISIBILITY_VERSION
+            and result["profile_sha256"] == profile_sha256
+        )
+        for item in [*result["states"], *result["transitions"]]:
+            is_state = "sample_indices" in item
+            title = (
+                f"Stable run · {item['candidate_count']} handle detections"
+                if is_state
+                else item["kind"].replace("_", " ").title()
+            )
+            add(
+                "sampled_house_state" if is_state else "house_change",
+                f"{result['id']}:{item['id']}",
+                result["source_id"],
+                item["start_seconds"] if is_state else item["earliest_seconds"],
+                item["end_seconds"] if is_state else item["latest_seconds"],
+                title,
+                (
+                    "Repeated sampled handle detections. Zero detections does not establish an empty house; "
+                    "hidden stones, end phase and score remain unknown."
+                    if is_state
+                    else "A bracket between sampled configurations. Missed detections can resemble clearing; "
+                    "this is not a played-end boundary."
+                ),
+                result["context_anchor_evidence_ids"],
+                manifest=result["source_metadata_sha256"],
+                model=result["version"],
+                current_method=current,
+                view=item["view"],
+                reference={
+                    "window_id": result["window_id"],
+                    "house_result_id": result["id"],
+                    "house_item_id": item["id"],
+                },
+            )
     for game in data["games"]:
         if game.get("retired_into"):
             continue
@@ -281,4 +330,5 @@ def search_moments(db, query):
         data = catalog_in_session(session)
         broadcast = broadcast_catalog_in_session(session, db.settings.data_dir)
         tracks = tracks_in_session(session, full=True)
-        return search_index(data, build_moments(data, broadcast, tracks), query)
+        houses = house_states_in_session(session, full=True)
+        return search_index(data, build_moments(data, broadcast, tracks, houses), query)

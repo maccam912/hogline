@@ -1,5 +1,7 @@
 # Find moments across recordings
 
+House-state searches include stable sampled handle runs and uncertain configuration-change brackets. They open the selected proposal in the house-state dialog. A zero-detection run does not establish an empty house, and a change bracket is not a played-end boundary. Retained window context keeps its own timestamps.
+
 **Find moments** searches retained evidence without acquiring media. Filter descriptions, sheet, recording, title-date range, moment kind, and review state. Each card links the exact source and both interval endpoints. **Inspect in workbench** opens the source viewer, the before/after board comparison, or the relevant handle-fragment result. Existing game/handle-label drafts are guarded before navigation.
 
 The searchable kinds are posted-board changes, proposed cumulative-column score differences, handle fragments with net position change, persistent house configurations, and saved played/blank end interpretations. Stationary handle fragments remain in their window viewer. Retired game interpretations are excluded. A human-confirmed end filter refers to the end review; it does not confirm its game's boundaries or final result.

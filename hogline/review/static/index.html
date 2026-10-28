@@ -13,6 +13,7 @@
     <script src="/static/boundaries.js" defer></script>
     <script src="/static/windows.js" defer></script>
     <script src="/static/tracks.js" defer></script>
+    <script src="/static/house-states.js" defer></script>
     <script src="/static/moments.js" defer></script>
     <script src="/static/score-conflicts.js" defer></script>
     <script src="/static/adaptive.js" defer></script>
@@ -621,11 +622,32 @@
       </form>
       <section class="batch-card">
         <h3>Complete recording metadata</h3>
-        <p>Upgrade incomplete or changed listings in the background. Earlier manifests and evidence remain retained. No video is fetched.</p>
+        <p>
+          Upgrade incomplete or changed listings in the background. Earlier
+          manifests and evidence remain retained. No video is fetched.
+        </p>
         <form id="metadata-refresh-form" class="form-grid">
-          <label>Recordings per request<input name="limit" type="number" min="1" max="16" value="4" required /></label>
-          <label>Timeout per recording (seconds)<input name="timeout" type="number" min="5" max="60" value="30" required /></label>
-          <button class="button secondary" type="submit">Queue metadata refresh</button>
+          <label
+            >Recordings per request<input
+              name="limit"
+              type="number"
+              min="1"
+              max="16"
+              value="4"
+              required
+          /></label>
+          <label
+            >Timeout per recording (seconds)<input
+              name="timeout"
+              type="number"
+              min="5"
+              max="60"
+              value="30"
+              required
+          /></label>
+          <button class="button secondary" type="submit">
+            Queue metadata refresh
+          </button>
         </form>
         <div id="metadata-refresh-status" aria-live="polite"></div>
       </section>
@@ -1054,6 +1076,17 @@
         </div>
       </form>
     </dialog>
+    <dialog id="house-states-dialog" class="wide-dialog">
+      <button
+        class="close-dialog"
+        type="button"
+        aria-label="Close house states"
+      >
+        ×
+      </button>
+      <h2>Sampled house states</h2>
+      <div id="house-states-content" aria-live="polite"></div>
+    </dialog>
     <dialog id="tracks-dialog" class="wide-dialog">
       <button
         type="button"
@@ -1107,6 +1140,8 @@
                 Persistent configurations
               </option>
               <option value="reviewed_end">Saved end reviews</option>
+              <option value="sampled_house_state">Sampled house states</option>
+              <option value="house_change">House configuration changes</option>
             </select></label
           >
           <label
