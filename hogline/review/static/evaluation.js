@@ -101,7 +101,7 @@
     if (!workspace) return;
     const labels = workspace.labels,
       dimensions = asset();
-    root.innerHTML = `<form class="editor label-form" id="label-form"><div class="section-heading"><h3>Label visible handles</h3><span class="pill">${labels.view} · ${dimensions.width}×${dimensions.height}</span></div><p>Click handle centers in the image. Drag an ignored region over an occlusion. Labels describe colored handles, not granite footprints.</p><div class="label-modes">${["red", "yellow", "unknown", "remove", "ignore"].map((mode) => `<button type="button" class="button ${workspace.mode === mode || (!workspace.mode && mode === "red") ? "primary" : "secondary"}" data-label-mode="${mode}" aria-pressed="${workspace.mode === mode || (!workspace.mode && mode === "red")}">${{ red: "Red", yellow: "Yellow", unknown: "Color unknown", remove: "Remove mark", ignore: "Ignore region" }[mode]}</button>`).join("")}</div><p class="fine-print">${countText()} · ${workspace.dirty ? "unsaved changes" : "saved revision " + workspace.revision}</p><div class="label-points">${labels.points.map((p, i) => `<span class="label-chip"><button type="button" data-label-visibility="${i}" title="Toggle full / partial visibility">${i + 1} · ${p.color} · ${Math.round(p.center_px[0])},${Math.round(p.center_px[1])} · ${p.visibility}</button><button type="button" data-remove-label="${i}" aria-label="Remove label ${i + 1}">×</button></span>`).join("") || '<span class="fine-print">No labeled handles.</span>'}</div><div class="form-grid"><label>Coverage<select name="coverage">${options(
+    root.innerHTML = `<form class="editor label-form" id="label-form"><div class="section-heading"><h3>Label visible handles</h3><span class="pill">${labels.view} · ${dimensions.width}×${dimensions.height}</span></div><p>Click handle centers in the image. Drag an ignored region over an occlusion. Labels describe colored handles, not granite footprints.</p><div class="label-modes">${["red", "yellow", "unknown", "remove", "ignore"].map((mode) => `<button type="button" class="button ${workspace.mode === mode || (!workspace.mode && mode === "red") ? "primary" : "secondary"}" data-label-mode="${mode}" aria-pressed="${workspace.mode === mode || (!workspace.mode && mode === "red")}">${{ red: "Red", yellow: "Yellow", unknown: "Color unknown", remove: "Remove mark", ignore: "Ignore region" }[mode]}</button>`).join("")}</div><p class="fine-print">${countText()} · ${workspace.dirty ? "unsaved changes" : workspace.revision ? "saved revision " + workspace.revision : "new draft"}</p><div class="label-points">${labels.points.map((p, i) => `<span class="label-chip"><button type="button" data-label-visibility="${i}" title="Toggle full / partial visibility">${i + 1} · ${p.color} · ${Math.round(p.center_px[0])},${Math.round(p.center_px[1])} · ${p.visibility}</button><button type="button" data-remove-label="${i}" aria-label="Remove label ${i + 1}">×</button></span>`).join("") || '<span class="fine-print">No labeled handles.</span>'}</div><div class="form-grid"><label>Coverage<select name="coverage">${options(
       [
         ["partial", "Partial labels"],
         ["complete_visible", "All visible handles labeled"],
@@ -281,6 +281,12 @@
     const data = evaluationState,
       groups = data.groups,
       datasets = data.datasets;
+    const partitions = Object.values(datasets[0]?.partitions || {});
+    const initialPartition = partitions.includes("test")
+      ? "test"
+      : partitions.includes("validation")
+        ? "validation"
+        : "train";
     $("#evaluation-content").innerHTML =
       `<form id="freeze-form"><h3>1. Freeze an evaluation dataset</h3>${
         groups.length
@@ -314,7 +320,7 @@
           ["validation", "Validation"],
           ["train", "Train diagnostics"],
         ],
-        "test",
+        initialPartition,
       )}</select></label><label>Max center error / crop width<input name="tolerance" type="number" min="0.001" max="0.2" step="0.001" value="0.035" required></label></div><p class="fine-print">One-to-one matching counts missed and extra detections. Pixel-space handle accuracy does not establish score, physical-distance, or identity accuracy.</p><button class="button primary" type="submit" ${datasets.length ? "" : "disabled"}>Run current detector →</button></form><div id="evaluation-report"></div><h3>Saved evaluation runs</h3>${
         data.runs
           .slice()
