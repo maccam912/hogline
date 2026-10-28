@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="/static/app.css" />
     <script src="/static/app.js" defer></script>
     <script src="/static/evaluation.js" defer></script>
+    <script src="/static/processing.js" defer></script>
   </head>
   <body>
     <header>
@@ -17,7 +18,7 @@
       ><span class="header-label">THE CURLING ARCHIVE</span>
       <div class="header-right">
         <span class="local-light"></span> LOCAL WORKBENCH
-        <span class="version">PILOT 0.3</span>
+        <span class="version">PILOT 0.4</span>
       </div>
     </header>
     <div class="shell">
@@ -182,6 +183,16 @@
                   ><span id="timeline-duration"></span>
                 </div>
                 <div class="timeline-track" id="timeline-track"></div>
+                <form id="jump-form" class="time-jump">
+                  <label for="jump-input">Go to source time</label
+                  ><input
+                    id="jump-input"
+                    name="seconds"
+                    value="00:00:00"
+                    required
+                    aria-label="Go to source time (HH:MM:SS)"
+                  /><button type="submit" class="button quiet">Go →</button>
+                </form>
                 <input
                   type="range"
                   id="scrubber"
@@ -226,10 +237,11 @@
               <div id="game-editor" hidden></div>
               <div class="section-heading jobs-heading">
                 <h2>Processing</h2>
-                <span class="fine-print"
-                  >Bounded work · resumable frame cache</span
-                >
+                <button class="button secondary" id="plan-button">
+                  Plan recording →
+                </button>
               </div>
+              <div id="batch-list"></div>
               <div id="job-list"></div>
             </div>
           </div>
@@ -349,6 +361,125 @@
       </p>
       <div id="evaluation-content"></div>
     </dialog>
+    <dialog id="plan-dialog">
+      <button class="close-dialog" type="button" aria-label="Close">×</button>
+      <span class="eyebrow">PREVIEW BEFORE PROCESSING</span>
+      <h2>Plan a recording</h2>
+      <p>
+        Queue a limited set of chunks with shared context. Each owns its central
+        interval. Chunks do not define games.
+      </p>
+      <form id="plan-form">
+        <div class="form-grid">
+          <label>Start (HH:MM:SS)<input name="start" required /></label>
+          <label>End (HH:MM:SS)<input name="end" required /></label>
+          <label
+            >Chunk length (seconds)<input
+              name="chunk"
+              type="number"
+              value="600"
+              min="60"
+              max="1080"
+              required
+          /></label>
+          <label
+            >Context on each side (seconds)<input
+              name="context"
+              type="number"
+              value="30"
+              min="0"
+              max="60"
+              required
+          /></label>
+          <label
+            >Sample interval (seconds)<input
+              name="interval"
+              type="number"
+              value="10"
+              min="1"
+              max="60"
+              required
+          /></label>
+          <label
+            >Maximum new chunks<input
+              name="jobs"
+              type="number"
+              value="2"
+              min="1"
+              max="100"
+              required
+          /></label>
+          <label
+            >Frame detail<select name="tier">
+              <option value="coarse">Coarse · activity · up to 360p</option>
+              <option value="evidence">Detailed · up to 1080p</option>
+            </select></label
+          >
+          <label
+            >Maximum image growth (MB)<input
+              name="growth"
+              type="number"
+              value="250"
+              min="1"
+              max="4096"
+              required
+          /></label>
+          <label
+            >Batch worker time (seconds)<input
+              name="worker"
+              type="number"
+              value="1800"
+              min="5"
+              max="86400"
+              required
+          /></label>
+        </div>
+        <p class="fine-print">
+          Each chunk is limited to 100 MB and 600 worker seconds. Batch limits
+          apply across attempts. A decoder in progress may take up to 45 seconds
+          to return. Network transfer is not metered.
+        </p>
+        <button class="button secondary" type="submit">Preview work →</button>
+      </form>
+      <div id="plan-preview" aria-live="polite"></div>
+      <button class="button primary" id="start-batch" disabled>
+        Start previewed batch →
+      </button>
+    </dialog>
     <div id="toast" role="status" aria-live="polite" hidden></div>
+    <dialog id="batch-resume-dialog">
+      <form id="batch-resume-form">
+        <button class="close-dialog" type="button" aria-label="Close">×</button>
+        <h2>Resume this batch</h2>
+        <p>
+          Limits are cumulative across all attempts. Completed chunks and cached
+          frames are reused.
+        </p>
+        <div class="form-grid">
+          <label
+            >Total image-growth limit (MB)<input
+              name="growth"
+              type="number"
+              min="1"
+              max="4096"
+              required
+          /></label>
+          <label
+            >Total worker-time limit (seconds)<input
+              name="worker"
+              type="number"
+              min="5"
+              max="86400"
+              required
+          /></label>
+        </div>
+        <p class="fine-print">
+          Retry failed chunks in Processing before resuming their batch.
+        </p>
+        <button class="button primary" type="submit">
+          Resume with these limits →
+        </button>
+      </form>
+    </dialog>
   </body>
 </html>

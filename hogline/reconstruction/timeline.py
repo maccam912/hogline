@@ -41,6 +41,7 @@ def reconstruct_source(source, scans, evidence, quiet_gap=300):
             key = round(sample.get("requested_seconds", sample["seconds"]), 6)
             asset = frame["image"]
             quality = (
+                sample["state"] != "unknown",  # A one-frame detail request has no motion comparison.
                 asset["width"] * asset["height"],
                 frame.get("acquisition_tier", "evidence") == "evidence",
             )

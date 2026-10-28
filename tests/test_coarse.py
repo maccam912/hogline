@@ -125,3 +125,14 @@ def test_chunks_join_activity_without_duplicate_context_samples_or_inventing_gam
         source, [scan(0, 40, [0, 10, 20, 30]), scan(60, 100, [60, 70, 80, 90])], evidence
     )
     assert len(separated["activity_runs"]) == 2
+
+
+def test_single_detailed_frame_does_not_erase_motion_comparison():
+    source = {"id": "s", "platform": "local", "duration_seconds": 100}
+    coarse = scan(0, 40, [0, 10, 20, 30])
+    detailed = scan(10, 11, [10])
+    detailed["samples"][0].update(state="unknown", evidence_id="detail")
+    evidence = {str(t): {"image": {"width": 640, "height": 360}} for t in [0, 10, 20, 30]}
+    evidence["detail"] = {"image": {"width": 1920, "height": 1080}}
+    result = reconstruct_source(source, [coarse, detailed], evidence)
+    assert "10" in result["activity_runs"][0]["evidence_ids"]

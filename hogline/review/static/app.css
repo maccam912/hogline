@@ -657,6 +657,47 @@ input::placeholder {
 .activity-card p {
   margin-bottom: 0;
 }
+.batch-card {
+  border: 1px solid #d9e2d1;
+  border-radius: 5px;
+  padding: 15px;
+  margin-bottom: 12px;
+  background: #f5f7ef;
+  font-size: 12px;
+}
+.batch-heading,
+.batch-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.batch-heading {
+  justify-content: space-between;
+}
+.batch-card details {
+  margin-top: 12px;
+}
+#plan-preview {
+  margin: 20px 0;
+  font-size: 13px;
+}
+#plan-preview details {
+  margin-bottom: 20px;
+}
+.time-jump {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  font-size: 11px;
+  margin-top: 10px;
+}
+.time-jump input {
+  width: 110px;
+  height: auto;
+  padding: 6px;
+}
 .timeline-block input {
   padding: 0;
   height: 15px;

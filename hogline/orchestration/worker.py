@@ -5,14 +5,31 @@ from uuid import NAMESPACE_URL, uuid5
 
 import numpy as np
 from PIL import Image
-from sqlalchemy import or_, select, update
+from sqlalchemy import select, update
+from sqlalchemy.orm.exc import StaleDataError
 
 from hogline.adapters.sources import digest, video_link
 from hogline.config import profile
-from hogline.db import Evidence, Job, Scan, now
+from hogline.db import Evidence, Job, JobExecution, ProcessingBatch, Scan, now
 from hogline.domain.catalog import propose_games, source_or_error
 from hogline.domain.models import ScanRequest, uid
-from hogline.media.frames import EvidenceBudget, capture, observe, resolve_media, save_image, source_seconds
+from hogline.media.frames import (
+    EvidenceBudget,
+    EvidenceLimitError,
+    capture,
+    observe,
+    resolve_media,
+    save_image,
+    source_seconds,
+)
+from hogline.orchestration.plans import (
+    WorkStopped,
+    check_execution,
+    enqueue_in_session,
+    finish_execution,
+    freeze_outcomes,
+    payload_for,
+)
 from hogline.perception.pipeline import analyze_frame
 from hogline.perception.stones import VERSION as DETECTOR_VERSION
 from hogline.reconstruction.activity import VERSION, classify, propose
@@ -23,22 +40,7 @@ def enqueue(db, request: ScanRequest):
         source = source_or_error(session, request.source_id)
         if source.get("duration_seconds") and request.end_seconds > source["duration_seconds"]:
             raise ValueError("Scan exceeds source duration")
-        layout = profile()
-        payload = {
-            "request": request.model_dump(),
-            "stage_version": VERSION,
-            "profile_sha256": digest(layout),
-            "profile": layout,
-            "source_hash": source["metadata_sha256"],
-            "perception_version": DETECTOR_VERSION,
-        }
-        key = digest(payload)
-        job = session.scalar(select(Job).where(Job.job_key == key))
-        if job is None:
-            job = Job(job_key=key, document={**payload, "created_at": now(), "progress": 0})
-            session.add(job)
-            session.flush()
-        return job_view(job)
+        return job_view(enqueue_in_session(session, payload_for(source, request)))
 
 
 def job_view(job):
@@ -57,14 +59,51 @@ def jobs(db):
 
 
 def claim(db):
+    try:
+        return claim_transaction(db)
+    except StaleDataError:
+        return None  # Another worker/control updated this batch; retry on the next poll.
+
+
+def claim_transaction(db):
     with db.session() as session:
         expired = (Job.state == "running") & (Job.lease_until < now())
-        for exhausted in session.scalars(select(Job).where(expired, Job.attempts >= 3)):
-            exhausted.state = "failed"
-            exhausted.lease_until = None
-            exhausted.document = {**exhausted.document, "error": "Work lease expired after 3 attempts"}
-        eligible = or_(Job.state == "queued", expired) & (Job.attempts < 3)
-        job = session.scalar(select(Job).where(eligible).order_by(Job.id).limit(1))
+        for old in session.scalars(select(Job).where(expired)):
+            execution = session.get(JobExecution, old.document.get("lease_token", ""))
+            if execution and execution.state == "running":
+                # Bound unknown work after a crash by one lease, rather than
+                # silently dropping time incurred since the last heartbeat.
+                execution.document = {**execution.document, "expiry_accounting": "one_lease_upper_bound"}
+                finish_execution(
+                    session, execution.id, "expired", execution.document.get("wall_seconds", 0) + 120
+                )
+            old.state = "failed" if old.attempts >= 3 else "queued"
+            if old.document.get("batch_id"):
+                owner = session.get(ProcessingBatch, old.document["batch_id"])
+                if owner.state == "cancelled":
+                    old.state = "cancelled"
+                    freeze_outcomes(session, owner)
+                elif old.state == "failed" and owner.state == "active":
+                    owner.state = "paused"
+                    owner.document = {
+                        **owner.document,
+                        "pause_reason": "A work lease expired after 3 attempts",
+                    }
+            old.lease_until = None
+            old.document = {**old.document, "error": "Work lease expired"}
+        session.flush()
+        eligible = (Job.state == "queued") & (Job.attempts < 3)
+        job, batch = None, None
+        for candidate in session.scalars(select(Job).where(eligible).order_by(Job.id)):
+            owner = (
+                session.get(ProcessingBatch, candidate.document["batch_id"])
+                if candidate.document.get("batch_id")
+                else None
+            )
+            if owner and (owner.state != "active" or owner.document.get("active_execution")):
+                continue
+            job, batch = candidate, owner
+            break
         if job is None:
             return None
         token = uid()
@@ -81,6 +120,17 @@ def claim(db):
         )
         if result.rowcount != 1:
             return None
+        session.add(
+            JobExecution(
+                id=token,
+                job_id=job.id,
+                batch_id=batch.id if batch else None,
+                state="running",
+                document={"started_at": now(), "wall_seconds": 0, "new_image_bytes_reserved": 0},
+            )
+        )
+        if batch:
+            batch.document = {**batch.document, "active_execution": token}
         session.refresh(job)
         return job_view(job)
 
@@ -188,8 +238,10 @@ def execute(db, job):
     samples, previous, evidence_docs = [], None, {}
     media, media_selection, cache_hits, logical_bytes = None, {}, 0, 0
     budget = EvidenceBudget(db.settings.data_dir, request.max_evidence_mb, db.settings.max_cache_mb)
+    budget.reserve_growth = lambda size: check_execution(db, token, time.monotonic() - started, size)
     count = int(np.ceil((request.end_seconds - request.start_seconds) / request.interval_seconds))
     for index in range(count):
+        check_execution(db, token, time.monotonic() - started)
         if time.monotonic() - started > request.max_worker_seconds:
             raise ValueError(
                 "Worker time budget reached. Retry to resume cached frames or shorten this work unit."
@@ -289,6 +341,7 @@ def execute(db, job):
             cache_hits=cache_hits,
             evidence_bytes=logical_bytes,
         )
+        check_execution(db, token, time.monotonic() - started)
     result = {
         "request": request.model_dump(),
         "source_metadata_sha256": source["metadata_sha256"],
@@ -304,6 +357,7 @@ def execute(db, job):
         "cache_hits": cache_hits,
         "evidence_bytes": logical_bytes,
     }
+    check_execution(db, token, time.monotonic() - started)
     with db.session() as session:
         row = session.get(Job, job["id"])
         if row.state != "running" or row.document.get("lease_token") != token:
@@ -329,6 +383,7 @@ def execute(db, job):
             "progress": 1,
             "wall_seconds": result["wall_seconds"],
         }
+        finish_execution(session, token, "succeeded", time.monotonic() - started)
     return result
 
 
@@ -336,15 +391,41 @@ def run_one(db):
     job = claim(db)
     if job is None:
         return None
+    started = time.monotonic()
     try:
         execute(db, job)
     except Exception as exc:
         with db.session() as session:
             row = session.get(Job, job["id"])
             if row.document.get("lease_token") == job["lease_token"]:
-                row.state, row.lease_until = "failed", None
+                batch = (
+                    session.get(ProcessingBatch, row.document["batch_id"])
+                    if row.document.get("batch_id")
+                    else None
+                )
+                stopped = isinstance(exc, WorkStopped) or (
+                    batch and isinstance(exc, EvidenceLimitError) and exc.scope == "shared"
+                )
+                if stopped:
+                    if batch and batch.state == "active":
+                        batch.state = "paused"
+                        batch.document = {**batch.document, "pause_reason": str(exc)}
+                    row.state = "cancelled" if batch and batch.state == "cancelled" else "queued"
+                    row.attempts = max(0, row.attempts - 1)  # Operator pauses do not consume failure retries.
+                else:
+                    row.state = "failed"
+                row.lease_until = None
                 row.document = {**row.document, "error": str(exc), "finished_at": now()}
-        return {"id": job["id"], "state": "failed", "error": str(exc)}
+                finish_execution(
+                    session,
+                    job["lease_token"],
+                    "stopped" if stopped else "failed",
+                    time.monotonic() - started,
+                )
+                outcome = row.state
+            else:
+                outcome = "lease_lost"
+        return {"id": job["id"], "state": outcome, "error": str(exc)}
     return {"id": job["id"], "state": "succeeded"}
 
 

@@ -59,6 +59,24 @@ class Scan(Base):
     document: Mapped[dict] = mapped_column(JSON)
 
 
+class ProcessingBatch(Base):
+    __tablename__ = "processing_batch"
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=uid)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    state: Mapped[str] = mapped_column(String, default="active")
+    document: Mapped[dict] = mapped_column(JSON)
+    __mapper_args__ = {"version_id_col": revision}
+
+
+class JobExecution(Base):
+    __tablename__ = "job_execution"
+    id: Mapped[str] = mapped_column(String, primary_key=True)  # lease token
+    job_id: Mapped[str] = mapped_column(ForeignKey("job.id"))
+    batch_id: Mapped[str | None] = mapped_column(ForeignKey("processing_batch.id"), nullable=True)
+    state: Mapped[str] = mapped_column(String)
+    document: Mapped[dict] = mapped_column(JSON)
+
+
 class FrameObservation(Base):
     __tablename__ = "frame_observation"
     id: Mapped[str] = mapped_column(String, primary_key=True)

@@ -33,6 +33,15 @@ from hogline.evaluation.datasets import dataset_catalog, freeze_dataset
 from hogline.evaluation.labels import label_id, labels_catalog, save_labels
 from hogline.evaluation.metrics import evaluate_dataset, run_catalog
 from hogline.evaluation.models import DatasetCreate, EvaluationRequest, LabelEdit
+from hogline.orchestration.plans import (
+    BatchControl,
+    BatchStart,
+    PlanRequest,
+    batches,
+    control_batch,
+    create_batch,
+    preview_plan,
+)
 from hogline.orchestration.worker import enqueue, jobs, retry, run_one
 from hogline.perception.broadcast import analyze_broadcast, broadcast_catalog
 from hogline.perception.pipeline import analyze_cached, observations
@@ -92,6 +101,7 @@ def create_app(settings: Settings | None = None, start_worker=False):
         return {
             **catalog(db),
             "jobs": jobs(db),
+            "batches": batches(db),
             "observations": observations(db),
             "broadcast": broadcast_catalog(db),
         }
@@ -206,6 +216,18 @@ def create_app(settings: Settings | None = None, start_worker=False):
     @app.post("/api/scans")
     def add_scan(body: ScanRequest):
         return enqueue(db, body)
+
+    @app.post("/api/plans/preview")
+    def preview_processing_plan(body: PlanRequest):
+        return preview_plan(db, body)
+
+    @app.post("/api/batches")
+    def start_processing_batch(body: BatchStart):
+        return create_batch(db, body.request, body.expected_plan_sha256)
+
+    @app.post("/api/batches/{batch_id}/control")
+    def change_batch(batch_id: str, body: BatchControl):
+        return control_batch(db, batch_id, body)
 
     @app.post("/api/jobs/{job_id}/retry")
     def retry_job(job_id: str):

@@ -12,6 +12,14 @@ from hogline.evaluation.datasets import freeze_dataset
 from hogline.evaluation.labels import labels_catalog, save_labels
 from hogline.evaluation.metrics import evaluate_dataset
 from hogline.evaluation.models import DatasetCreate, EvaluationRequest, LabelEdit
+from hogline.orchestration.plans import (
+    BatchControl,
+    PlanRequest,
+    batches,
+    control_batch,
+    create_batch,
+    preview_plan,
+)
 from hogline.orchestration.worker import enqueue, retry, run_one
 from hogline.perception.broadcast import analyze_broadcast
 from hogline.perception.pipeline import analyze_cached
@@ -53,6 +61,15 @@ def main():
     scan.add_argument("--tier", choices=["coarse", "evidence"], default="coarse")
     scan.add_argument("--max-frames", type=int, default=120)
     scan.add_argument("--max-evidence-mb", type=int, default=200)
+    plan = commands.add_parser("plan", help="Preview bounded recording chunks; no video is fetched")
+    plan.add_argument("path", help="PlanRequest JSON file")
+    plan.add_argument("--enqueue", action="store_true", help="Create a durable batch from the plan")
+    commands.add_parser("batches", help="Inspect durable plans and actual execution costs")
+    control = commands.add_parser("batch-control", help="Pause, resume, or cancel a batch")
+    control.add_argument("batch_id")
+    control.add_argument("action", choices=["pause", "resume", "cancel"])
+    control.add_argument("--max-image-growth-mb", type=int)
+    control.add_argument("--max-worker-seconds", type=int)
     worker = commands.add_parser("work", help="Process queued jobs (bounded retries; no automatic backfill)")
     worker.add_argument("--once", action="store_true")
     retry_parser = commands.add_parser("retry")
@@ -116,6 +133,21 @@ def main():
                         acquisition_tier=args.tier,
                         max_frames=args.max_frames,
                         max_evidence_mb=args.max_evidence_mb,
+                    ),
+                )
+            case "plan":
+                request = PlanRequest.model_validate_json(Path(args.path).read_text())
+                result = create_batch(db, request) if args.enqueue else preview_plan(db, request)
+            case "batches":
+                result = batches(db)
+            case "batch-control":
+                result = control_batch(
+                    db,
+                    args.batch_id,
+                    BatchControl(
+                        action=args.action,
+                        max_image_growth_mb=args.max_image_growth_mb,
+                        max_worker_seconds=args.max_worker_seconds,
                     ),
                 )
             case "work":

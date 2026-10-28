@@ -176,12 +176,15 @@ function render() {
   const duration = src.duration_seconds || Math.max(state.seconds + 600, 3600);
   $("#scrubber").max = duration;
   $("#scrubber").value = state.seconds;
+  if (document.activeElement !== $("#jump-input"))
+    $("#jump-input").value = time(state.seconds);
   $("#timeline-duration").textContent =
     `${time(state.seconds)} / ${src.duration_seconds ? time(duration) : "duration unknown"}`;
   renderFrame();
   renderTimeline(duration);
   renderGames();
   renderJobs();
+  window.hoglineProcessing?.render();
 }
 function renderFrame() {
   const src = source(),
@@ -196,7 +199,7 @@ function renderFrame() {
   if (stage.dataset.key !== key) {
     stage.dataset.key = key;
     stage.innerHTML = frame
-      ? `<div class="frame-image"><img src="/api/evidence/${frame.id}/${state.view}" alt="Evidence from ${escapeHTML(src.title)} at ${time(selectedTime)}">${state.overlay && observation ? renderDetections(frame, observation) : ""}${window.hoglineLabels?.overlay(frame, state.view) || ""}</div><span class="frame-stamp">SOURCE ${time(selectedTime)} · ${state.view === "composite" ? "ORIGINAL FRAME" : "SEED CROP"}</span>`
+      ? `<div class="frame-image"><img src="/api/evidence/${frame.id}/${state.view}" alt="Evidence from ${escapeHTML(src.title)} at ${time(selectedTime)}">${state.overlay && observation ? renderDetections(frame, observation) : ""}${window.hoglineLabels?.overlay(frame, state.view) || ""}</div><span class="frame-stamp">SOURCE ${time(selectedTime)} · ${state.view === "composite" ? (frame.acquisition_tier === "coarse" ? "COARSE FRAME" : "ORIGINAL FRAME") : "SEED CROP"}</span>`
       : '<div class="frame-placeholder"><span>NO CACHED FRAME</span><p>Open the source on YouTube, or cache a frame at this moment.</p></div>';
     const img = $("img", stage);
     if (img)
@@ -871,12 +874,26 @@ $("#scrubber").addEventListener("input", (event) => {
   renderFrame();
 });
 document.addEventListener("submit", async (event) => {
+  if (["plan-form", "batch-resume-form"].includes(event.target.id)) return;
   event.preventDefault();
   const form = event.target,
     submit = $('button[type="submit"]', form);
   if (submit) submit.disabled = true;
   try {
     const data = new FormData(form);
+    if (form.id === "jump-form") {
+      if (window.hoglineLabels && !window.hoglineLabels.beforeNavigate())
+        return;
+      const seconds = parseTime(data.get("seconds"));
+      if (
+        !Number.isFinite(seconds) ||
+        seconds < 0 ||
+        seconds > (source().duration_seconds ?? Infinity)
+      )
+        throw Error("Choose a time inside this recording.");
+      state.seconds = seconds;
+      render();
+    }
     if (form.id === "import-form") {
       toast("Fetching metadata only…");
       const result = await api("/sources", "POST", { url: data.get("url") });

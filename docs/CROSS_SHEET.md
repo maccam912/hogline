@@ -1,6 +1,6 @@
 # Cross-sheet source checks — October 27, 2026
 
-Bounded metadata discovery found recordings for all eight sheets. The local corpus now contains nine recordings and 49 retained original frames, including the older January Sheet 5 stream. No complete video was downloaded or committed. Images and OCR outputs remain in the ignored data directory.
+Bounded metadata discovery found recordings for all eight sheets. The local corpus contains nine recordings and 49 retained detailed frames, including the older January Sheet 5 stream. Later coarse-tier checks add 11 activity-only frames, for 60 retained frames in total. No complete video was downloaded or committed. Images and OCR outputs remain in the ignored data directory.
 
 | Sheet | Source / title date | Selected frame resolution | Retained source seconds |
 | --- | --- | --- | --- |
@@ -34,5 +34,7 @@ The broadcast clock lacks AM/PM. Both twelve-hour alternatives remain in the pro
 ## Remaining validation
 
 A second acquisition tier was exercised on the same active/quiet source moments on Sheets 2 and 3: three coarse samples at 5400, 5415, and 5430 seconds per recording. The retained coarse images are 640×360, separately identified from the existing 1280×720 and 1920×1080 detailed evidence. They are restricted to activity screening; no handle or scoreboard observations are published from them. These six new images are local cache data, not repository assets.
+
+Five more coarse frames from the older January Sheet 5 recording exercise bounded planning and pause/resume across adjacent central intervals. Details and actual costs are in the [processing checkpoint](PROCESSING.md).
 
 Fully label a long day and a confirmed overlapping/continuation pair. Add per-sheet board templates with dated validity episodes; independently annotate end/score truth, missed stones, people/clothing false positives, and boundary-clipped handles. Split evaluation by recording day/game and duplicate-upload family. The synthetic regression suite and these source smoke checks do not establish the design's release gates.

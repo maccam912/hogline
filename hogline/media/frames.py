@@ -107,8 +107,7 @@ class EvidenceBudget:
         self.job_limit, self.cache_limit = job_mb * 1024**2, cache_mb * 1024**2
         self.logical_bytes = 0
         self.cache_bytes = sum(p.stat().st_size for p in (root / "evidence").rglob("*.png"))
-        self.initial_cache_bytes = self.cache_bytes
-        self.new_bytes_limit = None
+        self.reserve_growth = None
 
     def consume(self, size, additional_bytes=0):
         if self.logical_bytes + size > self.job_limit:
@@ -120,11 +119,8 @@ class EvidenceBudget:
                 "Shared evidence cache is full. Increase HOGLINE_MAX_CACHE_MB or archive cached media.",
                 "shared",
             )
-        if (
-            self.new_bytes_limit is not None
-            and self.cache_bytes - self.initial_cache_bytes + additional_bytes > self.new_bytes_limit
-        ):
-            raise EvidenceLimitError("Batch image-growth budget reached; raise its limit to resume.", "batch")
+        if additional_bytes > 0 and self.reserve_growth:
+            self.reserve_growth(additional_bytes)
         self.logical_bytes += size
         self.cache_bytes += additional_bytes
 
