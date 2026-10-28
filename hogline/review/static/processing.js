@@ -58,8 +58,9 @@
       .filter((b) => b.request.source_ids.includes(state.source))
       .map((b) => {
         const mb = b.reserved_image_bytes / 1024 ** 2;
-        return `<article class="batch-card"><div class="batch-heading"><strong>${b.kind === "adaptive_windows" ? "Selected detail windows" : "Recording batch"}</strong><span class="pill ${b.state === "paused" ? "amber" : ""}">${escapeHTML(b.state)}</span></div>
-        <p>${b.succeeded_units} / ${b.units.length} chunks complete · ${b.deferred_units} deferred to a later plan</p>
+        return `<article class="batch-card"><div class="batch-heading"><strong>${b.kind === "automatic" ? "Automatic analysis · " + escapeHTML(b.phase) : b.kind === "adaptive_windows" ? "Selected detail windows" : "Recording batch"}</strong><span class="pill ${b.state === "paused" ? "amber" : ""}">${escapeHTML(b.state)}</span></div>
+        <p>${b.succeeded_units} / ${b.units.length} work units complete · ${b.deferred_units} ${b.kind === "automatic" ? "scan chunks" : "units"} deferred to a later plan</p>
+        ${b.kind === "automatic" ? `<p class="fine-print">${b.phase_history.map((p) => (p.phase === "detail" ? `Detail: ${p.job_ids.length} windows, ${p.selected_quiet_audits} quiet audits, ${p.deferred_units} candidates deferred.` : `OCR: ${p.selected_frames} frames selected, ${p.deferred_frames} deferred.`)).join(" ")} ${b.state === "completed" ? "Bounded work finished; this does not establish full recording coverage." : "Stages advance automatically while the local worker runs."}</p>` : ""}
         <p class="fine-print">${mb.toFixed(2)} / ${b.limits.max_image_growth_mb} MB reserved · ${Math.ceil(b.spent_worker_seconds)} / ${b.limits.max_worker_seconds} worker seconds · ${b.executions.length} attempts</p>
         ${b.pause_reason ? `<p class="job-error">${escapeHTML(b.pause_reason)}</p>` : ""}
         <div class="batch-actions">${b.state === "active" ? `<button class="button quiet" data-batch-action="pause" data-batch="${b.id}">Pause</button>` : ""}
@@ -70,7 +71,7 @@
             const src = state.data.sources.find(
               (s) => s.id === u.request.source_id,
             );
-            return `<p class="fine-print"><strong>${escapeHTML(src?.title || u.request.source_id)}${src?.duration_seconds ? ` · ${time(src.duration_seconds)} recording` : ""}</strong><br>${time(u.request.ownership_start_seconds ?? u.request.start_seconds)}–${time(u.request.ownership_end_seconds ?? u.request.end_seconds)} · ${escapeHTML(u.state)} · ${u.disposition === "reuse_succeeded" ? "previously completed" : escapeHTML(u.selection?.reason?.replaceAll("_", " ") || u.request.acquisition_tier || "detailed window")}${u.selection?.youtube_url ? ` · <a href="${escapeHTML(u.selection.youtube_url)}" target="_blank" rel="noopener">Selection evidence ↗</a>` : ""}</p>`;
+            return `<p class="fine-print"><strong>${escapeHTML(src?.title || u.request.source_id)}${src?.duration_seconds ? ` · ${time(src.duration_seconds)} recording` : ""}</strong><br>${time(u.request.ownership_start_seconds ?? u.request.start_seconds)}–${time(u.request.ownership_end_seconds ?? u.request.end_seconds)} · ${escapeHTML(u.state)} · ${u.disposition === "reuse_succeeded" ? "previously completed" : escapeHTML(u.selection?.reason?.replaceAll("_", " ") || u.request.acquisition_tier || (u.kind === "broadcast_ocr" ? "board and clock reading" : "detailed window"))}${u.selection?.youtube_url ? ` · <a href="${escapeHTML(u.selection.youtube_url)}" target="_blank" rel="noopener">Selection evidence ↗</a>` : ""}</p>`;
           })
           .join("")}</details></article>`;
       })
@@ -118,9 +119,11 @@
       const batch = state.data.batches.find(
         (b) => b.id === button.dataset.nextPlan,
       );
-      return batch.kind === "adaptive_windows"
-        ? window.hoglineAdaptive.open(batch.request)
-        : open(batch.request);
+      return batch.kind === "automatic"
+        ? window.hoglineAutomatic.open(batch.request)
+        : batch.kind === "adaptive_windows"
+          ? window.hoglineAdaptive.open(batch.request)
+          : open(batch.request);
     }
     if (button.id === "start-batch" && preview) {
       button.disabled = true;

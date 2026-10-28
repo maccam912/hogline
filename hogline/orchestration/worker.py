@@ -63,7 +63,10 @@ def jobs_in_session(session):
 
 
 def claim(db):
+    from hogline.orchestration.automatic import advance_automatic
+
     try:
+        advance_automatic(db)
         return claim_transaction(db)
     except StaleDataError:
         return None  # Another worker/control updated this batch; retry on the next poll.
@@ -243,6 +246,10 @@ def vectors_from_doc(db, doc):
 
 
 def execute(db, job):
+    if job.get("kind") == "broadcast_ocr":
+        from hogline.orchestration.ocr_jobs import execute_ocr
+
+        return execute_ocr(db, job)
     if job.get("kind") == "dense_window":
         from hogline.orchestration.windows import execute_window
 

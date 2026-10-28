@@ -19,7 +19,8 @@ Open **http://127.0.0.1:8765**. The server starts one bounded worker. Data is ke
 4. Review game spans, link continuation/overlap recordings, and record end scores with supporting frames. Mark boundaries separately from coverage, game completion, and the final result. **Split or merge** corrects saved game groupings with a preview, explicit end assignments, preserved history, and guarded undo; see [game reconciliation](docs/RECONCILIATION.md).
 5. **Export dataset** creates an immutable JSON or CSV snapshot from one consistent database view. Confirmed mode excludes unreviewed games/scores; exploratory mode includes proposals explicitly. Unknown scores remain null. JSON includes input manifests and explicit legacy lineage gaps; see [release provenance](docs/RELEASES.md).
 6. **Label an overhead view** records visible handle centers, partial visibility, ignored occlusions, and known non-stone regions that count false detections. **Evaluate CV** freezes whole recording/day groups and exact label revisions, then compares detector versions with explicit misses, extras, and coverage. See the [evaluation guide](docs/EVALUATION.md).
-7. **Choose detail windows automatically** selects bounded intervals from activity and transitions, plus quiet audits. Preview, start, and pause a batch with shared budgets; see [adaptive selection](docs/ADAPTIVE.md).
+7. **Run automatic analysis** chains coarse scanning, selected detail windows, and retained-frame board/clock OCR under one resumable budget. See [automatic campaigns](docs/AUTOMATIC.md).
+8. **Choose detail windows automatically** selects bounded intervals from activity and transitions, plus quiet audits. Preview, start, and pause a batch with shared budgets; see [adaptive selection](docs/ADAPTIVE.md).
 8. **Analyze a short window** decodes up to 60 seconds once, compares repeated overhead observations, and retains a few image anchors plus a downloadable Parquet file. Persistence, motion, clipped candidates, and possible foreground obstruction stay visible. See [detailed windows](docs/WINDOWS.md).
 
 The default catalog is SQLite for a zero-service local pilot. SQLAlchemy models support a PostgreSQL connection through `HOGLINE_DATABASE_URL`; the PostgreSQL runtime has **not** been exercised yet. Install its driver with `uv sync --extra postgres`. Schema creation currently uses `create_all`; use explicit migrations before evolving a deployed database.
@@ -71,6 +72,8 @@ Configure `HOGLINE_DATA_DIR` or use `hogline --data-dir /absolute/path …` to i
 To revise camera crops, copy/edit `profiles/wausau-v1.json` and set `HOGLINE_PROFILE` to its absolute path before starting the server. Jobs retain the exact profile and its hash. Profile changes produce new evidence versions rather than silently changing old crop measurements.
 
 ## Automation in this build
+
+A single bounded campaign can now advance from coarse scans to activity-selected detail and local OCR without separate stage launches. Source-balanced admission, quiet audits, phase history, cumulative costs, and deferred work remain visible; [campaign controls and limits](docs/AUTOMATIC.md).
 
 - Sparse panel motion produces **activity candidates**, with advertisements excluded. It cannot yet distinguish games, practice, maintenance, adjacent-sheet movement, or immediate back-to-back games reliably.
 - An **OpenCV HSV/contour baseline** proposes red/yellow handle positions in overhead seed crops. It stores crop pixels and uncalibrated shape scores, not stone footprints or metric coordinates. Rejected size/shape candidates remain inspectable with their reasons. A `StoneDetector` interface permits replacement with a trained detector.

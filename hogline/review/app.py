@@ -52,6 +52,12 @@ from hogline.orchestration.adaptive import (
     create_adaptive_batch,
     preview_adaptive,
 )
+from hogline.orchestration.automatic import (
+    AutomaticRequest,
+    AutomaticStart,
+    create_automatic_batch,
+    preview_automatic,
+)
 from hogline.orchestration.discovery import (
     FeedControl,
     FeedCreate,
@@ -330,6 +336,14 @@ def create_app(settings: Settings | None = None, start_worker=False):
     @app.post("/api/scans")
     def add_scan(body: ScanRequest):
         return enqueue(db, body)
+
+    @app.post("/api/automatic/preview")
+    def automatic_preview(body: AutomaticRequest):
+        return preview_automatic(db, body)
+
+    @app.post("/api/automatic/batches")
+    def automatic_start(body: AutomaticStart):
+        return create_automatic_batch(db, body.request, body.expected_plan_sha256)
 
     @app.post("/api/adaptive/preview")
     def adaptive_preview(body: AdaptiveRequest):

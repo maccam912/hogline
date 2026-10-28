@@ -14,6 +14,7 @@ from hogline.evaluation.labels import labels_catalog, save_labels
 from hogline.evaluation.metrics import evaluate_dataset
 from hogline.evaluation.models import DatasetCreate, EvaluationRequest, LabelEdit
 from hogline.orchestration.adaptive import AdaptiveRequest, create_adaptive_batch, preview_adaptive
+from hogline.orchestration.automatic import AutomaticRequest, create_automatic_batch, preview_automatic
 from hogline.orchestration.discovery import (
     FeedControl,
     FeedCreate,
@@ -114,6 +115,9 @@ def main():
     )
     adaptive.add_argument("path", help="AdaptiveRequest JSON file")
     adaptive.add_argument("--enqueue", action="store_true")
+    automatic = commands.add_parser("automatic-plan", help="Plan one bounded scan, detail and OCR campaign")
+    automatic.add_argument("path", help="AutomaticRequest JSON file")
+    automatic.add_argument("--enqueue", action="store_true")
     commands.add_parser("batches", help="Inspect durable plans and actual execution costs")
     control = commands.add_parser("batch-control", help="Pause, resume, or cancel a batch")
     control.add_argument("batch_id")
@@ -211,6 +215,11 @@ def main():
             case "plan":
                 request = PlanRequest.model_validate_json(Path(args.path).read_text())
                 result = create_batch(db, request) if args.enqueue else preview_plan(db, request)
+            case "automatic-plan":
+                request = AutomaticRequest.model_validate_json(Path(args.path).read_text())
+                result = (
+                    create_automatic_batch(db, request) if args.enqueue else preview_automatic(db, request)
+                )
             case "adaptive-plan":
                 request = AdaptiveRequest.model_validate_json(Path(args.path).read_text())
                 result = create_adaptive_batch(db, request) if args.enqueue else preview_adaptive(db, request)

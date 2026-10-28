@@ -13,6 +13,7 @@
     <script src="/static/windows.js" defer></script>
     <script src="/static/adaptive.js" defer></script>
     <script src="/static/reconciliation.js" defer></script>
+    <script src="/static/automatic.js" defer></script>
   </head>
   <body>
     <header>
@@ -226,6 +227,9 @@
                     review.
                   </p>
                 </div>
+                <button class="button primary" id="automatic-button">
+                  Run automatic analysis →
+                </button>
                 <button class="button secondary" id="scan-button">
                   Scan a section →
                 </button>
@@ -781,6 +785,111 @@
       </button>
       <h2>Game correction history</h2>
       <div id="reconcile-history-detail"></div>
+    </dialog>
+    <dialog id="automatic-dialog" class="wide-dialog">
+      <form id="automatic-form">
+        <div class="dialog-heading">
+          <h2>Automatic analysis</h2>
+          <button
+            type="button"
+            class="button quiet"
+            onclick="this.closest('dialog').close()"
+            aria-label="Close automatic analysis"
+          >
+            ✕
+          </button>
+        </div>
+        <p>
+          Scan for activity, inspect selected short windows, then read retained
+          scoreboard and clock frames. One bounded run, with a reviewable record
+          of each stage.
+        </p>
+        <div class="form-grid">
+          <label
+            >Recordings<select name="scope">
+              <option value="current">Current recording</option>
+              <option value="all">All imported recordings (up to 16)</option>
+            </select></label
+          >
+          <label>Start (hh:mm:ss)<input name="start" required /></label>
+          <label>End (hh:mm:ss)<input name="end" required /></label>
+          <label
+            >New scan chunks<input
+              name="scans"
+              type="number"
+              min="1"
+              max="32"
+              required
+          /></label>
+          <label
+            >Sparse interval (seconds)<select name="interval">
+              <option>5</option>
+              <option>10</option>
+              <option>15</option>
+              <option>20</option>
+              <option>30</option>
+              <option>60</option>
+            </select></label
+          >
+          <label
+            >Detail windows<input
+              name="details"
+              type="number"
+              min="1"
+              max="32"
+              required
+          /></label>
+          <label
+            >Window length (seconds)<input
+              name="duration"
+              type="number"
+              min="4"
+              max="60"
+              required
+          /></label>
+          <label
+            >Frames to read<input
+              name="ocr"
+              type="number"
+              min="1"
+              max="120"
+              required
+          /></label>
+          <label
+            >Shared retained growth (MB)<input
+              name="growth"
+              type="number"
+              min="1"
+              max="4096"
+              required
+          /></label>
+          <label
+            >Shared worker time (seconds)<input
+              name="worker"
+              type="number"
+              min="10"
+              max="86400"
+              required
+          /></label>
+        </div>
+        <div
+          id="automatic-preview"
+          class="plan-preview"
+          aria-live="polite"
+        ></div>
+        <div class="dialog-actions">
+          <button type="submit" class="button secondary">
+            Preview automatic run</button
+          ><button
+            type="button"
+            class="button primary"
+            id="start-automatic"
+            disabled
+          >
+            Start automatic run
+          </button>
+        </div>
+      </form>
     </dialog>
   </body>
 </html>

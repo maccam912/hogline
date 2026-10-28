@@ -197,7 +197,9 @@ def publish_batch(session, plan):
         job = enqueue_in_session(session, unit["payload"], batch.id)
         units.append({**unit, "job_id": job.id})
     batch.document = {**batch.document, "units": units}
-    if all(session.get(Job, u["job_id"]).state == "succeeded" for u in units):
+    if plan.get("kind") != "automatic" and all(
+        session.get(Job, u["job_id"]).state == "succeeded" for u in units
+    ):
         batch.state = "completed"
         freeze_outcomes(session, batch)
     session.flush()
@@ -222,6 +224,7 @@ def batch_view(session, batch):
                 "job_id": u["job_id"],
                 "state": states[u["job_id"]],
                 "request": u["payload"]["request"],
+                "kind": u["payload"].get("kind", "scan"),
                 "disposition": u["disposition"],
                 **({"selection": u["selection"]} if "selection" in u else {}),
             }
@@ -376,8 +379,10 @@ def finish_execution(session, token, state, elapsed=None):
         if state == "failed" and batch.state == "active":
             batch.state = "paused"
             batch.document = {**batch.document, "pause_reason": "A work unit failed; inspect and retry it"}
-        if batch.state == "active" and all(
-            session.get(Job, u["job_id"]).state == "succeeded" for u in batch.document["units"]
+        if (
+            batch.state == "active"
+            and (batch.document.get("kind") != "automatic" or batch.document.get("phase") == "ocr")
+            and all(session.get(Job, u["job_id"]).state == "succeeded" for u in batch.document["units"])
         ):
             batch.state = "completed"
         if batch.state in ("completed", "cancelled"):
