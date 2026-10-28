@@ -20,7 +20,7 @@ from hogline.perception.overlay_clock import read_clock
 from hogline.perception.scoreboard import persistent_board_claims, read_board
 from hogline.reconstruction.board_events import board_timeline
 
-VERSION = "traditional-board-clock-v11"
+VERSION = "traditional-board-clock-v12"
 
 
 def broadcast_version(layout, reference_manifest=None):

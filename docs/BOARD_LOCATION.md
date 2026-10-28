@@ -1,6 +1,6 @@
 # Automatic board location
 
-`traditional-board-color-bands-v1` finds a red row, a blue fixed-number header, and a yellow row within the upper end-wall portion of the retained left perspective view. It measures their geometry in each image instead of copying Sheet 4's crop coordinates to another sheet. This is a Wausau layout prior, not a general scoreboard detector.
+`traditional-board-color-bands-v2` finds a red row, a blue fixed-number header, and a yellow row within the upper end-wall portion of the retained left perspective view. It measures their geometry in each image instead of copying Sheet 4's crop coordinates to another sheet. This is a Wausau layout prior, not a general scoreboard detector.
 
 The workbench shows the proposed crop under **Clock & scoreboard observations**, even when no scoring template applies. Multiple similarly plausible candidates remain ambiguous; missing or obstructed bands leave the location unavailable. Point columns, storage markers, blank-end conventions, and card meanings remain unknown. Existing source-scoped OCR templates and temporal score checks remain separate.
 
@@ -31,3 +31,9 @@ On the 99 retained detailed frames, the locator proposed 81 boards. Header regis
 The January Sheet 5 crop at 00:30:00 visibly contains red end cards 1, 3, 4, 6, 7 at cumulative columns 1, 2, 3, 5, 6, and yellow end cards 2, 5 at columns 1, 3. OCR leaves the red 6 unreadable at that frame. Later consistent frames at 00:30:25–00:30:34.5 support four **proposed** red differences: end 3 +1, end 4 +1, end 6 +2, end 7 +1. These are posted-board observations; the posting time is not the delivery/end-completion time. They do not establish a final result or a complete game. Sheet 6 at 01:30:15 has readable red cards but people obscure portions of the yellow row; suspect occupied cells remain unreadable and prevent a complete yellow-row claim.
 
 All eight sheets, two source resolutions, and two recording dates were exercised. Selected crops and proposed columns were visually checked, but no independent labeled-board benchmark exists yet. The current thresholds were developed using these samples. Changes in fonts, printed point ranges, storage conventions, perspective, or board design require new reference/configuration and validation. A repeated incorrect OCR read can still survive temporal agreement; automatic score acceptance is disabled.
+
+## Adjacent-card gaps
+
+Locator v2 expands the horizontal closing kernel from 2.5% to 7% of the search-panel width so a few adjacent white end cards do not split one colored stripe into separate components. Board-width, red/yellow overlap, row-height, blue-header support, and competing-board checks remain in force. The synthetic large-obstruction and two-board cases still abstain at both tested resolutions. This does not relax fixed-header registration.
+
+On the frozen 21-frame, eight-sheet development benchmark, broadcast reader v12 recovered the previously missed Sheet 6 board location and two additional correct card readings. It recorded 24 matches, zero extras, and five misses on readable rows; 30/35 complete rows were exact. All seven obscured labeled rows still received incomplete/unavailable readings. The remaining misses include covered headers and conflicting numeral OCR. The same development frames were used during diagnosis, so these results are not held-out accuracy. See [the benchmark contract](BOARD_EVALUATION.md).

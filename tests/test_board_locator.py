@@ -92,3 +92,16 @@ def test_coarse_frames_are_not_board_evidence(db, sources):
         session.flush()
         assert analyze_board_location(session, frame, db.settings.data_dir) is None
         assert session.scalar(select(func.count()).select_from(FrameObservation)) == 0
+
+
+@pytest.mark.parametrize("size", [(1920, 1080), (1280, 720)])
+def test_adjacent_white_cards_do_not_fragment_the_red_band(size):
+    image = board_image()
+    # A row of adjacent movable cards spans wider than one card, but much less
+    # than a person or the gap between neighboring sheet boards.
+    image.paste(Image.new("RGB", (40, 25), "white"), (210, 100))
+    result = locate_board(image.resize(size), [0, 0, 0.375, 0.95])
+    assert result["status"] == "proposed" and result["candidate_count"] == 1
+    assert result["selected"]["normalized_bounds"] == pytest.approx(
+        [110 / 1920, 100 / 1080, 360 / 1920, 175 / 1080], abs=0.002
+    )

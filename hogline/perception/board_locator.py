@@ -11,7 +11,7 @@ from sqlalchemy import select
 from hogline.db import FrameObservation
 from hogline.perception.ocr import normalized_crop
 
-VERSION = "traditional-board-color-bands-v1"
+VERSION = "traditional-board-color-bands-v2"
 
 
 def locate_board(image, panel_bounds):
@@ -32,8 +32,10 @@ def locate_board(image, panel_bounds):
     blue = cv2.inRange(hsv, (90, 45, 15), (145, 255, 255))
 
     def bands(mask):
+        # Adjacent end cards interrupt a colored stripe. Bridge at most about
+        # three card widths, while keeping board geometry/header checks intact.
         closed = cv2.morphologyEx(
-            mask, cv2.MORPH_CLOSE, np.ones((max(1, round(ph * 0.005)), max(3, round(pw * 0.025))), np.uint8)
+            mask, cv2.MORPH_CLOSE, np.ones((max(1, round(ph * 0.005)), max(3, round(pw * 0.07))), np.uint8)
         )
         _, _, stats, _ = cv2.connectedComponentsWithStats(closed)
         return [
