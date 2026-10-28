@@ -188,6 +188,7 @@ function render() {
   window.hoglineProcessing?.render();
   window.hoglineBoundaries?.render();
   window.hoglineWindows?.render();
+  window.hoglineBoardTimeline?.render();
   window.hoglineReconciliation?.render();
 }
 function renderFrame() {

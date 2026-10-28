@@ -14,6 +14,7 @@
     <script src="/static/adaptive.js" defer></script>
     <script src="/static/reconciliation.js" defer></script>
     <script src="/static/automatic.js" defer></script>
+    <script src="/static/board-timeline.js" defer></script>
   </head>
   <body>
     <header>
@@ -242,6 +243,18 @@
               <button class="button secondary" id="adaptive-button">
                 Choose detail windows automatically →
               </button>
+              <section id="board-timeline-panel">
+                <div class="section-heading">
+                  <h2>Posted board changes</h2>
+                  <span class="pill" id="board-change-count">0</span>
+                </div>
+                <p class="fine-print">
+                  Compare repeated card readings with before-and-after source
+                  links. These intervals do not establish when an end finished.
+                </p>
+                <div id="board-change-list"></div>
+                <details id="board-epochs"></details>
+              </section>
               <section id="window-panel">
                 <div class="section-heading">
                   <h2>House configurations</h2>
@@ -890,6 +903,18 @@
           </button>
         </div>
       </form>
+    </dialog>
+    <dialog id="board-change-dialog" class="wide-dialog">
+      <button
+        type="button"
+        class="close-dialog"
+        aria-label="Close board comparison"
+      >
+        ×
+      </button>
+      <span class="eyebrow">POSTED CARDS · PROPOSED CHANGE</span>
+      <h2>Check both sides of the change</h2>
+      <div id="board-change-comparison"></div>
     </dialog>
   </body>
 </html>

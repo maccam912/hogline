@@ -17,6 +17,7 @@ from hogline.perception.layout import board_alignment, reference_image
 from hogline.perception.ocr import OCRBudgetReached, TesseractOCR, normalized_crop
 from hogline.perception.overlay_clock import read_clock
 from hogline.perception.scoreboard import persistent_board_claims, read_board
+from hogline.reconstruction.board_events import board_timeline
 
 VERSION = "traditional-board-clock-v10"
 
@@ -241,5 +242,6 @@ def broadcast_catalog_in_session(session, root):
         "observations": observations,
         "clock_hypotheses": fit_clock_hypotheses(observations),
         "score_proposals": persistent_board_claims(observations),
+        "board_timeline": board_timeline(observations),
         "version": version,
     }

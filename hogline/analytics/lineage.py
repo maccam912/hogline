@@ -120,6 +120,37 @@ def validate_references(payload):
             and observation["source_id"] != evidence[observation["evidence_id"]]["source_id"]
         ):
             raise ValueError("Release observation/source mismatch; publication was rolled back")
+    timeline = payload["broadcast"].get("board_timeline", {})
+    epochs = {e["id"]: e for e in timeline.get("epochs", [])}
+    broadcast_observations = {o["id"]: o for o in payload["broadcast"]["observations"]}
+    for epoch in epochs.values():
+        require([epoch["source_id"]], sources, "board epoch")
+        require(epoch["observation_ids"], broadcast_observations, "board epoch observation")
+        for key in ("first", "last"):
+            anchor = epoch[key]
+            require([anchor["observation_id"]], epoch["observation_ids"], "board epoch anchor")
+            observation = broadcast_observations[anchor["observation_id"]]
+            if (
+                anchor["evidence_id"] != observation["evidence_id"]
+                or anchor["source_seconds"] != observation["source_seconds"]
+            ):
+                raise ValueError("Release board anchor disagrees with its observation")
+        require(epoch["evidence_ids"], evidence, "board epoch evidence")
+        if any(evidence[i]["source_id"] != epoch["source_id"] for i in epoch["evidence_ids"]):
+            raise ValueError("Release board epoch/source mismatch")
+    for change in timeline.get("changes", []):
+        require([change["before_epoch_id"], change["after_epoch_id"]], epochs, "board change")
+        require(change["evidence_ids"], evidence, "board change evidence")
+        if (
+            change["before"] != epochs[change["before_epoch_id"]]["last"]
+            or change["after"] != epochs[change["after_epoch_id"]]["first"]
+        ):
+            raise ValueError("Release board change anchors disagree with their epochs")
+        if any(
+            epochs[i]["source_id"] != change["source_id"]
+            for i in (change["before_epoch_id"], change["after_epoch_id"])
+        ):
+            raise ValueError("Release board change/source mismatch")
     for proposal in payload["source_boundary_links"]:
         require([proposal["left_source_id"], proposal["right_source_id"]], sources, "recording link")
         require(
