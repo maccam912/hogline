@@ -4,13 +4,17 @@ from collections import Counter, defaultdict
 
 from hogline.adapters.sources import digest
 
-VERSION = "clock-and-score-prefix-continuations-v1"
+VERSION = "clock-and-score-prefix-continuations-v2"
 COLORS = ("red", "yellow")
 
 
 def known_points(end):
     points = end["points"]
-    return tuple(points[c] for c in COLORS) if all(points[c] is not None for c in COLORS) else None
+    return (
+        tuple(points[c] for c in COLORS)
+        if end.get("status", "proposed") == "proposed" and all(points[c] is not None for c in COLORS)
+        else None
+    )
 
 
 def continuation_score_groups(sources, reports, links):
@@ -34,6 +38,12 @@ def continuation_score_groups(sources, reports, links):
                 for sid, value in link["source_manifest_hashes"].items()
             )
             or set(link["source_manifest_hashes"]) != {a, b}
+            or any(
+                h["source_metadata_sha256"] != source_map[sid]["metadata_sha256"]
+                for sid, h in ((a, left), (b, right))
+            )
+            or left.get("card_conflicts")
+            or right.get("card_conflicts")
             or not left["right_censored"]
             or not right["left_censored"]
             or source_map[a]["duration_seconds"] - left["last_seconds"] > 180

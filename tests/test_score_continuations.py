@@ -15,6 +15,7 @@ def corpus():
             "scorecards": [
                 {
                     "id": sid + "-history",
+                    "source_metadata_sha256": sid,
                     "first_seconds": first,
                     "last_seconds": last,
                     "left_censored": True,
@@ -58,11 +59,27 @@ def test_grouped_scores_deduplicate_prefix_but_preserve_original_claims_and_gap(
 
 
 def test_changed_manifest_reset_score_or_short_one_color_prefix_cannot_merge():
-    for change in ("manifest", "reset", "score", "short", "single_color", "interior"):
+    for change in (
+        "manifest",
+        "book_manifest",
+        "conflict",
+        "disputed",
+        "reset",
+        "score",
+        "short",
+        "single_color",
+        "interior",
+    ):
         sources, reports, links = corpus()
         left, right = [r["scorecards"][0] for r in reports]
         if change == "manifest":
             sources[1]["metadata_sha256"] = "changed"
+        elif change == "book_manifest":
+            right["source_metadata_sha256"] = "obsolete"
+        elif change == "conflict":
+            right["card_conflicts"] = [{"official_number": 1}]
+        elif change == "disputed":
+            right["ends"][0]["status"] = "disputed"
         elif change == "reset":
             right["left_censored"] = False
         elif change == "score":
@@ -85,6 +102,7 @@ def test_ambiguous_branch_and_clock_cycle_keep_histories_separate():
     report = deepcopy(reports[1])
     report["source_id"] = "third"
     report["scorecards"][0]["id"] = "third-history"
+    report["scorecards"][0]["source_metadata_sha256"] = "third"
     reports.append(report)
     extra = deepcopy(links[0])
     extra.update(
