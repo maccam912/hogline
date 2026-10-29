@@ -143,3 +143,39 @@ def test_game_stopping_does_not_establish_a_completed_scoring_end(db, sources):
     assert history["ends"][0]["lying_ice_points"] == {"red": 2, "yellow": 0}
     assert history["ends"][0]["ice_points"] is None
     assert history["final_result"] is None and history["ends_played"] is None
+
+
+def test_unresolved_final_end_preserves_known_prefix_and_legacy_projection(db, sources):
+    edit = request(db, sources[0])
+    edit.update(observed_end_index=2, official_end_number=2, end_completed=None)
+    review = save_ice_end_review(db, edit)
+    review = {**review, "request": {**review["request"], "board_history_id": "posted"}}
+    report = {
+        "source_id": sources[0]["id"],
+        "scorecards": [
+            {
+                "id": "posted",
+                "first_seconds": 0,
+                "last_seconds": 3,
+                "left_censored": False,
+                "right_censored": False,
+                "ends": [
+                    {
+                        "official_number": 1,
+                        "points": {"red": 1, "yellow": 0},
+                        "board_evidence": {"evidence_ids": []},
+                    }
+                ],
+            }
+        ],
+    }
+    result = reconcile_scores(report, [review])
+    history = result["histories"][0]
+    assert history["score_history_complete_through"] == 1
+    assert history["ends"][1]["score_after_end"] == {"red": None, "yellow": None}
+    assert history["final_result"] is None
+    legacy = reconcile_scores(report, [review], version="board-and-reviewed-ice-scores-v1")
+    assert legacy["histories"][0]["score_history_complete_through"] is None
+    assert legacy["histories"][0]["ends"] == history["ends"]
+    with pytest.raises(ValueError, match="Unsupported"):
+        reconcile_scores(report, [review], version="future")

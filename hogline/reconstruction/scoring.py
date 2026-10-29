@@ -4,11 +4,14 @@ from collections import defaultdict
 
 from hogline.adapters.sources import digest
 
-VERSION = "board-and-reviewed-ice-scores-v1"
+VERSION = "board-and-reviewed-ice-scores-v2"
+LEGACY_VERSION = "board-and-reviewed-ice-scores-v1"
 COLORS = ("red", "yellow")
 
 
-def reconcile_scores(report, reviews):
+def reconcile_scores(report, reviews, *, version=VERSION):
+    if version not in (VERSION, LEGACY_VERSION):
+        raise ValueError("Unsupported combined score history version")
     source_id = report["source_id"]
     relevant = [r for r in reviews if r["source_id"] == source_id]
     superseded = {i for r in relevant for i in r["request"]["supersedes_review_ids"]}
@@ -119,6 +122,11 @@ def reconcile_scores(report, reviews):
             and (r["request"]["official_end_number"] or r["request"]["observed_end_index"]) == len(ends)
         ]
         complete = bool(ends and completion_claims and all(e["status"] == "proposed" for e in ends))
+        prefix = 0
+        for end in ends:
+            if end["status"] != "proposed":
+                break
+            prefix += 1
         history = {
             "basis_key": key,
             "source_id": source_id,
@@ -131,7 +139,9 @@ def reconcile_scores(report, reviews):
             "initial_totals_basis": "ordinary_game_cumulative_score_convention; handicap_not_configured",
             "ends": ends,
             "known_end_scores": sum(e["status"] == "proposed" for e in ends),
-            "score_history_complete_through": len(ends)
+            "score_history_complete_through": (prefix or None)
+            if version == VERSION
+            else len(ends)
             if ends and all(e["status"] == "proposed" for e in ends)
             else None,
             "game_completion": "complete" if complete else "unknown",
@@ -149,7 +159,7 @@ def reconcile_scores(report, reviews):
         history["id"] = digest(history)
         histories.append(history)
     document = {
-        "version": VERSION,
+        "version": version,
         "source_id": source_id,
         "histories": histories,
         "unmatched_review_ids": sorted(

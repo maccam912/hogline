@@ -410,7 +410,12 @@ def validate_references(payload):
         reviews = payload.get("ice_end_reviews", [])
         for review in reviews:
             check_review(review, evidence)
-        expected = [reconcile_scores(report, reviews) for report in payload["scorecard_timelines"]]
+        expected = [
+            reconcile_scores(report, reviews, version=saved["version"])
+            for report, saved in zip(
+                payload["scorecard_timelines"], payload["reconciled_score_histories"], strict=True
+            )
+        ]
         if payload["reconciled_score_histories"] != expected:
             raise ValueError("Release combined scores disagree with their independent ice reviews")
     if "continuation_score_groups" in payload:
