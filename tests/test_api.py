@@ -23,6 +23,12 @@ def test_empty_workbench_and_origin_guard(db):
         exported = client.get(f"/api/releases/{release_id}.json")
         assert exported.json()["games"] == []
         assert client.get(f"/api/releases/{release_id}.csv").text.startswith("row_type,game_id")
+        assert client.get(f"/api/releases/{release_id}.grouped-csv").status_code == 409
+        proposed = client.post("/api/releases", json={"mode": "exploratory"}).json()
+        grouped = client.get(f"/api/releases/{proposed['id']}.grouped-csv")
+        assert grouped.status_code == 200 and grouped.headers["content-type"].startswith("text/csv")
+        assert grouped.text.startswith("score_history_id,continuation_group_id,source_ids")
+        assert "-grouped.csv" in grouped.headers["content-disposition"]
         assert client.get("/api/evidence/missing/composite").status_code == 404
 
 

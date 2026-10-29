@@ -995,6 +995,9 @@ document.addEventListener("submit", async (event) => {
       await refresh();
     }
     if (form.id === "export-form") {
+      if (data.get("format") === "grouped-csv" && data.get("mode") !== "exploratory") {
+        throw new Error("Choose Exploratory to export proposed grouped end scores.");
+      }
       const release = await api("/releases", "POST", {
         mode: data.get("mode"),
       });
@@ -1004,7 +1007,7 @@ document.addEventListener("submit", async (event) => {
       a.click();
       form.closest("dialog").close();
       toast(
-        `Snapshot created · ${release.coverage.exported_games} game intervals · ${release.coverage.confirmed_results} confirmed results.`,
+        data.get("format") === "grouped-csv" ? "Grouped end scores exported. Uncertain scores remain blank." : `Snapshot created · ${release.coverage.exported_games} game intervals · ${release.coverage.confirmed_results} confirmed results.`,
       );
     }
   } catch (error) {

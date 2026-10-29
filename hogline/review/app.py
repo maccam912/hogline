@@ -22,7 +22,7 @@ from hogline.analytics.deliveries import (
     deliveries_in_session,
     derive_window_deliveries,
 )
-from hogline.analytics.exports import csv_export, snapshot
+from hogline.analytics.exports import csv_export, grouped_scores_csv, snapshot
 from hogline.analytics.house_states import checked_result, derive_house_states, house_states_in_session
 from hogline.analytics.moments import MomentQuery, search_moments
 from hogline.analytics.tracks import derive_window_tracks, tracks_in_session
@@ -610,7 +610,17 @@ def create_app(settings: Settings | None = None, start_worker=False):
                 media_type="text/csv",
                 headers={"Content-Disposition": f'attachment; filename="hogline-{release_id}.csv"'},
             )
-        raise HTTPException(404, "Use json or csv")
+        if extension == "grouped-csv":
+            if payload["mode"] != "exploratory":
+                raise HTTPException(409, "Grouped proposed scores require an exploratory release")
+            if "grouped_score_histories" not in payload:
+                raise HTTPException(409, "Create a new release to include grouped score histories")
+            return Response(
+                grouped_scores_csv(payload),
+                media_type="text/csv",
+                headers={"Content-Disposition": f'attachment; filename="hogline-{release_id}-grouped.csv"'},
+            )
+        raise HTTPException(404, "Use json, csv or grouped-csv")
 
     static = Path(__file__).parent / "static"
     app.mount("/static", StaticFiles(directory=static), name="static")
