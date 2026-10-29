@@ -1,6 +1,16 @@
 # Hogline handoff
 
-## Current checkpoint: all observable posted-end boundaries reviewed
+## Current checkpoint: operator-selected estimates applied
+
+October 29. The user resolved the remaining scoring-policy blocker: choose the lower plausible count when the ice is ambiguous, replace it with later actual scoreboard evidence, and use a blank end for a recording cutoff. This supersedes the earlier pending exact-count questions and abstention-only policy below. Combined scores v4 and grouped scores v3 implement that instruction. Lower-count choices retain their alternatives, evidence and superseded reviews; they are estimates rather than exact independent ice claims. A later actual board count automatically takes precedence, including across a proposed continuation. Policy reviews can follow an expanded history only with a unique containing same-manifest/reader match and at least three shared retained board frames. Actual board/ice contradictions still remain disputed.
+
+All 66 grouped rows now have their requested disposition: 62 exact proposed numeric scores, two lower-count estimates, one labeled 0–0 recording-cutoff blank, and one explicitly unscored concession (X–X). There are 65 numeric end rows and nine proposed final results. January game2 end7 is yellow2, final red2–yellow11. March17 Sheet6 end6 is red1, final red9–yellow1. March17 Sheet3 end8 is a policy blank, retaining red3–yellow4 after end8 without asserting physical completion or a final game result. The original possibilities are retained in `score_policy_applications`; future exact board evidence replaces the policy choice. No additional human confirmations were added. There are78 immutable reviews,17 superseded and61 active; no unmatched reviews or score disagreements.
+
+The current compact report and both CSVs are refreshed under `data/scoring/whole-recording-*`. Latest immutable JSON: `data/scoring/whole-recording-operator-policy-20261029.json`, release1ec11cb3-5ceb-4a6d-9d93-d434ee661251, SHAbe164be9e2c4f5201c272ff66e7d4ae8cb0ce4e91b43c6b9c63d475d64686426. Its disk JSON round-trip and the previous v3/v2 terminal release both pass reference validation. Private application receipt: `data/scoring/operator-score-policy-20261029.json`. `whole-recording-score-review-status.json` retains the exact/estimated distinction. Results and CSVs label estimates, cutoff blanks and later scoreboard corrections.
+
+Validation:421 tests pass, including lower-choice validation, immutable policy/export provenance, unique/ambiguous changed-history association, later board correction, cross-continuation correction, and cutoff blanks preserving unfinished game state. Ruff and browser syntax checks pass. Live API confirms2–11,9–1 and the cutoff0–0. Browser Results visibly show9–1 estimated and the lower-count end row; screenshot `data/whole-recording-score-diagnostics/operator-policy-live-results.png`. Server was restarted with12 workers /16384 MiB cache, PID72673 (exec session54151), after verifying no queued/running jobs. Temporary video/audio/model work was cleaned in earlier checkpoints; retained source evidence remains private and is not pushed. Weekly usage last22% used /78% remaining.
+
+## Earlier checkpoint: all observable posted-end boundaries reviewed
 
 October29. The active task remains full scores from board and ice until done or50% weekly remaining. Latest checked usage:21% used /79% remaining. Do not infer completion from a finished processing queue.
 

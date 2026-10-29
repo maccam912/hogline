@@ -187,6 +187,10 @@ def csv_export(release):
         "lying_red_points",
         "lying_yellow_points",
         "end_completion_verified",
+        "score_is_estimate",
+        "estimated_red_points",
+        "estimated_yellow_points",
+        "score_policy_json",
     ]
     writer = csv.DictWriter(out, fieldnames=fields)
     writer.writeheader()
@@ -298,6 +302,10 @@ def csv_export(release):
                             "lying_red_points": (end["lying_ice_points"] or {}).get("red"),
                             "lying_yellow_points": (end["lying_ice_points"] or {}).get("yellow"),
                             "end_completion_verified": end["end_completion_verified"],
+                            "score_is_estimate": end.get("score_is_estimate", False),
+                            "estimated_red_points": (end.get("estimated_points") or {}).get("red"),
+                            "estimated_yellow_points": (end.get("estimated_points") or {}).get("yellow"),
+                            "score_policy_json": json.dumps(end.get("score_policy_applications", [])),
                             "evidence_ids": "|".join(ids),
                             "youtube_links": "|".join(evidence[i].get("youtube_url") or "" for i in ids),
                         }
@@ -337,6 +345,10 @@ def grouped_scores_csv(release):
         "lying_red_points",
         "lying_yellow_points",
         "end_completion_verified",
+        "score_is_estimate",
+        "estimated_red_points",
+        "estimated_yellow_points",
+        "score_policy_json",
         "game_completion",
         "ice_review_ids",
         "evidence_ids",
@@ -381,6 +393,10 @@ def grouped_scores_csv(release):
                     for c in ("red", "yellow")
                 },
                 "end_completion_verified": end["end_completion_verified"],
+                "score_is_estimate": end.get("score_is_estimate", False),
+                "estimated_red_points": (end.get("estimated_points") or {}).get("red"),
+                "estimated_yellow_points": (end.get("estimated_points") or {}).get("yellow"),
+                "score_policy_json": json.dumps(end.get("score_policy_applications", [])),
                 "game_completion": history["game_completion"],
                 "ice_review_ids": "|".join(end["ice_review_ids"]),
                 "evidence_ids": "|".join(ids),

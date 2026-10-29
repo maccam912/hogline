@@ -2,6 +2,14 @@
 
 The active implementation reconstructs posted end scores across board resets and separately inspects ice evidence. Full physical game completion remains a separate, unfinished inference. Completing an inspection job does not establish a complete game.
 
+## Operator-selected scoring policy
+
+On October 29 the operator requested the lower count when a completed end has multiple plausible ice counts, with later readable scoreboard evidence replacing that estimate. An independent review can now retain a `score_policy` with `kind: lower_bound` and its distinct `alternatives`, while its points must equal their componentwise minimum. This requires evidence that the end completed; it does not turn an arbitrary lying configuration into a score. Estimated points stay separate from exact `ice_points`, retain the original alternatives and review evidence, and remain assistant proposals. Actual board or independently resolved ice points take precedence over an estimate. A true contradiction between exact board and ice claims still remains disputed.
+
+The operator also requested a blank end when a recording stops during play. `kind: recording_cutoff_blank` supplies a labeled policy blank (0–0) without asserting physical end or game completion. A later actual board score replaces this placeholder. Unknown scores without either explicit policy still remain unknown.
+
+Combined report v4 and grouped report v3 expose `score_is_estimate`, `estimated_points`, `score_policy_applications`, and `result_is_estimate`. CSVs retain the same distinction and alternatives in `score_policy_json`. Results label lower-count estimates, recording-cutoff blanks, and subsequent board corrections. When later board observations expand a pinned history, policy reviews follow only a unique containing history with the same source manifest/reader and at least three shared retained board evidence frames. Ambiguous matches remain unmatched for review. Old review documents and earlier release versions remain reproducible; new choices supersede old reviews instead of rewriting them.
+
 ## Confirmed club convention
 
 The operator confirmed these Wausau board meanings on October 28, 2026:

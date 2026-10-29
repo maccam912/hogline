@@ -5,7 +5,8 @@ from collections import Counter, defaultdict
 from hogline.adapters.sources import digest
 
 VERSION = "clock-and-score-prefix-continuations-v2"
-RECONCILED_VERSION = "grouped-board-and-reviewed-ice-scores-v2"
+RECONCILED_VERSION = "grouped-board-and-reviewed-ice-scores-v3"
+CONCESSION_RECONCILED_VERSION = "grouped-board-and-reviewed-ice-scores-v2"
 LEGACY_RECONCILED_VERSION = "grouped-board-and-reviewed-ice-scores-v1"
 COLORS = ("red", "yellow")
 
@@ -169,7 +170,7 @@ def _group(chain, edges, books):
 
 def reconcile_continuation_groups(grouping, reports, *, version=RECONCILED_VERSION):
     """Combine checked source projections while retaining every source's claim."""
-    if version not in (RECONCILED_VERSION, LEGACY_RECONCILED_VERSION):
+    if version not in (RECONCILED_VERSION, CONCESSION_RECONCILED_VERSION, LEGACY_RECONCILED_VERSION):
         raise ValueError("Unsupported grouped score history version")
     by_board = {
         h["board_history_id"]: h for report in reports for h in report["histories"] if h["board_history_id"]
@@ -196,7 +197,13 @@ def reconcile_continuation_groups(grouping, reports, *, version=RECONCILED_VERSI
                     if v["end"].get(field) and all(v["end"][field][c] is not None for c in COLORS)
                 }
 
-            scores = claims("points")
+            actual_originals = [v for v in originals if not v["end"].get("score_is_estimate")]
+            actual_scores = claims("points", actual_originals)
+            estimates = claims("estimated_points")
+            scores = actual_scores or claims("points")
+            policies = {
+                p["review_id"]: p for v in originals for p in v["end"].get("score_policy_applications", [])
+            }
             board, ice, lying = (
                 claims(field) for field in ("board_points", "ice_points", "lying_ice_points")
             )
@@ -205,7 +212,7 @@ def reconcile_continuation_groups(grouping, reports, *, version=RECONCILED_VERSI
                 or len(scores) > 1
                 or len(board | ice) > 1
             )
-            unscored = version == RECONCILED_VERSION and any(
+            unscored = version != LEGACY_RECONCILED_VERSION and any(
                 v["end"]["status"] == "not_scored" for v in originals
             )
             disputed = disputed or (unscored and bool(scores | board | ice))
@@ -214,6 +221,7 @@ def reconcile_continuation_groups(grouping, reports, *, version=RECONCILED_VERSI
                 return dict(zip(COLORS, next(iter(values)), strict=True)) if len(values) == 1 else None
 
             points = None if disputed else single(scores)
+            is_estimate = bool(points is not None and not actual_scores and policies)
             totals = {
                 c: totals[c]
                 if unscored and not disputed
@@ -253,10 +261,18 @@ def reconcile_continuation_groups(grouping, reports, *, version=RECONCILED_VERSI
                 if unscored
                 else "agreement"
                 if board and ice
+                else "scoreboard_corrected_estimate"
+                if board and policies and single(board) != single(estimates)
+                else "scoreboard_confirms_estimate"
+                if board and policies
                 else "scoreboard_only"
                 if board
                 else "ice_only"
                 if ice
+                else "recording_cutoff_blank"
+                if is_estimate and any(p["kind"] == "recording_cutoff_blank" for p in policies.values())
+                else "lower_bound_estimate"
+                if is_estimate
                 else "unresolved",
                 "status": status,
                 "state": "not_scored_concession"
@@ -273,6 +289,22 @@ def reconcile_continuation_groups(grouping, reports, *, version=RECONCILED_VERSI
                     for field in ("ice_review_ids", "ice_evidence_ids", "phase_evidence_ids")
                 },
             }
+            if version == RECONCILED_VERSION:
+                end.update(
+                    score_is_estimate=is_estimate,
+                    estimated_points=single(estimates),
+                    score_policy_applications=[
+                        {
+                            **policies[i],
+                            "decision": "used_estimate"
+                            if is_estimate
+                            else "unresolved_conflict"
+                            if disputed
+                            else "replaced_by_actual_score",
+                        }
+                        for i in sorted(policies)
+                    ],
+                )
             ends.append(end)
         complete = bool(
             ends
@@ -301,6 +333,8 @@ def reconcile_continuation_groups(grouping, reports, *, version=RECONCILED_VERSI
             else None,
             "acceptance": "proposed",
         }
+        if version == RECONCILED_VERSION:
+            body["result_is_estimate"] = bool(complete and any(e["score_is_estimate"] for e in ends))
         histories.append({"id": digest(body), **body})
     result = {
         "version": version,

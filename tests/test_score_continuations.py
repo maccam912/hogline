@@ -178,6 +178,48 @@ def test_grouping_cannot_hide_independent_ice_disagreement_in_other_recording():
     assert result["summary"]["score_disagreements"] == 1
 
 
+def test_later_continuation_board_replaces_earlier_lower_estimate():
+    sources, boards, links = corpus()
+    # The earlier recording has only a posted prefix; its last end is estimated.
+    boards[0]["scorecards"][0]["ends"] = boards[0]["scorecards"][0]["ends"][:3]
+    review = {
+        "id": "lower-estimate",
+        "source_id": "left",
+        "request": {
+            "board_history_id": "left-history",
+            "game_key": "same-game",
+            "supersedes_review_ids": [],
+            "official_end_number": 4,
+            "observed_end_index": 4,
+            "phase": "end_finished",
+            "end_completed": True,
+            "red_points": 0,
+            "yellow_points": 2,
+            "score_policy": {
+                "kind": "lower_bound",
+                "alternatives": [
+                    {"red": 0, "yellow": 2},
+                    {"red": 0, "yellow": 3},
+                ],
+            },
+            "final_state_evidence_ids": ["ice"],
+            "phase_evidence_ids": ["phase"],
+        },
+    }
+    # The continuation needs a prefix containing both colors to be safely grouped.
+    for board in boards:
+        board["scorecards"][0]["ends"][1]["points"] = {"red": 0, "yellow": 1}
+    grouping = continuation_score_groups(sources, boards, links)
+    assert len(grouping["groups"]) == 1
+    result = reconcile_continuation_groups(grouping, [reconcile_scores(b, [review]) for b in boards])
+    end = result["histories"][0]["ends"][3]
+    assert end["points"] == {"red": 0, "yellow": 3}
+    assert end["estimated_points"] == {"red": 0, "yellow": 2}
+    assert end["comparison"] == "scoreboard_corrected_estimate"
+    assert not end["score_is_estimate"]
+    assert end["score_policy_applications"][0]["decision"] == "replaced_by_actual_score"
+
+
 def test_unposted_lying_state_survives_grouping_without_becoming_final_score():
     _, grouping, reports = grouped_corpus(source="right", number=6, points=(0, 2), completed=None)
     history = reconcile_continuation_groups(grouping, reports)["histories"][0]

@@ -26,6 +26,22 @@ class ConcessionReview(Model):
     yellow_remaining: int | None = Field(default=None, ge=0, le=8)
 
 
+class ScoreOption(Model):
+    red: int = Field(ge=0, le=8)
+    yellow: int = Field(ge=0, le=8)
+
+    @model_validator(mode="after")
+    def one_scoring_color(self):
+        if self.red and self.yellow:
+            raise ValueError("A score option can award points to only one color")
+        return self
+
+
+class ScorePolicy(Model):
+    kind: Literal["lower_bound", "recording_cutoff_blank"]
+    alternatives: list[ScoreOption] = Field(default_factory=list, max_length=9)
+
+
 class IceEndReview(Model):
     source_id: str
     game_key: str = Field(min_length=1, max_length=120)
@@ -38,6 +54,7 @@ class IceEndReview(Model):
     phase: Literal["unresolved", "end_finished", "game_finished"] = "unresolved"
     end_completed: bool | None = None
     concession: ConcessionReview | None = None
+    score_policy: ScorePolicy | None = None
     final_state_evidence_ids: list[str] = Field(min_length=2, max_length=12)
     phase_evidence_ids: list[str] = Field(min_length=2, max_length=32)
     author: str = Field(min_length=1, max_length=120)
@@ -60,6 +77,29 @@ class IceEndReview(Model):
                 )
             if all(v == 0 for v in remaining):
                 raise ValueError("All stones played requires a completed-end review")
+        if self.score_policy:
+            if self.concession:
+                raise ValueError("A score policy cannot replace concession rules")
+            if self.score_policy.kind == "lower_bound":
+                options = {(o.red, o.yellow) for o in self.score_policy.alternatives}
+                if (
+                    len(options) < 2
+                    or len(options) != len(self.score_policy.alternatives)
+                    or (r, y) not in options
+                    or not all(r <= a and y <= b for a, b in options)
+                    or self.end_completed is not True
+                    or self.phase == "unresolved"
+                ):
+                    raise ValueError(
+                        "Lower-bound policy needs distinct alternatives, their minimum, and a completed end"
+                    )
+            elif (
+                self.score_policy.alternatives
+                or (r, y) != (0, 0)
+                or self.end_completed is True
+                or self.phase != "unresolved"
+            ):
+                raise ValueError("Recording cutoff must be a policy blank without physical completion")
         return self
 
 
@@ -128,7 +168,7 @@ def save_ice_end_review(db, request):
             if old["reviewer_kind"] == "human" and request.reviewer_kind != "human":
                 raise ValueError("Assistant review cannot replace a human decision")
         serialized_request = request.model_dump(
-            exclude={"concession"} if request.concession is None else set()
+            exclude={name for name in ("concession", "score_policy") if getattr(request, name) is None}
         )
         body = {
             "kind": VERSION,

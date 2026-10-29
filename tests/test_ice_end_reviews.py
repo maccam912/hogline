@@ -9,6 +9,7 @@ from hogline.analytics.ice_reviews import save_ice_end_review, source_score_hist
 from hogline.analytics.lineage import validate_references
 from hogline.db import Evidence, FrameObservation
 from hogline.media.frames import observe
+from hogline.reconstruction.continuations import continuation_score_groups, reconcile_continuation_groups
 from hogline.reconstruction.scoring import reconcile_scores
 
 
@@ -81,6 +82,135 @@ def test_independent_ice_review_is_idempotent_exported_and_stays_proposed(db, so
     release["ice_end_reviews"][0]["request"]["red_points"] = 7
     with pytest.raises(ValueError, match="review checksum"):
         validate_references(release)
+
+
+def test_lower_count_is_an_audited_estimate_in_both_exports(db, sources):
+    import csv
+    import io
+    import json
+
+    from hogline.analytics.exports import grouped_scores_csv
+
+    edit = request(db, sources[0])
+    edit["score_policy"] = {
+        "kind": "lower_bound",
+        "alternatives": [{"red": 2, "yellow": 0}, {"red": 3, "yellow": 0}],
+    }
+    review = save_ice_end_review(db, edit)
+    release = json.loads(json.dumps(snapshot(db, "exploratory")))
+    validate_references(release)
+    book = release["grouped_score_histories"]["histories"][0]
+    end = book["ends"][0]
+    assert book["final_result"] == {"red": 2, "yellow": 0} and book["result_is_estimate"]
+    assert end["comparison"] == "lower_bound_estimate" and end["score_is_estimate"]
+    assert end["ice_points"] is None
+    assert end["score_policy_applications"][0]["review_id"] == review["id"]
+    for data in (csv_export(release), grouped_scores_csv(release)):
+        row = next(r for r in csv.DictReader(io.StringIO(data)) if r.get("official_number") == "1")
+        assert row["score_is_estimate"] == "True" and row["red_points"] == "2"
+        assert json.loads(row["score_policy_json"])[0]["alternatives"] == edit["score_policy"]["alternatives"]
+
+
+def test_later_board_corrects_estimate_and_unique_expanded_history_keeps_review(db, sources):
+    from copy import deepcopy
+
+    edit = request(db, sources[0])
+    edit["score_policy"] = {
+        "kind": "lower_bound",
+        "alternatives": [{"red": 2, "yellow": 0}, {"red": 3, "yellow": 0}],
+    }
+    review = deepcopy(save_ice_end_review(db, edit))
+    old = {
+        "id": "old",
+        "source_id": sources[0]["id"],
+        "source_metadata_sha256": sources[0]["metadata_sha256"],
+        "reader_version": "reader",
+        "first_seconds": 0,
+        "last_seconds": 3,
+        "left_censored": False,
+        "right_censored": True,
+        "ends": [
+            {
+                "official_number": 1,
+                "points": {"red": None, "yellow": None},
+                "board_evidence": {"evidence_ids": ["a", "b", "c"]},
+            }
+        ],
+    }
+    review["request"]["board_history_id"] = old["id"]
+    review["board_history"] = old
+    current = deepcopy(old)
+    current.update(id="current", last_seconds=10)
+    current["ends"][0]["points"] = {"red": 3, "yellow": 0}
+    board = {"source_id": sources[0]["id"], "scorecards": [current]}
+    result = reconcile_scores(board, [review])
+    book = result["histories"][0]
+    assert not result["unmatched_review_ids"]
+    assert book["final_result"] == {"red": 3, "yellow": 0} and not book["result_is_estimate"]
+    end = book["ends"][0]
+    assert end["comparison"] == "scoreboard_corrected_estimate" and not end["score_is_estimate"]
+    assert end["estimated_points"] == {"red": 2, "yellow": 0}
+    assert book["review_board_history_associations"][0]["original_history_id"] == "old"
+    grouped = reconcile_continuation_groups(continuation_score_groups(sources, [board], []), [result])
+    assert grouped["histories"][0]["final_result"] == {"red": 3, "yellow": 0}
+    assert grouped["histories"][0]["ends"][0]["comparison"] == "scoreboard_corrected_estimate"
+    # Competing histories or a different manifest must never reassign a review arbitrarily.
+    board["scorecards"].append({**current, "id": "ambiguous"})
+    assert reconcile_scores(board, [review])["unmatched_review_ids"] == [review["id"]]
+    board["scorecards"] = [{**current, "source_metadata_sha256": "different"}]
+    assert reconcile_scores(board, [review])["unmatched_review_ids"] == [review["id"]]
+
+
+def test_cutoff_policy_blank_preserves_unfinished_game_and_can_be_corrected(db, sources):
+    edit = request(db, sources[0])
+    edit.update(
+        red_points=0,
+        yellow_points=0,
+        phase="unresolved",
+        end_completed=None,
+        score_policy={"kind": "recording_cutoff_blank"},
+    )
+    review = save_ice_end_review(db, edit)
+    book = source_score_history(db, sources[0]["id"])["histories"][0]
+    end = book["ends"][0]
+    assert end["points"] == {"red": 0, "yellow": 0} and end["state"] == "blank"
+    assert end["comparison"] == "recording_cutoff_blank" and end["score_is_estimate"]
+    assert not end["end_completion_verified"] and book["game_completion"] == "unknown"
+    assert book["final_result"] is None and book["ends_played"] is None
+    review = {**review, "request": {**review["request"], "board_history_id": "board"}}
+    board = {
+        "source_id": sources[0]["id"],
+        "scorecards": [
+            {
+                "id": "board",
+                "left_censored": True,
+                "right_censored": True,
+                "ends": [{"official_number": 1, "points": {"red": 0, "yellow": 2}, "board_evidence": {}}],
+            }
+        ],
+    }
+    corrected = reconcile_scores(board, [review])["histories"][0]
+    assert corrected["ends"][0]["points"] == {"red": 0, "yellow": 2}
+    assert corrected["ends"][0]["comparison"] == "scoreboard_corrected_estimate"
+    assert corrected["final_result"] is None
+
+
+def test_score_policy_rejects_higher_choice_and_false_completion(db, sources):
+    from hogline.analytics.ice_reviews import IceEndReview
+
+    edit = request(db, sources[0])
+    edit["score_policy"] = {
+        "kind": "lower_bound",
+        "alternatives": [
+            {"red": 1, "yellow": 0},
+            {"red": 2, "yellow": 0},
+        ],
+    }
+    with pytest.raises(ValueError, match="minimum"):
+        IceEndReview.model_validate(edit)
+    edit.update(red_points=0, yellow_points=0, score_policy={"kind": "recording_cutoff_blank"})
+    with pytest.raises(ValueError, match="without physical completion"):
+        IceEndReview.model_validate(edit)
 
 
 def test_unknown_ice_points_never_supply_zero_and_explicit_correction_keeps_history(db, sources):
@@ -183,7 +313,14 @@ def test_unresolved_final_end_preserves_known_prefix_and_legacy_projection(db, s
     assert history["final_result"] is None
     legacy = reconcile_scores(report, [review], version="board-and-reviewed-ice-scores-v1")
     assert legacy["histories"][0]["score_history_complete_through"] is None
-    assert legacy["histories"][0]["ends"] == history["ends"]
+    assert legacy["histories"][0]["ends"] == [
+        {
+            k: v
+            for k, v in end.items()
+            if k not in ("score_is_estimate", "estimated_points", "score_policy_applications")
+        }
+        for end in history["ends"]
+    ]
     with pytest.raises(ValueError, match="Unsupported"):
         reconcile_scores(report, [review], version="future")
 

@@ -5,14 +5,37 @@ from collections import defaultdict
 from hogline.adapters.sources import digest
 from hogline.reconstruction.concessions import resolve_concession
 
-VERSION = "board-and-reviewed-ice-scores-v3"
+VERSION = "board-and-reviewed-ice-scores-v4"
+CONCESSION_VERSION = "board-and-reviewed-ice-scores-v3"
 PREFIX_VERSION = "board-and-reviewed-ice-scores-v2"
 LEGACY_VERSION = "board-and-reviewed-ice-scores-v1"
 COLORS = ("red", "yellow")
 
 
+def board_evidence_ids(book):
+    return {
+        i for end in book.get("ends", []) for i in (end.get("board_evidence") or {}).get("evidence_ids", [])
+    } | {c["evidence_id"] for c in book.get("current_end_evidence", []) if c.get("evidence_id")}
+
+
+def policy_board_match(review, books):
+    """Follow an expanded board history only with a unique retained evidence overlap."""
+    old = review.get("board_history")
+    if not old:
+        return None
+    matches = [
+        key
+        for key, book in books.items()
+        if all(book.get(k) == old.get(k) for k in ("source_id", "source_metadata_sha256", "reader_version"))
+        and book.get("first_seconds", float("inf")) <= old.get("first_seconds", -float("inf"))
+        and book.get("last_seconds", -float("inf")) >= old.get("last_seconds", float("inf"))
+        and len(board_evidence_ids(book) & board_evidence_ids(old)) >= 3
+    ]
+    return matches[0] if len(matches) == 1 else None
+
+
 def reconcile_scores(report, reviews, *, version=VERSION):
-    if version not in (VERSION, PREFIX_VERSION, LEGACY_VERSION):
+    if version not in (VERSION, CONCESSION_VERSION, PREFIX_VERSION, LEGACY_VERSION):
         raise ValueError("Unsupported combined score history version")
     source_id = report["source_id"]
     relevant = [r for r in reviews if r["source_id"] == source_id]
@@ -20,11 +43,17 @@ def reconcile_scores(report, reviews, *, version=VERSION):
     active = [r for r in relevant if r["id"] not in superseded]
     books = {h["id"]: h for h in report["scorecards"]}
     groups = defaultdict(list)
+    matched = {}
     for review in active:
         request = review["request"]
+        if request.get("score_policy") and version != VERSION:
+            raise ValueError("Score policies require combined score history v4")
         key = request["board_history_id"] or f"ice:{request['game_key']}"
         if request["board_history_id"] and key not in books:
-            continue
+            key = policy_board_match(review, books) if request.get("score_policy") else None
+            if key is None:
+                continue
+        matched[review["id"]] = key
         groups[key].append(review)
     histories = []
 
@@ -59,7 +88,7 @@ def reconcile_scores(report, reviews, *, version=VERSION):
                     ),
                 }
                 for r in observations
-                if version == VERSION and r["request"].get("concession")
+                if version in (VERSION, CONCESSION_VERSION) and r["request"].get("concession")
             ]
             if number != max([*board, *by_end], default=0):
                 decisions = [
@@ -72,12 +101,24 @@ def reconcile_scores(report, reviews, *, version=VERSION):
                 if r["request"].get("end_completed") is True
                 and r["request"]["phase"] != "unresolved"
                 and r["request"]["red_points"] is not None
+                and not r["request"].get("score_policy")
             ]
             lying_claims = {
                 (r["request"]["red_points"], r["request"]["yellow_points"])
                 for r in observations
-                if r["request"]["red_points"] is not None
+                if r["request"]["red_points"] is not None and not r["request"].get("score_policy")
             }
+            policies = [
+                {
+                    "review_id": r["id"],
+                    **r["request"]["score_policy"],
+                    "points": {c: r["request"][f"{c}_points"] for c in COLORS},
+                }
+                for r in observations
+                if r["request"].get("score_policy")
+            ]
+            estimates = {tuple(p["points"][c] for c in COLORS) for p in policies}
+            estimate = dict(zip(COLORS, next(iter(estimates)), strict=True)) if len(estimates) == 1 else None
             claims = {(r["request"]["red_points"], r["request"]["yellow_points"]) for r in final_claims}
             claims.update(tuple(d["points"][c] for c in COLORS) for d in decisions if d["status"] == "scored")
             unscored = any(d["status"] == "not_scored" for d in decisions)
@@ -93,8 +134,16 @@ def reconcile_scores(report, reviews, *, version=VERSION):
                 )
                 or len(claims) > 1
                 or bool(board_score is not None and ice_score is not None and board_score != ice_score)
+                or (board_score is None and ice_score is None and len(estimates) > 1)
             )
-            points = None if disagreement else board_score if board_score is not None else ice_score
+            actual = board_score if board_score is not None else ice_score
+            points = None if disagreement else actual if actual is not None else estimate
+            is_estimate = bool(points is not None and actual is None and policies)
+            estimate_basis = (
+                "recording_cutoff_blank"
+                if any(p["kind"] == "recording_cutoff_blank" for p in policies)
+                else "lower_bound_estimate"
+            )
             if points is None and not (unscored and not disagreement):
                 totals = dict.fromkeys(COLORS, None)
             elif points is not None:
@@ -121,10 +170,16 @@ def reconcile_scores(report, reviews, *, version=VERSION):
                     if unscored
                     else "agreement"
                     if board_score is not None and ice_score is not None
+                    else "scoreboard_corrected_estimate"
+                    if board_score is not None and policies and board_score != estimate
+                    else "scoreboard_confirms_estimate"
+                    if board_score is not None and policies
                     else "scoreboard_only"
                     if board_score is not None
                     else "ice_only"
                     if ice_score is not None
+                    else estimate_basis
+                    if is_estimate
                     else "unresolved",
                     "status": "disputed"
                     if disagreement
@@ -150,7 +205,23 @@ def reconcile_scores(report, reviews, *, version=VERSION):
                     else "played",
                 }
             )
-            if version == VERSION and decisions:
+            if version == VERSION:
+                ends[-1].update(
+                    score_is_estimate=is_estimate,
+                    estimated_points=estimate,
+                    score_policy_applications=[
+                        {
+                            **p,
+                            "decision": "used_estimate"
+                            if is_estimate
+                            else "unresolved_conflict"
+                            if disagreement
+                            else "replaced_by_actual_score",
+                        }
+                        for p in policies
+                    ],
+                )
+            if version in (VERSION, CONCESSION_VERSION) and decisions:
                 ends[-1]["concession_decisions"] = decisions
         completion_claims = [
             r
@@ -211,15 +282,25 @@ def reconcile_scores(report, reviews, *, version=VERSION):
             "completed score histories do not establish first/final throw timing or full physical coverage.",
         }
         history["id"] = digest(history)
+        if version == VERSION:
+            history["result_is_estimate"] = bool(complete and any(e["score_is_estimate"] for e in ends))
+            history["review_board_history_associations"] = [
+                {
+                    "review_id": r["id"],
+                    "original_history_id": r["request"]["board_history_id"],
+                    "current_history_id": key,
+                }
+                for r in groups[key]
+                if r["request"]["board_history_id"] and r["request"]["board_history_id"] != key
+            ]
+            history["id"] = digest({k: v for k, v in history.items() if k != "id"})
         histories.append(history)
     document = {
         "version": version,
         "source_id": source_id,
         "histories": histories,
         "unmatched_review_ids": sorted(
-            r["id"]
-            for r in active
-            if r["request"]["board_history_id"] and r["request"]["board_history_id"] not in books
+            r["id"] for r in active if r["request"]["board_history_id"] and r["id"] not in matched
         ),
         "summary": {
             "known_end_scores": sum(h["known_end_scores"] for h in histories),
