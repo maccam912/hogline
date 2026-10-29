@@ -185,3 +185,51 @@ def test_unposted_lying_state_survives_grouping_without_becoming_final_score():
     end = history["ends"][-1]
     assert end["lying_ice_points"] == {"red": 0, "yellow": 2} and end["ice_points"] is None
     assert end["status"] == "unresolved" and history["final_result"] is None
+
+
+def test_grouped_unscored_concession_retains_the_previous_score_and_conflicts_with_posting():
+    sources, reports, links = corpus()
+    grouping = continuation_score_groups(sources, reports, links)
+    review = {
+        "id": "concession",
+        "source_id": "right",
+        "request": {
+            "game_key": "game",
+            "board_history_id": "right-history",
+            "official_end_number": 6,
+            "observed_end_index": 6,
+            "supersedes_review_ids": [],
+            "end_completed": False,
+            "phase": "game_finished",
+            "red_points": 2,
+            "yellow_points": 0,
+            "concession": {
+                "rule": "world-curling-2025-R12h",
+                "conceding_color": "yellow",
+                "red_remaining": 0,
+                "yellow_remaining": 1,
+            },
+            "final_state_evidence_ids": [],
+            "phase_evidence_ids": [],
+        },
+        "evidence_refs": {},
+    }
+    combined = [reconcile_scores(r, [review]) for r in reports]
+    result = reconcile_continuation_groups(grouping, combined)
+    history = result["histories"][0]
+    assert history["final_result"] == {"red": 4, "yellow": 3}
+    assert history["known_end_scores"] == history["score_history_complete_through"] == 5
+    assert history["ends_played"] is None
+    assert history["ends"][-1]["state"] == "not_scored_concession"
+    assert history["ends"][-1]["points"] == {"red": None, "yellow": None}
+    other = deepcopy(combined[0]["histories"][0]["ends"][-1])
+    other.update(
+        official_number=6,
+        observed_index=6,
+        points={"red": 0, "yellow": 0},
+        board_points={"red": 0, "yellow": 0},
+    )
+    combined[0]["histories"][0]["ends"].append(other)
+    result = reconcile_continuation_groups(grouping, combined)
+    assert result["histories"][0]["ends"][-1]["status"] == "disputed"
+    assert result["histories"][0]["final_result"] is None

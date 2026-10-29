@@ -19,6 +19,13 @@ from hogline.reconstruction.scorecards import reconstruct_scorecards
 VERSION = "independent-visual-ice-end-v1"
 
 
+class ConcessionReview(Model):
+    rule: Literal["world-curling-2025-R12h"]
+    conceding_color: Literal["red", "yellow"]
+    red_remaining: int | None = Field(default=None, ge=0, le=8)
+    yellow_remaining: int | None = Field(default=None, ge=0, le=8)
+
+
 class IceEndReview(Model):
     source_id: str
     game_key: str = Field(min_length=1, max_length=120)
@@ -30,6 +37,7 @@ class IceEndReview(Model):
     yellow_points: int | None = Field(default=None, ge=0, le=8)
     phase: Literal["unresolved", "end_finished", "game_finished"] = "unresolved"
     end_completed: bool | None = None
+    concession: ConcessionReview | None = None
     final_state_evidence_ids: list[str] = Field(min_length=2, max_length=12)
     phase_evidence_ids: list[str] = Field(min_length=2, max_length=16)
     author: str = Field(min_length=1, max_length=120)
@@ -44,6 +52,16 @@ class IceEndReview(Model):
             raise ValueError("Ice scores need both values and at most one scoring color")
         if len(set(self.final_state_evidence_ids)) < 2 or len(set(self.phase_evidence_ids)) < 2:
             raise ValueError("An independent end review needs distinct final-state and phase frames")
+        if self.concession:
+            remaining = [self.concession.red_remaining, self.concession.yellow_remaining]
+            if self.phase != "game_finished" or self.end_completed is True:
+                raise ValueError(
+                    "Concession facts require a game-ending review without completed-end assertion"
+                )
+            if getattr(self.concession, f"{self.concession.conceding_color}_remaining") == 0:
+                raise ValueError("The conceding delivering team must still have a stone remaining")
+            if all(v == 0 for v in remaining):
+                raise ValueError("All stones played requires a completed-end review")
         return self
 
 
@@ -111,10 +129,13 @@ def save_ice_end_review(db, request):
                 raise ValueError("A correction must refer to the same source, game and observed end")
             if old["reviewer_kind"] == "human" and request.reviewer_kind != "human":
                 raise ValueError("Assistant review cannot replace a human decision")
+        serialized_request = request.model_dump(
+            exclude={"concession"} if request.concession is None else set()
+        )
         body = {
             "kind": VERSION,
-            "model_version": f"{VERSION}:{digest(request.model_dump())}",
-            "request": request.model_dump(),
+            "model_version": f"{VERSION}:{digest(serialized_request)}",
+            "request": serialized_request,
             "source_metadata_sha256": source["metadata_sha256"],
             "board_history": history,
             "board_history_sha256": digest(history) if history else None,

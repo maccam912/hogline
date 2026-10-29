@@ -329,9 +329,9 @@ def reconstruct_ends(source_id, observations, house_results=(), house_scores=(),
             "house_result_count": len(house_results),
         },
         "input_refs": {
-            "broadcast": sorted((o["id"], digest(o)) for o in observations),
-            "house_results": sorted((r["id"], r["sha256"]) for r in house_results),
-            "house_scores": sorted((r["id"], digest(r)) for r in house_scores),
+            "broadcast": sorted([o["id"], digest(o)] for o in observations),
+            "house_results": sorted([r["id"], r["sha256"]] for r in house_results),
+            "house_scores": sorted([r["id"], digest(r)] for r in house_scores),
         },
         "notice": (
             "Board ledgers are candidates, not confirmed games. Resets/corrections split histories. "

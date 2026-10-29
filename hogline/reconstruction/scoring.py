@@ -3,14 +3,16 @@
 from collections import defaultdict
 
 from hogline.adapters.sources import digest
+from hogline.reconstruction.concessions import resolve_concession
 
-VERSION = "board-and-reviewed-ice-scores-v2"
+VERSION = "board-and-reviewed-ice-scores-v3"
+PREFIX_VERSION = "board-and-reviewed-ice-scores-v2"
 LEGACY_VERSION = "board-and-reviewed-ice-scores-v1"
 COLORS = ("red", "yellow")
 
 
 def reconcile_scores(report, reviews, *, version=VERSION):
-    if version not in (VERSION, LEGACY_VERSION):
+    if version not in (VERSION, PREFIX_VERSION, LEGACY_VERSION):
         raise ValueError("Unsupported combined score history version")
     source_id = report["source_id"]
     relevant = [r for r in reviews if r["source_id"] == source_id]
@@ -47,6 +49,23 @@ def reconcile_scores(report, reviews, *, version=VERSION):
                 else None
             )
             observations = by_end[number]
+            decisions = [
+                {
+                    "review_id": r["id"],
+                    **resolve_concession(
+                        r["request"]["concession"],
+                        {c: r["request"][f"{c}_points"] for c in COLORS},
+                        totals,
+                    ),
+                }
+                for r in observations
+                if version == VERSION and r["request"].get("concession")
+            ]
+            if number != max([*board, *by_end], default=0):
+                decisions = [
+                    {**d, "status": "unresolved", "points": None, "reason": "later_end_in_same_history"}
+                    for d in decisions
+                ]
             final_claims = [
                 r
                 for r in observations
@@ -60,14 +79,25 @@ def reconcile_scores(report, reviews, *, version=VERSION):
                 if r["request"]["red_points"] is not None
             }
             claims = {(r["request"]["red_points"], r["request"]["yellow_points"]) for r in final_claims}
+            claims.update(tuple(d["points"][c] for c in COLORS) for d in decisions if d["status"] == "scored")
+            unscored = any(d["status"] == "not_scored" for d in decisions)
             ice_score = dict(zip(COLORS, next(iter(claims)), strict=True)) if len(claims) == 1 else None
-            disagreement = len(claims) > 1 or bool(
-                board_score is not None and ice_score is not None and board_score != ice_score
+            disagreement = (
+                (
+                    unscored
+                    and (
+                        board_score is not None
+                        or bool(claims)
+                        or any(r["request"].get("end_completed") is True for r in observations)
+                    )
+                )
+                or len(claims) > 1
+                or bool(board_score is not None and ice_score is not None and board_score != ice_score)
             )
             points = None if disagreement else board_score if board_score is not None else ice_score
-            if points is None:
+            if points is None and not (unscored and not disagreement):
                 totals = dict.fromkeys(COLORS, None)
-            else:
+            elif points is not None:
                 totals = {c: totals[c] + points[c] if totals[c] is not None else None for c in COLORS}
             ends.append(
                 {
@@ -87,6 +117,8 @@ def reconcile_scores(report, reviews, *, version=VERSION):
                     ),
                     "comparison": "disagreement"
                     if disagreement
+                    else "concession_not_scored"
+                    if unscored
                     else "agreement"
                     if board_score is not None and ice_score is not None
                     else "scoreboard_only"
@@ -96,6 +128,8 @@ def reconcile_scores(report, reviews, *, version=VERSION):
                     else "unresolved",
                     "status": "disputed"
                     if disagreement
+                    else "not_scored"
+                    if unscored
                     else "proposed"
                     if points is not None
                     else "unresolved",
@@ -107,21 +141,39 @@ def reconcile_scores(report, reviews, *, version=VERSION):
                     "phase_evidence_ids": sorted(
                         {i for r in observations for i in r["request"]["phase_evidence_ids"]}
                     ),
-                    "state": "unknown"
+                    "state": "not_scored_concession"
+                    if unscored and not disagreement
+                    else "unknown"
                     if points is None
                     else "blank"
                     if not any(points.values())
                     else "played",
                 }
             )
+            if version == VERSION and decisions:
+                ends[-1]["concession_decisions"] = decisions
         completion_claims = [
             r
             for r in groups[key]
             if r["request"]["phase"] == "game_finished"
-            and r["request"].get("end_completed") is True
+            and (
+                r["request"].get("end_completed") is True
+                or any(
+                    d["review_id"] == r["id"] and d["status"] in ("scored", "not_scored")
+                    for e in ends
+                    for d in e.get("concession_decisions", [])
+                )
+            )
             and (r["request"]["official_end_number"] or r["request"]["observed_end_index"]) == len(ends)
         ]
-        complete = bool(ends and completion_claims and all(e["status"] == "proposed" for e in ends))
+        complete = bool(
+            ends
+            and completion_claims
+            and all(
+                e["status"] == "proposed" or (i == len(ends) - 1 and e["status"] == "not_scored")
+                for i, e in enumerate(ends)
+            )
+        )
         prefix = 0
         for end in ends:
             if end["status"] != "proposed":
@@ -140,12 +192,14 @@ def reconcile_scores(report, reviews, *, version=VERSION):
             "ends": ends,
             "known_end_scores": sum(e["status"] == "proposed" for e in ends),
             "score_history_complete_through": (prefix or None)
-            if version == VERSION
+            if version != LEGACY_VERSION
             else len(ends)
             if ends and all(e["status"] == "proposed" for e in ends)
             else None,
             "game_completion": "complete" if complete else "unknown",
-            "ends_played": len(ends) if complete else None,
+            "ends_played": len(ends)
+            if complete and any(r["request"].get("end_completed") is True for r in completion_claims)
+            else None,
             "final_result": dict(totals) if complete else None,
             "completion_review_ids": sorted(r["id"] for r in completion_claims),
             "acceptance": "proposed",

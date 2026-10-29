@@ -432,7 +432,9 @@ def validate_references(payload):
         from hogline.reconstruction.continuations import reconcile_continuation_groups
 
         expected = reconcile_continuation_groups(
-            payload["continuation_score_groups"], payload["reconciled_score_histories"]
+            payload["continuation_score_groups"],
+            payload["reconciled_score_histories"],
+            version=payload["grouped_score_histories"]["version"],
         )
         if payload["grouped_score_histories"] != expected:
             raise ValueError("Release grouped scores disagree with their source-local score histories")

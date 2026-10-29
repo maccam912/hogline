@@ -5,7 +5,8 @@ from collections import Counter, defaultdict
 from hogline.adapters.sources import digest
 
 VERSION = "clock-and-score-prefix-continuations-v2"
-RECONCILED_VERSION = "grouped-board-and-reviewed-ice-scores-v1"
+RECONCILED_VERSION = "grouped-board-and-reviewed-ice-scores-v2"
+LEGACY_RECONCILED_VERSION = "grouped-board-and-reviewed-ice-scores-v1"
 COLORS = ("red", "yellow")
 
 
@@ -166,8 +167,10 @@ def _group(chain, edges, books):
     return {"id": digest(body), **body}
 
 
-def reconcile_continuation_groups(grouping, reports):
+def reconcile_continuation_groups(grouping, reports, *, version=RECONCILED_VERSION):
     """Combine checked source projections while retaining every source's claim."""
+    if version not in (RECONCILED_VERSION, LEGACY_RECONCILED_VERSION):
+        raise ValueError("Unsupported grouped score history version")
     by_board = {
         h["board_history_id"]: h for report in reports for h in report["histories"] if h["board_history_id"]
     }
@@ -202,16 +205,32 @@ def reconcile_continuation_groups(grouping, reports):
                 or len(scores) > 1
                 or len(board | ice) > 1
             )
+            unscored = version == RECONCILED_VERSION and any(
+                v["end"]["status"] == "not_scored" for v in originals
+            )
+            disputed = disputed or (unscored and bool(scores | board | ice))
 
             def single(values):
                 return dict(zip(COLORS, next(iter(values)), strict=True)) if len(values) == 1 else None
 
             points = None if disputed else single(scores)
             totals = {
-                c: totals[c] + points[c] if totals[c] is not None and points is not None else None
+                c: totals[c]
+                if unscored and not disputed
+                else totals[c] + points[c]
+                if totals[c] is not None and points is not None
+                else None
                 for c in COLORS
             }
-            status = "disputed" if disputed else "proposed" if points is not None else "unresolved"
+            status = (
+                "disputed"
+                if disputed
+                else "not_scored"
+                if unscored
+                else "proposed"
+                if points is not None
+                else "unresolved"
+            )
             if prefix == number - 1 and status == "proposed":
                 prefix = number
             board_ids = sorted(
@@ -230,6 +249,8 @@ def reconcile_continuation_groups(grouping, reports):
                 "end_completion_verified": any(v["end"]["end_completion_verified"] for v in originals),
                 "comparison": "disagreement"
                 if disputed
+                else "concession_not_scored"
+                if unscored
                 else "agreement"
                 if board and ice
                 else "scoreboard_only"
@@ -238,7 +259,13 @@ def reconcile_continuation_groups(grouping, reports):
                 if ice
                 else "unresolved",
                 "status": status,
-                "state": "unknown" if points is None else "played" if any(points.values()) else "blank",
+                "state": "not_scored_concession"
+                if unscored and not disputed
+                else "unknown"
+                if points is None
+                else "played"
+                if any(points.values())
+                else "blank",
                 "board_evidence": {"evidence_ids": board_ids} if board_ids else None,
                 "source_claims": originals,
                 **{
@@ -249,7 +276,10 @@ def reconcile_continuation_groups(grouping, reports):
             ends.append(end)
         complete = bool(
             ends
-            and prefix == len(ends)
+            and all(
+                e["status"] == "proposed" or (i == len(ends) - 1 and e["status"] == "not_scored")
+                for i, e in enumerate(ends)
+            )
             and any(h["game_completion"] == "complete" and len(h["ends"]) == len(ends) for h in members)
         )
         body = {
@@ -262,12 +292,18 @@ def reconcile_continuation_groups(grouping, reports):
             "known_end_scores": sum(e["status"] == "proposed" for e in ends),
             "game_completion": "complete" if complete else "unknown",
             "final_result": dict(totals) if complete else None,
-            "ends_played": len(ends) if complete else None,
+            "ends_played": len(ends)
+            if complete
+            and (
+                version == LEGACY_RECONCILED_VERSION
+                or any(h["ends_played"] == len(ends) for h in members if h["game_completion"] == "complete")
+            )
+            else None,
             "acceptance": "proposed",
         }
         histories.append({"id": digest(body), **body})
     result = {
-        "version": RECONCILED_VERSION,
+        "version": version,
         "grouping_sha256": grouping["sha256"],
         "source_report_hashes": {r["source_id"]: r["sha256"] for r in reports},
         "histories": histories,

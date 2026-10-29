@@ -1,4 +1,5 @@
 import copy
+import json
 
 import pytest
 from fastapi.testclient import TestClient
@@ -47,6 +48,7 @@ def test_scores_after_ends_keep_missing_baselines_blanks_and_final_count_unknown
         + repeated(40, red=((1, 2), (3, 4)), yellow=((2, 1), (5, 3)))
     )
     timeline = reconstruct_ends("source", rows)
+    assert json.loads(json.dumps(timeline)) == reconstruct_ends("source", rows)
     (book,) = timeline["board_ledgers"]
     assert book["highest_observed_end_number"] == 5
     assert book["ends_played"] is None and book["scheduled_ends"] is None

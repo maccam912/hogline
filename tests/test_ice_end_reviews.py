@@ -186,3 +186,138 @@ def test_unresolved_final_end_preserves_known_prefix_and_legacy_projection(db, s
     assert legacy["histories"][0]["ends"] == history["ends"]
     with pytest.raises(ValueError, match="Unsupported"):
         reconcile_scores(report, [review], version="future")
+
+
+def test_concession_can_award_points_without_asserting_physical_completion_and_stays_reproducible(
+    db, sources
+):
+    edit = request(db, sources[0])
+    edit.update(
+        end_completed=False,
+        concession={
+            "rule": "world-curling-2025-R12h",
+            "conceding_color": "yellow",
+            "red_remaining": 0,
+            "yellow_remaining": 1,
+        },
+    )
+    review = save_ice_end_review(db, edit)
+    history = source_score_history(db, sources[0]["id"])["histories"][0]
+    assert history["final_result"] == {"red": 2, "yellow": 0}
+    assert history["ends_played"] is None and not history["ends"][0]["end_completion_verified"]
+    assert history["ends"][0]["concession_decisions"][0]["reason"] == "points_required_to_determine_outcome"
+    release = snapshot(db, "exploratory")
+    validate_references(release)
+    assert release["grouped_score_histories"]["histories"][0]["final_result"] == {"red": 2, "yellow": 0}
+    report = {"source_id": sources[0]["id"], "scorecards": []}
+    for version in ("board-and-reviewed-ice-scores-v1", "board-and-reviewed-ice-scores-v2"):
+        assert reconcile_scores(report, [review], version=version)["histories"][0]["final_result"] is None
+
+
+def test_conceded_unscored_end_keeps_prior_total_and_does_not_become_a_blank(db, sources):
+    edit = request(db, sources[0])
+    edit.update(
+        observed_end_index=2,
+        official_end_number=2,
+        end_completed=False,
+        red_points=0,
+        yellow_points=4,
+        concession={
+            "rule": "world-curling-2025-R12h",
+            "conceding_color": "red",
+            "red_remaining": 1,
+            "yellow_remaining": 0,
+        },
+    )
+    review = save_ice_end_review(db, edit)
+    review["request"]["board_history_id"] = "posted"
+    report = {
+        "source_id": sources[0]["id"],
+        "scorecards": [
+            {
+                "id": "posted",
+                "first_seconds": 0,
+                "last_seconds": 3,
+                "left_censored": False,
+                "right_censored": False,
+                "ends": [
+                    {
+                        "official_number": 1,
+                        "points": {"red": 1, "yellow": 6},
+                        "board_evidence": {"evidence_ids": []},
+                    }
+                ],
+            }
+        ],
+    }
+    history = reconcile_scores(report, [review])["histories"][0]
+    end = history["ends"][-1]
+    assert end["status"] == "not_scored" and end["state"] == "not_scored_concession"
+    assert end["points"] == {"red": None, "yellow": None} and end["lying_ice_points"] == {
+        "red": 0,
+        "yellow": 4,
+    }
+    assert history["final_result"] == end["score_after_end"] == {"red": 1, "yellow": 6}
+    assert history["known_end_scores"] == history["score_history_complete_through"] == 1
+
+
+def test_concession_facts_cannot_say_the_conceding_team_has_no_stone_left(db, sources):
+    edit = request(db, sources[0])
+    edit.update(
+        end_completed=False,
+        concession={
+            "rule": "world-curling-2025-R12h",
+            "conceding_color": "red",
+            "red_remaining": 0,
+            "yellow_remaining": 1,
+        },
+    )
+    with pytest.raises(ValueError, match="delivering team"):
+        save_ice_end_review(db, edit)
+
+
+def test_unscored_concession_conflicts_with_a_posted_or_completed_end(db, sources):
+    from copy import deepcopy
+
+    edit = request(db, sources[0])
+    edit.update(
+        end_completed=False,
+        concession={
+            "rule": "world-curling-2025-R12h",
+            "conceding_color": "red",
+            "red_remaining": 2,
+            "yellow_remaining": 1,
+        },
+    )
+    review = save_ice_end_review(db, edit)
+    review["request"]["board_history_id"] = "posted"
+    report = {
+        "source_id": sources[0]["id"],
+        "scorecards": [
+            {
+                "id": "posted",
+                "first_seconds": 0,
+                "last_seconds": 3,
+                "left_censored": False,
+                "right_censored": False,
+                "ends": [
+                    {
+                        "official_number": 1,
+                        "points": {"red": 0, "yellow": 0},
+                        "board_evidence": {"evidence_ids": []},
+                    }
+                ],
+            }
+        ],
+    }
+    history = reconcile_scores(report, [review])["histories"][0]
+    assert history["ends"][0]["status"] == "disputed" and history["final_result"] is None
+    completed = deepcopy(review)
+    completed["id"] = "independent-completed"
+    completed["request"].pop("concession")
+    completed["request"].update(board_history_id=None, end_completed=True)
+    review["request"]["board_history_id"] = None
+    history = reconcile_scores({"source_id": sources[0]["id"], "scorecards": []}, [review, completed])[
+        "histories"
+    ][0]
+    assert history["ends"][0]["status"] == "disputed" and history["final_result"] is None
