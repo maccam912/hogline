@@ -413,3 +413,13 @@ def validate_references(payload):
         expected = [reconcile_scores(report, reviews) for report in payload["scorecard_timelines"]]
         if payload["reconciled_score_histories"] != expected:
             raise ValueError("Release combined scores disagree with their independent ice reviews")
+    if "continuation_score_groups" in payload:
+        from hogline.reconstruction.continuations import continuation_score_groups
+
+        expected = continuation_score_groups(
+            payload["sources"], payload["scorecard_timelines"], payload["source_boundary_links"]
+        )
+        if payload["continuation_score_groups"] != expected:
+            raise ValueError(
+                "Release continuation groups disagree with their source histories and clock links"
+            )

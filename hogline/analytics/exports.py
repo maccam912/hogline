@@ -23,6 +23,7 @@ from hogline.perception.board_locator import board_locations_in_session
 from hogline.perception.broadcast import broadcast_catalog_in_session
 from hogline.perception.pipeline import observations_in_session
 from hogline.reconstruction.boundaries import boundary_links
+from hogline.reconstruction.continuations import continuation_score_groups
 from hogline.reconstruction.ends import reconstruct_ends
 from hogline.reconstruction.scorecards import reconstruct_scorecards
 from hogline.reconstruction.scoring import reconcile_scores
@@ -132,6 +133,9 @@ def snapshot_in_session(session, mode, root):
     payload["reconciled_score_histories"] = [
         reconcile_scores(report, payload["ice_end_reviews"]) for report in payload["scorecard_timelines"]
     ]
+    payload["continuation_score_groups"] = continuation_score_groups(
+        payload["sources"], payload["scorecard_timelines"], payload["source_boundary_links"]
+    )
     validate_references(payload)
     # Use the same rows that were serialized, even if a review is saved during export.
     payload["interpretation_revisions"] = {
