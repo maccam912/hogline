@@ -192,6 +192,11 @@ def main():
     house_scores.add_argument("source_id")
     house_scores.add_argument("--limit", type=int, default=24)
     house_scores.add_argument("--max-seconds", type=float, default=30)
+    geometry = commands.add_parser(
+        "diagnose-house-projection", help="Fit painted-ring geometry in a native crop; never supplies scores"
+    )
+    geometry.add_argument("image")
+    geometry.add_argument("--output")
     commands.add_parser("labels", help="List saved label views and recording/day groups")
     label_import = commands.add_parser("label-import", help="Import a revisioned label-edit JSON document")
     label_import.add_argument("path")
@@ -375,6 +380,31 @@ def main():
                 result = evaluate_house_dataset(
                     db, HouseEvaluationRequest.model_validate_json(Path(args.path).read_text())
                 )
+            case "diagnose-house-projection":
+                import hashlib
+
+                import numpy as np
+                from PIL import Image
+
+                from hogline.perception.projective_house import diagnose_house_projection
+
+                if args.output and Path(args.output).exists():
+                    raise ValueError("Diagnostic destination exists; choose a new filename")
+                path = Path(args.image)
+                with Image.open(path) as image:
+                    rgb = np.asarray(image.convert("RGB"))
+                result = {
+                    "input": {
+                        "path": str(path.resolve()),
+                        "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                        "decoded_rgb_sha256": hashlib.sha256(rgb.tobytes()).hexdigest(),
+                    },
+                    **diagnose_house_projection(rgb),
+                }
+                if args.output:
+                    Path(args.output).write_text(json.dumps(result, indent=2))
+                    print(args.output)
+                    return
             case "labels":
                 result = labels_catalog(db)
             case "label-import":
