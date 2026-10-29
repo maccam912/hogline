@@ -13,6 +13,7 @@ from sqlalchemy import select
 from hogline.adapters.sources import digest
 from hogline.analytics.house_states import house_states_in_session
 from hogline.analytics.play import play_in_windows
+from hogline.analytics.scorecards import scorecard_observations_in_session, select_inputs
 from hogline.db import AnalysisWindow, Evidence, FrameObservation, GameRow
 from hogline.domain.catalog import source_or_error
 from hogline.domain.provenance import observation_manifest, resolve_observation_manifests
@@ -175,9 +176,13 @@ def source_end_timeline(db, source_id, start=None, end=None):
             if o["source_id"] == source_id and (start is None or start <= o["source_seconds"] < end)
         ]
         result["partial_score_proposals"] = persistent_board_claims(eligible)
+        inspected = scorecard_observations_in_session(session, source_id)
         result["scorecard_reconstruction"] = reconstruct_scorecards(
-            source_id, eligible, (start, end) if start is not None else None
+            source_id,
+            select_inputs(source_id, eligible, inspected),
+            (start, end) if start is not None else None,
         )
+        result["scorecard_inspected_frames"] = len(inspected)
         result["play_input_exclusions"] = play["exclusions"]
         result["sha256"] = digest({k: v for k, v in result.items() if k != "sha256"})
         return result

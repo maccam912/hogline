@@ -106,6 +106,32 @@ def test_counter_does_not_force_immediate_posting_or_end_completion():
     assert book["ends"][1]["last_stone_stopped"] is None
 
 
+def test_delayed_empty_board_with_current_end_advanced_does_not_split_game():
+    rows = repeated(0, red=((1, 2),))
+    empty = repeated(20)
+    for row in empty:
+        row["scoreboard"]["current_end"] = {"number": 2}
+    rows += empty + repeated(40, red=((1, 2),), yellow=((2, 1),))
+    assert len(reconstruct_scorecards("source", rows)["scorecards"]) == 1
+
+
+def test_reversed_plates_require_repeated_counts_and_unique_missing_ends():
+    rows = repeated(0, red=((1, 2), (3, 4)))
+    for row in rows:
+        row["scoreboard"]["current_end"] = {"number": 4}
+        row["scoreboard"]["unassigned_blank_plates"] = [
+            {"column_hint": 2, "status": "reversed_blank_plate_candidate"}
+        ]
+    (book,) = reconstruct_scorecards("source", rows)["scorecards"]
+    assert book["ends"][1]["state"] == "blank"
+    assert book["ends"][2]["points"] == {"red": 2, "yellow": 0}
+    assert book["score_history_complete_through"] == 3
+    for row in rows:
+        row["scoreboard"]["current_end"] = {"number": 2}
+    (book,) = reconstruct_scorecards("source", rows)["scorecards"]
+    assert book["ends"][1]["state"] == "unknown"
+
+
 def test_scorecards_are_exposed_and_exported_with_checked_inputs(db, sources):
     client = TestClient(create_app(db.settings))
     response = client.get(f"/api/sources/{sources[0]['id']}/end-timeline").json()

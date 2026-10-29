@@ -137,6 +137,7 @@
       {
         dense_window: "Inspecting a detailed window",
         broadcast_ocr: "Reading a scoreboard",
+        scorecard_read: "Reading end plates and checking ice evidence",
         recording_reconstruction: "Assembling results",
         metadata_refresh: "Refreshing recording metadata",
       }[job.kind] || "Surveying the recording"

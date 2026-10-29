@@ -12,8 +12,7 @@ from hogline.media.errors import remote_options
 
 def probe_stream(uri):
     command = ["ffprobe", "-v", "error"]
-    if uri.startswith("https://"):
-        command += ["-rw_timeout", "15000000"]
+    command += remote_options(uri)
     command += [
         "-select_streams",
         "v:0",

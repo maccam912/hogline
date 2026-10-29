@@ -381,10 +381,24 @@ def validate_references(payload):
         if payload["end_timelines"] != expected:
             raise ValueError("Release end timelines disagree with their pinned observations")
     if "scorecard_timelines" in payload:
+        from hogline.analytics.scorecards import check_observation, select_inputs
         from hogline.reconstruction.scorecards import reconstruct_scorecards
 
+        inspected = payload.get("scorecard_observations", [])
+        parents = {o["id"]: o for o in payload.get("scorecard_parent_observations", [])}
+        for observation in inspected:
+            check_observation(observation, evidence.get(observation["evidence_id"]), parents)
+            for key in ("reference", "fixed_header_reference"):
+                reference = observation.get(key)
+                if (
+                    reference
+                    and evidence.get(reference["evidence_id"], {}).get("image") != reference["image"]
+                ):
+                    raise ValueError("Scorecard header reference differs from original evidence")
         expected = [
-            reconstruct_scorecards(source["id"], payload["broadcast"]["observations"])
+            reconstruct_scorecards(
+                source["id"], select_inputs(source["id"], payload["broadcast"]["observations"], inspected)
+            )
             for source in payload["sources"]
         ]
         if payload["scorecard_timelines"] != expected:

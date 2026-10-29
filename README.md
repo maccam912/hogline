@@ -36,6 +36,8 @@ For the main workflow, **Add recording**, select it, and choose **Analyze record
 
 **Find moments** searches across recordings by sheet, title date, evidence kind, and review state. Results retain original YouTube links and distinguish observation intervals from event times; see [moment search](docs/MOMENTS.md).
 
+**Whole-recording scorecards** reconcile repeated card sightings across resets and read center-row blank/current-end plates from cached native evidence. Use `hogline read-scorecards SOURCE_ID`; Results exposes the resulting end-by-end proposals. See [scorecards and current limits](docs/SCORECARDS.md). Physical game completion and final on-ice scoring remain active work.
+
 **End timeline and score histories** combine repeated board rows with house-focused arrival/clearing candidates, preserve delayed posting separately from play, and compare experimental granite-edge scores with board proposals. Open **Reconstruct ends** on a recording; see [end reconstruction and current evidence](docs/END_TIMELINE.md). Complete-game accuracy, first/last delivery timing and automatic score acceptance remain unvalidated.
 
 **Sampled house states** derive stable handle configurations and uncertain change brackets from cached detailed windows, with original timestamp links and explicit visibility/gap abstentions. Zero detections remain distinct from an empty house; see [house states](docs/HOUSE_STATES.md).

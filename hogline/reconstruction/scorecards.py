@@ -13,7 +13,7 @@ from hogline.adapters.sources import digest
 from hogline.domain.provenance import observation_manifest
 from hogline.reconstruction.ends import paired_epochs
 
-VERSION = "temporal-scorecards-v1"
+VERSION = "temporal-scorecards-v2"
 COLORS = ("red", "yellow")
 
 
@@ -144,8 +144,89 @@ def score_rows(claims):
     return ends
 
 
+def current_end_evidence(observations):
+    votes = defaultdict(dict)
+    for observation in observations:
+        number = (observation.get("scoreboard", {}).get("current_end") or {}).get("number")
+        if valid_integer(number, 1, 16):
+            votes[number][observation["evidence_id"]] = observation
+    output = []
+    for number, evidence in sorted(votes.items()):
+        samples = sorted(evidence.values(), key=lambda o: o["source_seconds"])
+        if len(samples) >= 3 and samples[-1]["source_seconds"] - samples[0]["source_seconds"] >= 2:
+            output.append(
+                {
+                    "number": number,
+                    "first": anchor(samples[0]),
+                    "last": anchor(samples[-1]),
+                    "evidence_ids": [o["evidence_id"] for o in samples],
+                }
+            )
+    return output
+
+
+def assign_reversed_blanks(samples, claims, counters):
+    missing = set(range(1, max(claims, default=0) + 1)) - set(claims)
+    if not missing or not counters or max(c["number"] for c in counters) <= max(missing):
+        return
+    groups = defaultdict(dict)
+    for sample in samples:
+        columns = tuple(
+            sorted(
+                {
+                    p["column_hint"]
+                    for p in sample.get("scoreboard", {}).get("unassigned_blank_plates", [])
+                    if p.get("status") == "reversed_blank_plate_candidate"
+                }
+            )
+        )
+        if len(columns) == len(missing):
+            groups[columns][sample["evidence_id"]] = sample
+    supported = []
+    for columns, evidence in groups.items():
+        rows = sorted(evidence.values(), key=lambda o: o["source_seconds"])
+        if len(rows) >= 3 and rows[-1]["source_seconds"] - rows[0]["source_seconds"] >= 2:
+            supported.append((columns, rows))
+    if len(supported) != 1:
+        return
+    columns, rows = supported[0]
+    for number in sorted(missing):
+        claims[number] = {
+            "official_number": number,
+            "color": "blank",
+            "cumulative_points": 0,
+            "identity_basis": "only_missing_ends_and_repeated_simultaneous_reversed_plates",
+            "unassigned_column_hints": list(columns),
+            "first": anchor(rows[0]),
+            "last": anchor(rows[-1]),
+            "evidence_ids": [o["evidence_id"] for o in rows],
+            "observation_ids": [o["id"] for o in rows],
+            "supporting_frames": len(rows),
+            "competing_readings": [],
+        }
+
+
 def partition_scorecards(observations, partition):
-    clears = [e for e in paired_epochs(observations) if not e["issues"] and not any(e["cards"].values())]
+    by_evidence = {o["evidence_id"]: o for o in observations}
+
+    def clear_header(epoch):
+        for identifier in epoch["evidence_ids"]:
+            board = by_evidence[identifier]["scoreboard"]
+            if board.get("blank_end_cards") or any(
+                p.get("status") == "reversed_blank_plate_candidate"
+                for p in board.get("unassigned_blank_plates", [])
+            ):
+                return False
+            number = (board.get("current_end") or {}).get("number")
+            if valid_integer(number, 2, 16):
+                return False
+        return True
+
+    clears = [
+        e
+        for e in paired_epochs(observations)
+        if not e["issues"] and not any(e["cards"].values()) and clear_header(e)
+    ]
     # Every clear epoch is a possible separator. Idle subgroups produce no game.
     boundaries = sorted({e["first_seconds"] for e in clears})
     buckets = defaultdict(list)
@@ -156,6 +237,9 @@ def partition_scorecards(observations, partition):
         claims, conflicts = stable_claims(samples)
         if not claims and not conflicts:
             continue
+        counters = current_end_evidence(samples)
+        if not conflicts:
+            assign_reversed_blanks(samples, claims, counters)
         ends = score_rows(claims)
         left = next((e for e in clears if index and e["first_seconds"] == boundaries[index - 1]), None)
         right = next(
@@ -178,6 +262,11 @@ def partition_scorecards(observations, partition):
             "score_history_complete_through": len(ends) if complete else None,
             "known_end_scores": sum(end["status"] == "proposed" for end in ends),
             "highest_posted_end": max(claims, default=None),
+            "current_end_evidence": counters,
+            "highest_current_end": max((c["number"] for c in counters), default=None),
+            "pending_end_numbers": sorted(
+                set(range(1, max((c["number"] for c in counters), default=1))) - set(claims)
+            ),
             "ends_played": None,
             "game_completion": "unknown",
             "final_result": None,

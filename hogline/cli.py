@@ -163,6 +163,10 @@ def main():
     end_timeline.add_argument("--start", type=float)
     end_timeline.add_argument("--end", type=float)
     end_timeline.add_argument("--output")
+    scorecard_read = commands.add_parser(
+        "read-scorecards", help="Inspect cached board blanks/current end and ice views"
+    )
+    scorecard_read.add_argument("source_id")
     game_timeline = commands.add_parser("game-end-timeline", help="Reconstruct ends inside saved game spans")
     game_timeline.add_argument("game_id")
     house_scores = commands.add_parser(
@@ -441,11 +445,18 @@ def main():
                     ),
                 )
             case "work":
+                from hogline.media.errors import configure_media_transport
+
+                configure_media_transport()
                 while (result := run_one(db)) is not None:
                     print(json.dumps(result))
                     if args.once:
                         break
                 return
+            case "read-scorecards":
+                from hogline.orchestration.scorecards import create_scorecard_batch
+
+                result = create_scorecard_batch(db, args.source_id)
             case "retry":
                 result = retry(db, args.job_id)
             case "serve":

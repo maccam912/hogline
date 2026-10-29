@@ -2,6 +2,7 @@
 
 PHASES = ["survey", "boards", "detail", "detail_boards", "reconstruct"]
 LABELS = {
+    "scorecards": "Reading scores, blank ends and current-end plates",
     "survey": "Surveying the recording",
     "boards": "Reading scoreboards",
     "detail": "Inspecting game and end evidence",

@@ -9,6 +9,11 @@ from hogline.analytics.end_timeline import house_scores_in_session
 from hogline.analytics.house_states import house_states_in_session
 from hogline.analytics.lineage import source_lineage, validate_references
 from hogline.analytics.play import play_in_windows
+from hogline.analytics.scorecards import (
+    parent_observations_in_session,
+    scorecard_observations_in_session,
+    select_inputs,
+)
 from hogline.analytics.tracks import tracks_in_session
 from hogline.db import Release, now
 from hogline.domain.catalog import catalog_in_session
@@ -92,7 +97,13 @@ def snapshot_in_session(session, mode, root):
     # Validate existing interpretation/observation lineage before opening optional dense inputs.
     validate_references(payload)
     payload["house_score_observations"] = house_scores_in_session(session)
-    play = play_in_windows(root, data["analysis_windows"])
+    play = {"results": [], "exclusions": []}
+    for source in data["sources"]:
+        scoped = play_in_windows(
+            root, [w for w in data["analysis_windows"] if w["source_id"] == source["id"]]
+        )
+        play["results"].extend(scoped["results"])
+        play["exclusions"].extend(scoped["exclusions"])
     payload["window_play_evidence"] = play["results"]
     payload["play_input_exclusions"] = play["exclusions"]
     payload["end_timelines"] = [
@@ -104,8 +115,16 @@ def snapshot_in_session(session, mode, root):
         )
         for source in data["sources"]
     ]
+    payload["scorecard_observations"] = scorecard_observations_in_session(session)
+    payload["scorecard_parent_observations"] = parent_observations_in_session(
+        session, payload["scorecard_observations"]
+    )
     payload["scorecard_timelines"] = [
-        reconstruct_scorecards(source["id"], broadcast["observations"]) for source in data["sources"]
+        reconstruct_scorecards(
+            source["id"],
+            select_inputs(source["id"], broadcast["observations"], payload["scorecard_observations"]),
+        )
+        for source in data["sources"]
     ]
     validate_references(payload)
     # Use the same rows that were serialized, even if a review is saved during export.

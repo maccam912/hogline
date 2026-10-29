@@ -5,6 +5,7 @@ import pytest
 from sqlalchemy import select
 
 from hogline.db import AnalysisWindow, Database, Evidence, Job, JobExecution, ProcessingBatch, Scan
+from hogline.media import errors as transport
 from hogline.media import frames
 from hogline.media import windows as media_windows
 from hogline.media.errors import TransientMediaError, remote_options
@@ -243,3 +244,23 @@ def test_automatic_retries_do_not_bypass_shared_processing_budget(db, sources, m
         assert owner.state == "paused" and owner.document["spent_worker_seconds"] == 6
         assert "worker-time budget" in owner.document["pause_reason"]
         assert session.get(Job, result["id"]).attempts == 1
+
+
+@pytest.mark.parametrize("modern", [True, False])
+def test_bounded_http_requests_require_compatible_ffmpeg_and_ffprobe(monkeypatch, modern):
+    monkeypatch.setattr(transport, "_bounded_requests", False)
+
+    def help_output(command, **_kwargs):
+        text = (
+            "-request_size -initial_request_size -multiple_requests"
+            if modern or command[0] == "ffmpeg"
+            else "legacy"
+        )
+        return subprocess.CompletedProcess(command, 0, stdout=text, stderr="")
+
+    monkeypatch.setattr(transport.subprocess, "run", help_output)
+    status = transport.configure_media_transport()
+    assert status["bounded_http_ranges"] is modern
+    options = transport.remote_options("https://fixture.invalid/video")
+    assert ("-request_size" in options) is modern
+    assert transport.remote_options("original.mp4") == []

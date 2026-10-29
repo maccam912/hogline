@@ -11,6 +11,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from hogline.db import Database
+from hogline.media.errors import configure_media_transport
 from hogline.media.frames import cache_size, share_cache_usage
 from hogline.orchestration.worker import run_one
 
@@ -30,6 +31,7 @@ def worker_loop(settings, stop, cache_usage):
     import cv2
 
     cv2.setNumThreads(1)
+    configure_media_transport()
 
     def terminate(_signal, _frame):
         raise SystemExit(0)
@@ -52,6 +54,7 @@ def worker_loop(settings, stop, cache_usage):
 class WorkerPool:
     def __init__(self, settings):
         self.settings = settings
+        self.transport = configure_media_transport()
         self.context = multiprocessing.get_context("spawn")
         self.stop = self.context.Event()
         self.cache_usage = self.context.Value("q", cache_size(settings.data_dir))
@@ -83,6 +86,7 @@ class WorkerPool:
             "running": alive > 0,
             "configured_workers": self.settings.workers,
             "alive_workers": alive,
+            "media_transport": self.transport,
             "error": f"{len(failed)} processing workers stopped unexpectedly" if failed else None,
         }
 

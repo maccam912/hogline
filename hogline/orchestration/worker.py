@@ -270,6 +270,10 @@ def vectors_from_doc(db, doc):
 
 
 def execute(db, job):
+    if job.get("kind") == "scorecard_read":
+        from hogline.orchestration.scorecards import execute_scorecard_read
+
+        return execute_scorecard_read(db, job)
     if job.get("kind") == "recording_reconstruction":
         from hogline.orchestration.recording import execute_reconstruction
 
