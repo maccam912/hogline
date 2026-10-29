@@ -14,6 +14,7 @@ from sqlalchemy import select
 from hogline.adapters.sources import import_local
 from hogline.db import Database, Job, JobExecution
 from hogline.media import chunks
+from hogline.media.errors import remote_options
 from hogline.media.frames import EvidenceBudget, EvidenceLimitError, capture, share_cache_usage
 from hogline.orchestration.plans import PlanRequest, WorkStopped, create_batch
 from hogline.orchestration.pool import WorkerPool, clean_abandoned_sections
@@ -130,7 +131,10 @@ def test_video_chunk_matches_original_pts_and_pixels_and_cleans_up(db, video, mo
     )
 
     def local_download(command, **kwargs):
-        command = [str(shifted) if argument == remote else argument for argument in command]
+        if remote in command:
+            for option in remote_options(remote):
+                command.remove(option)
+            command = [str(shifted) if argument == remote else argument for argument in command]
         return original_popen(command, **kwargs)
 
     monkeypatch.setattr(chunks.subprocess, "Popen", local_download)

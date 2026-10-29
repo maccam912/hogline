@@ -14,6 +14,7 @@ from hogline.db import Evidence, Job, JobExecution, ProcessingBatch, Scan, now
 from hogline.domain.catalog import propose_games, source_or_error
 from hogline.domain.models import ScanRequest, uid
 from hogline.media.chunks import VideoChunk
+from hogline.media.errors import TransientMediaError
 from hogline.media.frames import (
     EvidenceBudget,
     EvidenceLimitError,
@@ -113,6 +114,8 @@ def claim_transaction(db):
         eligible = (Job.state == "queued") & (Job.attempts < 3)
         job, batch = None, None
         for candidate in session.scalars(select(Job).where(eligible).order_by(Job.id)):
+            if (candidate.document.get("retry_after") or "") > now():
+                continue
             owner = (
                 session.get(ProcessingBatch, candidate.document["batch_id"])
                 if candidate.document.get("batch_id")
@@ -148,7 +151,13 @@ def claim_transaction(db):
                 state="running",
                 attempts=Job.attempts + 1,
                 lease_until=until,
-                document={**job.document, "lease_token": token, "error": None},
+                document={
+                    **job.document,
+                    "lease_token": token,
+                    "error": None,
+                    "retry_pending": False,
+                    "retry_after": None,
+                },
             )
         )
         if result.rowcount != 1:
@@ -484,22 +493,56 @@ def run_one(db):
                 stopped = isinstance(exc, WorkStopped) or (
                     batch and isinstance(exc, EvidenceLimitError) and exc.scope == "shared"
                 )
+                retrying = (
+                    not stopped
+                    and isinstance(exc, TransientMediaError)
+                    and row.attempts < 3
+                    and (batch is None or batch.state == "active")
+                )
                 if stopped:
                     if batch and batch.state == "active":
                         batch.state = "paused"
                         batch.document = {**batch.document, "pause_reason": str(exc)}
                     row.state = "cancelled" if batch and batch.state == "cancelled" else "queued"
                     row.attempts = max(0, row.attempts - 1)  # Operator pauses do not consume failure retries.
+                elif retrying:
+                    row.state = "queued"
                 else:
                     row.state = "failed"
                 row.lease_until = None
-                row.document = {**row.document, "error": str(exc), "finished_at": now()}
+                failure = {
+                    "at": now(),
+                    "attempt": row.attempts,
+                    "error": str(exc),
+                    "automatic_retry": retrying,
+                }
+                row.document = {
+                    **row.document,
+                    "error": str(exc),
+                    "finished_at": now(),
+                    "retry_pending": retrying,
+                    "retry_after": (
+                        (datetime.now(UTC) + timedelta(seconds=5 if row.attempts == 1 else 20)).isoformat()
+                        if retrying
+                        else None
+                    ),
+                    "failure_history": [*row.document.get("failure_history", []), failure],
+                }
                 finish_execution(
                     session,
                     job["lease_token"],
                     "stopped" if stopped else "failed",
                     time.monotonic() - started,
+                    will_retry=retrying,
                 )
+                if retrying and batch:
+                    limits = batch.document.get("limits", batch.document["request"])
+                    if batch.document["spent_worker_seconds"] >= limits["max_worker_seconds"]:
+                        batch.state = "paused"
+                        batch.document = {
+                            **batch.document,
+                            "pause_reason": "Batch worker-time budget reached",
+                        }
                 outcome = row.state
             else:
                 outcome = "lease_lost"

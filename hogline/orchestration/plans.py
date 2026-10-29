@@ -386,7 +386,7 @@ def check_execution(db, token, elapsed, reserve_bytes=0):
         raise WorkStopped(stopped)
 
 
-def finish_execution(session, token, state, elapsed=None):
+def finish_execution(session, token, state, elapsed=None, *, will_retry=False):
     execution = session.get(JobExecution, token)
     if execution is None or execution.state != "running":
         return
@@ -397,7 +397,7 @@ def finish_execution(session, token, state, elapsed=None):
     execution.document = {**execution.document, "finished_at": now()}
     if batch:
         batch.document = {**batch.document, "active_execution": None}
-        if state == "failed" and batch.state == "active":
+        if state == "failed" and batch.state == "active" and not will_retry:
             batch.state = "paused"
             batch.document = {**batch.document, "pause_reason": "A work unit failed; inspect and retry it"}
         if (

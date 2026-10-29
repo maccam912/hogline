@@ -12,6 +12,8 @@ from collections import deque
 
 from PIL import Image
 
+from hogline.media.errors import TransientMediaError, remote_options
+
 VERSION = "original-pts-source-grid-v2"
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 MAX_FRAME_BYTES = 32 * 1024**2
@@ -73,8 +75,7 @@ def decode_window(
         f"floor(({previous_time}+{epsilon:.9f})/{interval:.12f})))"
     )
     command = ["ffmpeg", "-hide_banner", "-nostdin", "-loglevel", "info"]
-    if media.startswith("https://"):
-        command += ["-rw_timeout", "15000000"]
+    command += remote_options(media)
     command += [
         "-copyts",
         "-ss",
@@ -112,7 +113,8 @@ def decode_window(
             selector.register(process.stderr, selectors.EVENT_READ, "log")
             while selector.get_map():
                 if time.monotonic() - started > timeout:
-                    raise ValueError("Bounded video decoding timed out; no complete window was published")
+                    error = TransientMediaError if media.startswith("https://") else ValueError
+                    raise error("Bounded video decoding timed out; no complete window was published")
                 if tick:
                     tick()
                 for key, _ in selector.select(timeout=0.25):
@@ -160,7 +162,8 @@ def decode_window(
                         yield image, timings.popleft()
             code = process.wait(timeout=1)
             if code or pixels or images or timings or not count:
-                raise ValueError("Window decoding was incomplete; no complete window was published")
+                error = TransientMediaError if media.startswith("https://") else ValueError
+                raise error("Window decoding was incomplete; no complete window was published")
     finally:
         if process.poll() is None:
             process.kill()

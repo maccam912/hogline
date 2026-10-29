@@ -10,6 +10,7 @@ from PIL import Image
 
 from hogline.adapters.sources import digest, video_link
 from hogline.config import profile
+from hogline.media.errors import TransientMediaError, remote_options
 
 _shared_cache_usage = {}
 
@@ -60,8 +61,10 @@ def resolve_media(source, max_height=1080):
             timeout=60,
             check=True,
         )
-    except (subprocess.SubprocessError, FileNotFoundError) as exc:
-        raise ValueError(
+    except FileNotFoundError as exc:
+        raise ValueError("Install yt-dlp to access remote recordings") from exc
+    except subprocess.SubprocessError as exc:
+        raise TransientMediaError(
             "Cannot access the recording. Metadata and timestamp links remain available."
         ) from exc
     try:
@@ -75,8 +78,7 @@ def resolve_media(source, max_height=1080):
 
 def capture(media: str, seconds: float):
     command = ["ffmpeg", "-hide_banner", "-nostdin", "-loglevel", "info"]
-    if media.startswith("https://"):
-        command += ["-rw_timeout", "15000000"]
+    command += remote_options(media)
     command += [
         "-copyts",
         "-ss",
@@ -100,11 +102,16 @@ def capture(media: str, seconds: float):
     ]
     try:
         output = subprocess.run(command, capture_output=True, timeout=45, check=True)
-    except (subprocess.SubprocessError, FileNotFoundError) as exc:
-        raise ValueError(f"Frame at {seconds:g}s unavailable; no observation was inferred") from exc
+    except FileNotFoundError as exc:
+        raise ValueError("Install FFmpeg to decode video frames") from exc
+    except subprocess.SubprocessError as exc:
+        error = TransientMediaError if media.startswith("https://") else ValueError
+        raise error(f"Frame at {seconds:g}s unavailable; no observation was inferred") from exc
     log = output.stderr.decode(errors="replace")
     timebase = re.search(r"config in time_base:\s*(\d+)/(\d+)", log)
     frame = re.search(r"n:\s*0\s+pts:\s*(-?\d+)\s+pts_time:([\d.e+-]+)", log)
+    if not output.stdout and media.startswith("https://"):
+        raise TransientMediaError(f"Frame at {seconds:g}s unavailable; no observation was inferred")
     if not output.stdout or not timebase or not frame:
         raise ValueError("Decoder returned no frame with an original presentation timestamp")
     return Image.open(io.BytesIO(output.stdout)).convert("RGB"), {

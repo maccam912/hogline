@@ -154,6 +154,9 @@
     const running = batch.units
       .map((u) => state.data.jobs.find((j) => j.id === u.job_id))
       .filter((j) => j?.state === "running");
+    const retrying = batch.state === "active" ? batch.units
+      .map((u) => state.data.jobs.find((j) => j.id === u.job_id))
+      .filter((j) => j?.state === "queued" && j.retry_pending) : [];
     const fraction = p.overall_fraction ?? p.stage_fraction ?? 0;
     const status =
       batch.state === "active"
@@ -161,7 +164,7 @@
           ? "Local worker offline"
           : running.length
             ? "Running"
-            : "Queued"
+            : retrying.length ? "Retrying automatically" : "Queued"
         : labels[batch.state];
     const failed = batch.units
       .map((u) => state.data.jobs.find((j) => j.id === u.job_id))

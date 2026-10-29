@@ -7,6 +7,8 @@ import time
 from fractions import Fraction
 from pathlib import Path
 
+from hogline.media.errors import remote_options
+
 
 def probe_stream(uri):
     command = ["ffprobe", "-v", "error"]
@@ -57,8 +59,7 @@ class VideoChunk:
                 "-nostdin",
                 "-loglevel",
                 "error",
-                "-rw_timeout",
-                "15000000",
+                *remote_options(uri),
                 "-copyts",
                 "-ss",
                 str(start),
@@ -114,7 +115,12 @@ class VideoChunk:
         if self.path is None:
             return decoder(uri, seconds)
         seek = float(Fraction(str(seconds)) + self.source_tb * self.source_pts - self.origin)
-        image, timing = decoder(str(self.path), seek)
+        try:
+            image, timing = decoder(str(self.path), seek)
+        except ValueError:
+            # An incomplete temporary section must not break a frame that the
+            # original stream can still supply. That stream retains its own PTS checks.
+            return decoder(uri, seconds)
         pts = Fraction(timing["pts"] * timing["time_base_num"], timing["time_base_den"]) / self.source_tb
         if pts.denominator != 1:
             raise ValueError("Temporary remux cannot reproduce an original source presentation timestamp")
