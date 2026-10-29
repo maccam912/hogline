@@ -10,7 +10,7 @@ from hogline.perception.house import house_ring
 from hogline.perception.house_score import normalized_point, score_footprints
 from hogline.perception.stones import RawHSVHandleDetector
 
-VERSION = "registered-background-ice-score-v1"
+VERSION = "registered-background-ice-score-v2"
 
 
 class IceInspector:
@@ -104,9 +104,45 @@ class IceInspector:
         changed = cv2.morphologyEx(changed, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8))
         changed = binary_fill_holes(changed > 0).astype(np.uint8) * 255
         count, labels, stats, _ = cv2.connectedComponentsWithStats(changed)
+        raw_handles = self.detector.detect(rgb)
+        reference_handles = self.detector.detect(reference)
+        active_handles, static_handles = [], 0
+        for index, handle in enumerate(raw_handles):
+            point = np.asarray(handle["center_px"]) - [dx, dy]
+            location = normalized_point(point, ring)
+            if float(location @ location) > 1.12**2:
+                continue
+            x, y = np.rint(point).astype(int)
+            if not 0 <= x < width or not 0 <= y < height:
+                continue
+            patch_radius = max(5, round(max(handle["bbox_px"][2:]) * 0.8))
+            bounds = (
+                slice(max(0, y - patch_radius), min(height, y + patch_radius + 1)),
+                slice(max(0, x - patch_radius), min(width, x + patch_radius + 1)),
+            )
+            matching_print = any(
+                candidate["color"] == handle["color"]
+                and math.dist(candidate["center_px"], point) < 3
+                and 0.7 <= handle["area_px2"] / max(1, candidate["area_px2"]) <= 1.4
+                for candidate in reference_handles
+            )
+            patch_difference = np.mean(np.abs(normalized[bounds] - reference[bounds].astype(float)))
+            if matching_print and patch_difference < 8:
+                static_handles += 1
+                continue
+            active_handles.append(
+                {
+                    **handle,
+                    "raw_handle_index": index,
+                    "reference_center_px": point.tolist(),
+                    "normalized_point": location.tolist(),
+                }
+            )
         minimum_body = math.pi * (width * 0.018) ** 2
         largest = max((int(s[4]) for s in stats[1:]), default=0)
-        empty = largest < minimum_body * 0.35 and float(np.mean(changed[roi] > 0)) < 0.004
+        empty = (
+            largest < minimum_body * 0.35 and float(np.mean(changed[roi] > 0)) < 0.004 and not active_handles
+        )
         result = {
             "version": VERSION,
             "status": "observed",
@@ -123,6 +159,9 @@ class IceInspector:
             "empty_house": empty,
             "footprints": [],
             "excluded_static_handles": 0,
+            "handle_candidates": active_handles,
+            "excluded_reference_print_candidates": static_handles,
+            "handle_count_meaning": "colored_object_candidates; neither complete stone counts nor points",
         }
         if empty:
             result["scoring"] = {
@@ -132,7 +171,7 @@ class IceInspector:
                 "method": "registered_reviewed_empty_house_match",
             }
             return result
-        handles = self.detector.detect(rgb)
+        handles = raw_handles
         fitted, blockers, represented = [], [], set()
         for index, handle in enumerate(handles):
             point = np.asarray(handle["center_px"]) - [dx, dy]

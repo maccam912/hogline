@@ -186,3 +186,95 @@ def test_parallel_ice_claims_are_bounded_and_keep_other_owners_on_finish(db, sou
         assert active_tokens(owner.document) == []
         assert owner.document["spent_worker_seconds"] == 26
         assert len(owner.document["unit_outcomes"]) == 4
+
+
+def test_candidate_position_runs_are_inspection_cues_and_mixed_cadence_does_not_inflate_empty_support(
+    sources,
+):
+    from hogline.analytics.ice import ice_timeline
+
+    def sample(t, n, empty=False):
+        return {
+            "source_seconds": t,
+            "segment_id": "segment",
+            "sample_index": n,
+            "pts": round(t * 30),
+            "time_base_num": 1,
+            "time_base_den": 30,
+            "decoded_rgb_sha256": str(n),
+            "evidence_id": None,
+            "requested_interval_seconds": 1,
+            "views": {
+                v: {
+                    "status": "observed",
+                    "empty_house": empty,
+                    "handle_candidates": []
+                    if empty
+                    else [{"color": "red", "normalized_point": [0.2, 0.3], "boundary_clipped": False}],
+                }
+                for v in ["house_top", "house_bottom"]
+            },
+        }
+
+    short = ice_timeline(sources[0], [], [sample(t, n, True) for n, t in enumerate([0, 0.066, 1])])
+    assert short["views"]["house_top"]["empty_runs"] == []
+    stable_samples = [sample(t, n) for n, t in enumerate([0, 5, 10, 15])]
+    for item in stable_samples:
+        item["requested_interval_seconds"] = 5
+    stable = ice_timeline(sources[0], [], stable_samples)
+    assert len(stable["stable_colored_candidate_runs"]) == 2
+    assert all(r["score"] is None for r in stable["stable_colored_candidate_runs"])
+    assert "final_result" not in stable
+
+
+def test_direction_density_selects_review_brackets_without_numbering_or_scoring_ends(sources):
+    from hogline.analytics.ice import ice_timeline
+
+    frames = []
+    for n in range(36):
+        t = n * 5
+        active = ["house_top"] if n < 12 else ["house_bottom"] if n < 24 else ["house_top", "house_bottom"]
+        handles = [
+            {
+                "color": "red",
+                "normalized_point": [0.2, 0.3],
+                "boundary_clipped": False,
+                "shape_score": 0.9,
+                "area_px2": 300,
+            },
+            {
+                "color": "yellow",
+                "normalized_point": [-0.2, 0.2],
+                "boundary_clipped": False,
+                "shape_score": 0.9,
+                "area_px2": 300,
+            },
+        ]
+        frames.append(
+            {
+                "source_seconds": t,
+                "segment_id": "segment",
+                "sample_index": n,
+                "pts": n * 150,
+                "time_base_num": 1,
+                "time_base_den": 30,
+                "decoded_rgb_sha256": str(n),
+                "evidence_id": None,
+                "requested_interval_seconds": 5,
+                "views": {
+                    v: {
+                        "status": "observed",
+                        "empty_house": v not in active,
+                        "ring": {"axes_px": [430, 430]},
+                        "handle_candidates": handles if v in active else [],
+                    }
+                    for v in ["house_top", "house_bottom"]
+                },
+            }
+        )
+    report = ice_timeline(sources[0], [], frames)["direction_activity"]
+    assert len(report["inspection_transitions"]) == 1
+    cue = report["inspection_transitions"][0]
+    assert (cue["from_view"], cue["to_view"]) == ("house_top", "house_bottom")
+    assert cue["official_end_number"] is cue["score"] is None
+    assert report["minute_buckets"][-1]["dominant_view"] is None

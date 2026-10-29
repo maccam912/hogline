@@ -1,4 +1,4 @@
-"""Propose cumulative columns only when the full fixed-number header matches."""
+"""Register fixed board columns against checked full or source-local tail references."""
 
 import cv2
 import numpy as np
@@ -11,13 +11,18 @@ CANONICAL_WIDTH = 330
 CANONICAL_HEIGHT = 36
 
 
-def register_header(image, candidate, reference, reference_template, panel_bounds):
+def register_header(image, candidate, reference, reference_template, panel_bounds, *, fixed_tail_start=None):
+    if fixed_tail_start is not None and fixed_tail_start not in (8, 9, 10, 11):
+        raise ValueError(
+            "Fixed-tail registration needs a checked source-local reference and at least four columns"
+        )
+    method = VERSION if fixed_tail_start is None else "source-fixed-tail-header-registration-v1"
     reference_location = locate_board(reference, panel_bounds)
     if reference_location["status"] != "proposed":
         return {
             "status": "unavailable",
             "missing_reason": "reference_board_geometry_unavailable",
-            "method": VERSION,
+            "method": method,
         }
     ref_candidate = reference_location["selected"]
 
@@ -43,17 +48,17 @@ def register_header(image, candidate, reference, reference_template, panel_bound
         return {
             "status": "unavailable",
             "missing_reason": "reference_point_columns_invalid",
-            "method": VERSION,
+            "method": method,
         }
     # Keep the whole first and final printed glyphs while excluding left storage.
-    x0 = round((centers[0] - 0.01) * CANONICAL_WIDTH)
+    x0 = round((centers[fixed_tail_start or 0] - 0.01) * CANONICAL_WIDTH)
     x1 = min(CANONICAL_WIDTH, round((centers[-1] + 0.035) * CANONICAL_WIDTH))
     template = ref_patch[3:-3, x0:x1]
     if template.size == 0 or template.std() < 8 or target.std() < 8:
         return {
             "status": "unavailable",
             "missing_reason": "fixed_header_texture_not_visible",
-            "method": VERSION,
+            "method": method,
         }
     trials = []
     for scale in np.linspace(0.94, 1.06, 25):
@@ -78,9 +83,18 @@ def register_header(image, candidate, reference, reference_template, panel_bound
     scale = resized.shape[1] / template.shape[1]
     points = [(x + (c * CANONICAL_WIDTH - x0) * scale) / CANONICAL_WIDTH for c in centers]
     compatible = score >= 0.82 and min(regional) >= 0.72 and all(0 < c < 1 for c in points)
+    if fixed_tail_start is not None:
+        # Extrapolation is allowed only inside this source's checked board geometry.
+        # A different neighboring board or an unverified layout shift must abstain.
+        before, after = ref_candidate["normalized_bounds"], candidate["normalized_bounds"]
+        position_ok = all(
+            abs(before[i] - after[i]) <= 0.15 * (before[2] - before[0]) for i in (0, 2)
+        ) and all(abs(before[i] - after[i]) <= 0.25 * (before[3] - before[1]) for i in (1, 3))
+        point_deviation = max(abs(a - b) for a, b in zip(points, centers, strict=True))
+        compatible = compatible and position_ok and point_deviation <= 0.015
     return {
         "status": "proposed" if compatible else "review_required",
-        "method": VERSION,
+        "method": method,
         "header_correlation": float(score),
         "regional_correlations": regional,
         "canonical_size": [CANONICAL_WIDTH, CANONICAL_HEIGHT],
@@ -90,7 +104,14 @@ def register_header(image, candidate, reference, reference_template, panel_bound
         "missing_reason": None if compatible else "fixed_number_header_disagrees_or_is_obstructed",
         "calibrated_probability": None,
         "acceptance": "proposed",
+        "matched_fixed_columns": list(range((fixed_tail_start or 0) + 1, 16)),
+        "source_local_geometry_required": fixed_tail_start is not None,
         "limitation": (
+            "covered low-number columns are inferred from this checked source-local geometry; "
+            "the visible fixed tail verifies the transform"
+        )
+        if fixed_tail_start is not None
+        else (
             "reference-based image registration; storage markers, blank ends, "
             "and card meanings remain unverified"
         ),

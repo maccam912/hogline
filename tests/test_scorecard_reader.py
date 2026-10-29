@@ -9,7 +9,7 @@ from hogline.analytics.exports import snapshot
 from hogline.analytics.lineage import validate_references
 from hogline.analytics.scorecards import scorecard_observations_in_session
 from hogline.config import profile
-from hogline.db import FrameObservation, Job
+from hogline.db import FrameObservation, Job, ProcessingBatch
 from hogline.domain.models import ScanRequest
 from hogline.orchestration import scorecards as jobs
 from hogline.orchestration import worker
@@ -172,3 +172,41 @@ def test_reader_rejects_changed_parent_before_publishing(db, cached_boards):
     with db.session() as session:
         assert not scorecard_observations_in_session(session)
         assert any(j.state == "failed" for j in session.scalars(select(Job)))
+
+
+def test_partial_replacement_does_not_erase_completed_reader_history(db, cached_boards):
+    source, _parents = cached_boards
+    batch = jobs.create_scorecard_batch(db, source["id"])
+    assert worker.run_one(db)["state"] == "succeeded"
+    with db.session() as session:
+        current = scorecard_observations_in_session(session)
+        old_version = "wausau-middle-row-plates-v2:previous"
+        for doc in current:
+            previous = {**copy.deepcopy(doc), "id": f"previous-{doc['id']}", "model_version": old_version}
+            previous["sha256"] = digest({k: v for k, v in previous.items() if k != "sha256"})
+            session.add(
+                FrameObservation(
+                    id=previous["id"],
+                    evidence_id=previous["evidence_id"],
+                    model_version=old_version,
+                    document=previous,
+                )
+            )
+        session.add(
+            ProcessingBatch(
+                id="previous-pass",
+                state="completed",
+                document={
+                    "kind": "scorecard_read",
+                    "units": [{"payload": {"model_version": old_version}}],
+                },
+            )
+        )
+        session.get(ProcessingBatch, batch["id"]).state = "active"
+    with db.session() as session:
+        assert {o["model_version"] for o in scorecard_observations_in_session(session)} == {old_version}
+        session.get(ProcessingBatch, batch["id"]).state = "completed"
+    with db.session() as session:
+        assert {o["model_version"] for o in scorecard_observations_in_session(session)} == {
+            current[0]["model_version"]
+        }

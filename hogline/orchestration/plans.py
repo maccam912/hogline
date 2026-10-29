@@ -187,7 +187,9 @@ def publish_batch(session, plan):
             "pause_reason": None,
             "active_execution": None,
             "active_executions": [],
-            "parallelism": plan.get("parallelism", 1) if plan.get("kind") == "ice_survey" else 1,
+            "parallelism": plan.get("parallelism", 1)
+            if plan.get("kind") in ("ice_survey", "scorecard_read")
+            else 1,
             "limits": {k: plan["request"][k] for k in ("max_image_growth_mb", "max_worker_seconds")},
             "control_history": [],
         }
@@ -286,8 +288,13 @@ def control_batch(db, identifier, control):
             raise ValueError(
                 "Completed/cancelled batches are immutable; preview a new plan for remaining work"
             )
-        if control.parallelism is not None and batch.document.get("kind") != "ice_survey":
-            raise ValueError("Parallel units are supported only for independent ice segments")
+        if control.parallelism is not None and batch.document.get("kind") not in (
+            "ice_survey",
+            "scorecard_read",
+        ):
+            raise ValueError(
+                "Parallel units are supported only for independent ice or retained scorecard tasks"
+            )
         limits = dict(batch.document.get("limits", batch.document["request"]))
         for key in ("max_image_growth_mb", "max_worker_seconds"):
             if getattr(control, key) is not None:

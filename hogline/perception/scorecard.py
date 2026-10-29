@@ -7,7 +7,7 @@ import numpy as np
 
 from hogline.perception.ocr import normalized_crop
 
-VERSION = "wausau-middle-row-plates-v2"
+VERSION = "wausau-middle-row-plates-v3"
 
 
 def fixed_header_cells(image, template):

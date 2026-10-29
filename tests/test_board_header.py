@@ -184,3 +184,37 @@ def test_registered_board_reads_card_at_its_measured_point_column(db, sources):
         assert [(c["color"], c["end_number"], c["cumulative_points"]) for c in cards] == [("red", 3, 4)]
         assert result["youtube_url"].endswith("&t=300s") and result["acceptance"] == "proposed"
         assert result["scoreboard"]["blank_end_convention"] is None
+
+
+def test_checked_source_tail_can_register_when_blank_plates_cover_early_columns():
+    reference, template = reference_board()
+    target = reference.copy()
+    target.paste(Image.new("RGB", (128, 30), "white"), (150, 138))
+    candidate = locate_board(target, PANEL)["selected"]
+    assert register_header(target, candidate, reference, template, PANEL)["status"] != "proposed"
+    result = register_header(target, candidate, reference, template, PANEL, fixed_tail_start=8)
+    assert result["status"] == "proposed"
+    assert result["matched_fixed_columns"] == list(range(9, 16))
+    assert result["source_local_geometry_required"]
+    left, _, right, _ = candidate["normalized_bounds"]
+    projected = [(left + c * (right - left)) * 1920 for c in result["point_centers"]]
+    expected = [110 + c * 324 for c in template["point_centers"]]
+    assert projected == pytest.approx(expected, abs=1.5)
+
+
+def test_tail_registration_refuses_another_board_or_obscured_tail():
+    reference, template = reference_board()
+    moved = Image.new("RGB", reference.size, (210, 210, 210))
+    moved.paste(reference.crop((110, 100, 434, 205)), (300, 100))
+    candidate = locate_board(moved, PANEL)["selected"]
+    assert (
+        register_header(moved, candidate, reference, template, PANEL, fixed_tail_start=8)["status"]
+        != "proposed"
+    )
+    target = reference.copy()
+    target.paste(Image.new("RGB", (140, 30), (100, 100, 100)), (285, 138))
+    candidate = locate_board(target, PANEL)["selected"]
+    assert (
+        register_header(target, candidate, reference, template, PANEL, fixed_tail_start=8)["status"]
+        != "proposed"
+    )

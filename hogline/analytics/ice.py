@@ -3,8 +3,11 @@
 import hashlib
 import json
 import math
+from collections import defaultdict
 
+import numpy as np
 import pyarrow.parquet as pq
+from scipy.optimize import linear_sum_assignment
 from sqlalchemy import select
 
 from hogline.adapters.sources import digest, video_link
@@ -125,6 +128,12 @@ def ice_timeline(source, segments, samples):
         if b["source_seconds"] - a["source_seconds"] > allowance:
             gaps.append({"after": anchor(a), "before": anchor(b)})
     views = {}
+
+    def supported(run):
+        return len(run) >= 3 and run[-1]["source_seconds"] - run[0]["source_seconds"] >= 2 * min(
+            s["requested_interval_seconds"] for s in run
+        )
+
     for view in ("house_top", "house_bottom"):
         empty_runs, clearing, run, last_body, occupied_run = [], [], [], None, []
         for sample in samples:
@@ -132,13 +141,14 @@ def ice_timeline(source, segments, samples):
             if run and sample["source_seconds"] - run[-1]["source_seconds"] > max(
                 12, sample["requested_interval_seconds"] * 2 + 2
             ):
-                if len(run) >= 3:
+                if supported(run):
                     empty_runs.append(run)
                 run = []
             if value.get("empty_house") is True:
                 run.append(sample)
                 if (
-                    len(run) == 3
+                    supported(run)
+                    and not supported(run[:-1])
                     and last_body
                     and 0 < run[0]["source_seconds"] - last_body["source_seconds"] <= 180
                 ):
@@ -157,14 +167,14 @@ def ice_timeline(source, segments, samples):
                         }
                     )
             else:
-                if len(run) >= 3:
+                if supported(run):
                     empty_runs.append(run)
                 run = []
-                if value.get("footprints"):
+                if value.get("footprints") or value.get("handle_candidates"):
                     last_body = sample
                     occupied_run.append(sample)
                     occupied_run = occupied_run[-3:]
-        if len(run) >= 3:
+        if supported(run):
             empty_runs.append(run)
         scores = [
             s
@@ -184,7 +194,7 @@ def ice_timeline(source, segments, samples):
             "unobservable_samples": sum(s["views"][view].get("status") != "observed" for s in samples),
         }
     document = {
-        "version": "scoring-ice-timeline-v1",
+        "version": "scoring-ice-timeline-v2",
         "source_id": source["id"],
         "segment_ids": [s["id"] for s in segments],
         "sample_count": len(samples),
@@ -192,11 +202,153 @@ def ice_timeline(source, segments, samples):
         "last_seconds": samples[-1]["source_seconds"] if samples else None,
         "sampling_gaps": gaps,
         "views": views,
+        "stable_colored_candidate_runs": candidate_runs(samples, anchor),
+        "direction_activity": direction_activity(samples, anchor),
         "notice": "Discrete original keyframes locate inspection brackets. "
         "Clearing alone does not establish an end; pre-clearing scores and direction changes "
         "require native refinement and independent board reconciliation.",
     }
     return {**document, "sha256": digest(document)}
+
+
+def candidate_runs(samples, anchor):
+    """Position persistence supplies inspection cues, not complete stone counts or final scores."""
+    runs, result = {}, []
+
+    def compatible(a, b):
+        if not a or len(a) != len(b):
+            return False
+        cost = np.array(
+            [
+                [
+                    math.dist(x["normalized_point"], y["normalized_point"])
+                    if x["color"] == y["color"]
+                    else 1e6
+                    for y in b
+                ]
+                for x in a
+            ]
+        )
+        rows, columns = linear_sum_assignment(cost)
+        return bool(np.all(cost[rows, columns] <= 0.015))
+
+    def finish(view):
+        run = runs.get(view, [])
+        if len(run) < 4 or run[-1]["source_seconds"] - run[0]["source_seconds"] < 10:
+            return
+        result.append(
+            {
+                "view": view,
+                "first": anchor(run[0]),
+                "last": anchor(run[-1]),
+                "sample_count": len(run),
+                "candidates": run[0]["views"][view]["handle_candidates"],
+                "meaning": "stable colored candidate positions; foreground and final end phase unverified",
+                "score": None,
+            }
+        )
+
+    for sample in samples:
+        for view in ("house_top", "house_bottom"):
+            handles = sample["views"][view].get("handle_candidates", [])
+            usable = 1 <= len(handles) <= 16 and not any(h["boundary_clipped"] for h in handles)
+            run = runs.setdefault(view, [])
+            if run:
+                old = run[-1]
+                if (
+                    not usable
+                    or sample["source_seconds"] - old["source_seconds"]
+                    > 1.5 * sample["requested_interval_seconds"] + 0.1
+                    or not compatible(run[0]["views"][view]["handle_candidates"], handles)
+                    or not compatible(old["views"][view]["handle_candidates"], handles)
+                ):
+                    finish(view)
+                    run = runs[view] = []
+            if usable:
+                run.append(sample)
+    for view in runs:
+        finish(view)
+    return sorted(result, key=lambda r: (r["first"]["source_seconds"], r["view"]))
+
+
+def direction_activity(samples, anchor):
+    """Coarse candidate-density changes locate clips for review; they do not number ends."""
+    buckets = defaultdict(list)
+    for sample in samples:
+        buckets[int(sample["source_seconds"] // 60)].append(sample)
+    summaries = []
+    for index, frames in sorted(buckets.items()):
+        weights = {}
+        known = all(
+            "handle_candidates" in f["views"][v] for f in frames for v in ("house_top", "house_bottom")
+        )
+        for view in ("house_top", "house_bottom"):
+            counts = []
+            for frame in frames:
+                value = frame["views"][view]
+                axes = value.get("ring", {}).get("axes_px", [0, 0])
+                minimum = max(6, (max(axes) / 0.9) ** 2 * 0.00035)
+                counts.append(
+                    min(
+                        4,
+                        sum(
+                            h.get("shape_score", 0) >= 0.55
+                            and h.get("area_px2", 0) >= minimum
+                            and np.linalg.norm(h["normalized_point"]) < 0.95
+                            and not h["boundary_clipped"]
+                            for h in value.get("handle_candidates", [])
+                        ),
+                    )
+                )
+            weights[view] = sum(counts) / max(1, len(frames))
+        adequate = (
+            known and len(frames) >= 6 and frames[-1]["source_seconds"] - frames[0]["source_seconds"] >= 25
+        )
+        winner = next(
+            (
+                v
+                for v, w in weights.items()
+                if adequate
+                and w >= 0.5
+                and w > 1.5 * weights["house_bottom" if v == "house_top" else "house_top"]
+            ),
+            None,
+        )
+        summaries.append(
+            {
+                "minute_bucket": index,
+                "first": anchor(frames[0]),
+                "last": anchor(frames[-1]),
+                "candidate_density": weights,
+                "dominant_view": winner,
+                "adequate_samples": adequate,
+            }
+        )
+    transitions, previous = [], None
+    for bucket in summaries:
+        if bucket["dominant_view"] is None:
+            continue
+        if previous and previous["dominant_view"] != bucket["dominant_view"]:
+            transitions.append(
+                {
+                    "from_view": previous["dominant_view"],
+                    "to_view": bucket["dominant_view"],
+                    "before": previous["first"],
+                    "after": bucket["last"],
+                    "kind": "possible_end_or_game_direction_change",
+                    "official_end_number": None,
+                    "score": None,
+                }
+            )
+        previous = bucket
+    return {
+        "version": "colored-density-direction-cues-v1",
+        "minute_buckets": summaries,
+        "inspection_transitions": transitions,
+        "notice": "Colored candidates can be clothing or parked stones. "
+        "These changes select footage for review; "
+        "they do not establish completed ends, stone counts or scores.",
+    }
 
 
 def source_ice_timeline(db, source_id):

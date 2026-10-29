@@ -138,6 +138,7 @@ def create_scorecard_batch(db, source_id, *, frames_per_job=12):
             units.append({"payload": payload, "disposition": "new"})
         plan = {
             "kind": KIND,
+            "parallelism": 3,
             "phase": "scorecards",
             "coverage_kind": "retained_native_frames; continuous_ice_pass_pending",
             "request": {
@@ -201,14 +202,31 @@ def read_frame(image, frame, parent, job, reference_image, reader, fixed_referen
     if template is None:
         location = locate_board(image, layout["views"]["perspective_left"])
         board = {"status": "unconfigured", "cards": [], "missing_reason": location["missing_reason"]}
-        if location.get("selected"):
+        candidate = location.get("selected")
+        fixed_geometry = False
+        if candidate is None:
+            known = locate_board(reference_image, layout["views"]["perspective_left"])
+            candidate, fixed_geometry = known.get("selected"), True
+        if candidate:
             registration = register_header(
                 image,
-                location["selected"],
+                candidate,
                 reference_image,
                 job["reference"]["template"],
                 layout["views"]["perspective_left"],
             )
+            for tail_start in (8, 11):
+                if registration["status"] == "proposed":
+                    break
+                registration = register_header(
+                    image,
+                    candidate,
+                    reference_image,
+                    job["reference"]["template"],
+                    layout["views"]["perspective_left"],
+                    fixed_tail_start=tail_start,
+                )
+            registration["live_color_bands_occluded"] = fixed_geometry
             if registration["status"] == "proposed":
                 template = registration["template"]
                 board = {

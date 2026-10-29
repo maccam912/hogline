@@ -1,9 +1,9 @@
 """Checked scorecard observations and selection of the current reader for each source."""
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 from hogline.adapters.sources import digest
-from hogline.db import Evidence, FrameObservation
+from hogline.db import Evidence, FrameObservation, ProcessingBatch
 from hogline.perception.scorecard import VERSION
 
 
@@ -29,16 +29,27 @@ def check_observation(document, frame, parents):
 
 
 def scorecard_observations_in_session(session, source_id=None):
+    supported = ("wausau-middle-row-plates-v2", VERSION)
     rows = list(
         session.scalars(
             select(FrameObservation)
-            .where(FrameObservation.model_version.startswith(f"{VERSION}:"))
+            .where(or_(*(FrameObservation.model_version.startswith(f"{v}:") for v in supported)))
             .order_by(FrameObservation.created_at, FrameObservation.id)
         )
     )
-    latest_versions = {}
+    complete = {
+        u["payload"]["model_version"]
+        for b in session.scalars(select(ProcessingBatch).where(ProcessingBatch.state == "completed"))
+        if b.document.get("kind") == "scorecard_read"
+        for u in b.document["units"]
+    }
+    latest_versions, ranks = {}, {}
     for row in rows:
-        latest_versions[row.document["source_id"]] = row.model_version
+        family = row.model_version.split(":", 1)[0]
+        rank = (row.model_version in complete, supported.index(family), row.created_at)
+        sid = row.document["source_id"]
+        if sid not in ranks or rank >= ranks[sid]:
+            ranks[sid], latest_versions[sid] = rank, row.model_version
     selected = [
         r
         for r in rows

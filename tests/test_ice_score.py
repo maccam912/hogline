@@ -81,3 +81,15 @@ def test_static_colored_logo_is_not_a_counted_stone():
     result = inspector(reference).inspect(image)
     assert result["scoring"]["provisional_score"] == {"red": 1, "yellow": 0}
     assert result["excluded_static_handles"] >= 1
+
+
+def test_colored_candidates_survive_an_unresolved_body_fit_without_becoming_points():
+    image = house()
+    stone(image, (180, 200), "red")
+    cv2.rectangle(image, (160, 180), (195, 250), (30, 30, 30), -1)
+    stone(image, (225, 200), "yellow")
+    result = inspector().inspect(image)
+    assert result["handle_candidates"]
+    assert result["scoring"]["provisional_score"] is None
+    assert not result["empty_house"]
+    assert "neither complete stone counts nor points" in result["handle_count_meaning"]
