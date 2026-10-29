@@ -380,3 +380,12 @@ def validate_references(payload):
         ]
         if payload["end_timelines"] != expected:
             raise ValueError("Release end timelines disagree with their pinned observations")
+    if "scorecard_timelines" in payload:
+        from hogline.reconstruction.scorecards import reconstruct_scorecards
+
+        expected = [
+            reconstruct_scorecards(source["id"], payload["broadcast"]["observations"])
+            for source in payload["sources"]
+        ]
+        if payload["scorecard_timelines"] != expected:
+            raise ValueError("Release scorecard timelines disagree with their pinned observations")

@@ -245,7 +245,14 @@
         `/sources/${encodeURIComponent(sid)}/end-timeline`,
       );
       if (current !== resultGeneration || sid !== state.source) return;
-      const ledgers = report.board_ledgers.filter((b) => b.ends.length);
+      const temporal = report.scorecard_reconstruction?.scorecards || [];
+      const ledgers = temporal.length ? temporal.map((book) => ({
+        ...book,
+        highest_observed_end_number: book.highest_posted_end,
+        ends: book.ends.map((end) => ({...end, board_posting: end.board_evidence ? {
+          first_observation: end.board_evidence.first,
+        } : null})),
+      })) : report.board_ledgers.filter((b) => b.ends.length);
       const partial = [
         ...new Map(
           (report.partial_score_proposals || []).map((p) => [

@@ -23,6 +23,7 @@ from hogline.perception.scoreboard import persistent_board_claims
 from hogline.perception.stones import VERSION as DETECTOR_VERSION
 from hogline.perception.visibility import VERSION as VISIBILITY_VERSION
 from hogline.reconstruction.ends import reconstruct_ends
+from hogline.reconstruction.scorecards import reconstruct_scorecards
 
 SCORE_VERSION = f"{VERSION}:{DETECTOR_VERSION}:{VISIBILITY_VERSION}"
 
@@ -174,6 +175,9 @@ def source_end_timeline(db, source_id, start=None, end=None):
             if o["source_id"] == source_id and (start is None or start <= o["source_seconds"] < end)
         ]
         result["partial_score_proposals"] = persistent_board_claims(eligible)
+        result["scorecard_reconstruction"] = reconstruct_scorecards(
+            source_id, eligible, (start, end) if start is not None else None
+        )
         result["play_input_exclusions"] = play["exclusions"]
         result["sha256"] = digest({k: v for k, v in result.items() if k != "sha256"})
         return result

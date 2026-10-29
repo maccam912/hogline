@@ -18,6 +18,7 @@ from hogline.perception.broadcast import broadcast_catalog_in_session
 from hogline.perception.pipeline import observations_in_session
 from hogline.reconstruction.boundaries import boundary_links
 from hogline.reconstruction.ends import reconstruct_ends
+from hogline.reconstruction.scorecards import reconstruct_scorecards
 from hogline.review.score_conflicts import conflicts_in_session
 
 
@@ -102,6 +103,9 @@ def snapshot_in_session(session, mode, root):
             payload["house_score_observations"],
         )
         for source in data["sources"]
+    ]
+    payload["scorecard_timelines"] = [
+        reconstruct_scorecards(source["id"], broadcast["observations"]) for source in data["sources"]
     ]
     validate_references(payload)
     # Use the same rows that were serialized, even if a review is saved during export.
