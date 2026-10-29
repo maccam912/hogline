@@ -403,3 +403,13 @@ def validate_references(payload):
         ]
         if payload["scorecard_timelines"] != expected:
             raise ValueError("Release scorecard timelines disagree with their pinned observations")
+    if "reconciled_score_histories" in payload:
+        from hogline.analytics.ice_reviews import check_review
+        from hogline.reconstruction.scoring import reconcile_scores
+
+        reviews = payload.get("ice_end_reviews", [])
+        for review in reviews:
+            check_review(review, evidence)
+        expected = [reconcile_scores(report, reviews) for report in payload["scorecard_timelines"]]
+        if payload["reconciled_score_histories"] != expected:
+            raise ValueError("Release combined scores disagree with their independent ice reviews")

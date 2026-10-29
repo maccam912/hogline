@@ -221,6 +221,20 @@
     tick();
   }
   const score = (points) => `${points?.red ?? "?"}–${points?.yellow ?? "?"}`;
+  function renderScoreBook(book, index) {
+    const complete = book.game_completion === "complete";
+    const rows = book.ends.map((end) => {
+      const ice = state.data.evidence.find((f) => f.id === end.ice_evidence_ids?.[0]);
+      const board = end.board_posting?.first_observation;
+      const links = [
+        board?.youtube_url ? `<a class="evidence-link" target="_blank" rel="noopener" href="${esc(board.youtube_url)}">Board ↗</a>` : "",
+        ice?.youtube_url ? `<a class="evidence-link" target="_blank" rel="noopener" href="${esc(ice.youtube_url)}">Ice ↗</a>` : "",
+      ].filter(Boolean).join(" · ");
+      const basis = end.lying_ice_points && !end.end_completion_verified ? `Lying ${score(end.lying_ice_points)} · end completion unresolved` : end.comparison === "agreement" ? "Board + ice agree" : end.comparison === "disagreement" ? "Board / ice disagree" : end.comparison === "ice_only" ? "Independent ice review" : end.comparison === "scoreboard_only" ? "Board; ice unresolved" : "Unresolved";
+      return `<tr><td>${end.official_number ?? end.observed_index ?? "?"}</td><td>${score(end.points)}</td><td>${score(end.score_after_end)}</td><td>${esc(basis)}<br>${links || "No linked frame"}</td></tr>`;
+    }).join("");
+    return `<article class="recording-game"><div class="recording-game-heading"><div><span class="eyebrow">CANDIDATE GAME ${index + 1}</span><h4>Evidence · ${time(book.first_seconds)}–${time(book.last_seconds)}</h4></div><span class="pill amber">Proposed</span></div><div class="game-summary-strip"><span>Highest scored end <strong>${book.highest_observed_end_number ?? "?"}</strong></span><span>Score after that end <strong>${score(book.ends.at(-1)?.score_after_end)}</strong></span><span>Final result <strong>${complete ? `${score(book.final_result)} · proposed` : "Unresolved"}</strong></span></div><div class="end-table-wrap"><table class="end-table"><thead><tr><th>End</th><th>Points · red–yellow</th><th>Score after end</th><th>Basis and evidence</th></tr></thead><tbody>${rows}</tbody></table></div><p class="fine-print">${complete ? "Final ice and completion evidence support this proposed result. " : "Game completion remains unresolved. "}Assistant visual reviews remain proposals. First/final throw times and full physical coverage are separate checks.</p></article>`;
+  }
   async function loadResults(force = false) {
     const sid = state.source;
     if (!sid) return;
@@ -248,9 +262,11 @@
       );
       if (current !== resultGeneration || sid !== state.source) return;
       const temporal = report.scorecard_reconstruction?.scorecards || [];
-      const ledgers = temporal.length ? temporal.map((book) => ({
+      const combined = report.reconciled_score_history?.histories || [];
+      const candidates = combined.length ? combined : temporal;
+      const ledgers = candidates.length ? candidates.map((book) => ({
         ...book,
-        highest_observed_end_number: book.highest_posted_end,
+        highest_observed_end_number: book.ends.at(-1)?.official_number ?? book.highest_posted_end,
         ends: book.ends.map((end) => ({...end, board_posting: end.board_evidence ? {
           first_observation: end.board_evidence.first,
         } : null})),
@@ -281,7 +297,7 @@
         (g) => g.acceptance === "human_confirmed",
       );
       $("#recording-results-content").innerHTML =
-        `${confirmed.map((g) => `<article class="recording-game"><div class="recording-game-heading"><h4>${esc(g.label)}</h4><span class="pill green">Reviewed</span></div><p>${g.ends.length} saved ends · ${esc(g.completion)}</p><button class="button quiet" data-edit="${esc(g.id)}">Review game →</button></article>`).join("")}${ledgers.length ? `<p class="results-note">${ledgers.length} candidate ${ledgers.length === 1 ? "game history" : "game histories"} from repeated board readings. Boundaries and final results need review.</p>${ledgers.map((book, i) => `<article class="recording-game"><div class="recording-game-heading"><div><span class="eyebrow">CANDIDATE GAME ${i + 1}</span><h4>Board evidence · ${time(book.first_seconds)}–${time(book.last_seconds)}</h4></div><span class="pill amber">Needs review</span></div><div class="game-summary-strip"><span>Highest visible end <strong>${book.highest_observed_end_number ?? "?"}</strong></span><span>Score after that end <strong>${score(book.ends.at(-1)?.score_after_end)}</strong></span><span>Final result <strong>Unresolved</strong></span></div><div class="end-table-wrap"><table class="end-table"><thead><tr><th>End</th><th>Points · red–yellow</th><th>Score after end</th><th>Evidence</th></tr></thead><tbody>${book.ends.map((end) => `<tr><td>${end.official_number}</td><td>${score(end.points)}</td><td>${score(end.score_after_end)}</td><td>${end.board_posting?.first_observation?.youtube_url ? `<a class="evidence-link" target="_blank" rel="noopener" href="${esc(end.board_posting.first_observation.youtube_url)}">Check board ↗</a>` : "Unresolved"}</td></tr>`).join("")}</tbody></table></div><p class="fine-print">Ends played and first/final throw times remain unknown. A missing end number is not treated as a blank.</p></article>`).join("")}` : partialCard ? partialCard : !confirmed.length ? `<div class="results-empty"><div class="empty-house-mark">◎</div><h3>${latest(sid)?.state === "active" ? "Analysis is working through the recording" : latest(sid)?.state === "completed" ? "Analysis finished · scorecard unresolved" : "No game scorecard reconstructed yet"}</h3><p>${latest(sid)?.state === "paused" ? "Resume the paused analysis in Jobs, or start a full-recording analysis above." : latest(sid)?.state === "completed" ? "The pipeline finished, but the available evidence did not support a complete game scorecard. Inspect the retained evidence or run further targeted analysis." : "Start an analysis to search the whole recording for game, end and score evidence."}</p><p class="fine-print">Uncertain boundaries and unreadable scores stay unresolved.</p></div>` : ""}<button class="button quiet" data-recording-open-evidence>Inspect detailed end evidence →</button>`;
+        `${confirmed.map((g) => `<article class="recording-game"><div class="recording-game-heading"><h4>${esc(g.label)}</h4><span class="pill green">Reviewed</span></div><p>${g.ends.length} saved ends · ${esc(g.completion)}</p><button class="button quiet" data-edit="${esc(g.id)}">Review game →</button></article>`).join("")}${ledgers.length ? `<p class="results-note">${ledgers.length} candidate ${ledgers.length === 1 ? "game history" : "game histories"} from board and ice evidence. Proposed results need review.</p>${ledgers.map(renderScoreBook).join("")}` : partialCard ? partialCard : !confirmed.length ? `<div class="results-empty"><div class="empty-house-mark">◎</div><h3>${latest(sid)?.state === "active" ? "Analysis is working through the recording" : latest(sid)?.state === "completed" ? "Analysis finished · scorecard unresolved" : "No game scorecard reconstructed yet"}</h3><p>${latest(sid)?.state === "paused" ? "Resume the paused analysis in Jobs, or start a full-recording analysis above." : latest(sid)?.state === "completed" ? "The pipeline finished, but the available evidence did not support a complete game scorecard. Inspect the retained evidence or run further targeted analysis." : "Start an analysis to search the whole recording for game, end and score evidence."}</p><p class="fine-print">Uncertain boundaries and unreadable scores stay unresolved.</p></div>` : ""}<button class="button quiet" data-recording-open-evidence>Inspect detailed end evidence →</button>`;
     } catch (error) {
       if (current === resultGeneration) {
         resultKey = null;

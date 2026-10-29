@@ -12,6 +12,7 @@ from sqlalchemy import select
 
 from hogline.adapters.sources import digest
 from hogline.analytics.house_states import house_states_in_session
+from hogline.analytics.ice_reviews import ice_reviews_in_session
 from hogline.analytics.play import play_in_windows
 from hogline.analytics.scorecards import scorecard_observations_in_session, select_inputs
 from hogline.db import AnalysisWindow, Evidence, FrameObservation, GameRow
@@ -25,6 +26,7 @@ from hogline.perception.stones import VERSION as DETECTOR_VERSION
 from hogline.perception.visibility import VERSION as VISIBILITY_VERSION
 from hogline.reconstruction.ends import reconstruct_ends
 from hogline.reconstruction.scorecards import reconstruct_scorecards
+from hogline.reconstruction.scoring import reconcile_scores
 
 SCORE_VERSION = f"{VERSION}:{DETECTOR_VERSION}:{VISIBILITY_VERSION}"
 
@@ -183,6 +185,9 @@ def source_end_timeline(db, source_id, start=None, end=None):
             (start, end) if start is not None else None,
         )
         result["scorecard_inspected_frames"] = len(inspected)
+        result["reconciled_score_history"] = reconcile_scores(
+            result["scorecard_reconstruction"], ice_reviews_in_session(session, source_id)
+        )
         result["play_input_exclusions"] = play["exclusions"]
         result["sha256"] = digest({k: v for k, v in result.items() if k != "sha256"})
         return result

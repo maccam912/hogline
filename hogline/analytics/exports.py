@@ -7,6 +7,7 @@ from hogline.analytics.actors import actors_in_session
 from hogline.analytics.deliveries import deliveries_in_session
 from hogline.analytics.end_timeline import house_scores_in_session
 from hogline.analytics.house_states import house_states_in_session
+from hogline.analytics.ice_reviews import ice_reviews_in_session
 from hogline.analytics.lineage import source_lineage, validate_references
 from hogline.analytics.play import play_in_windows
 from hogline.analytics.scorecards import (
@@ -24,6 +25,7 @@ from hogline.perception.pipeline import observations_in_session
 from hogline.reconstruction.boundaries import boundary_links
 from hogline.reconstruction.ends import reconstruct_ends
 from hogline.reconstruction.scorecards import reconstruct_scorecards
+from hogline.reconstruction.scoring import reconcile_scores
 from hogline.review.score_conflicts import conflicts_in_session
 
 
@@ -126,6 +128,10 @@ def snapshot_in_session(session, mode, root):
         )
         for source in data["sources"]
     ]
+    payload["ice_end_reviews"] = ice_reviews_in_session(session)
+    payload["reconciled_score_histories"] = [
+        reconcile_scores(report, payload["ice_end_reviews"]) for report in payload["scorecard_timelines"]
+    ]
     validate_references(payload)
     # Use the same rows that were serialized, even if a review is saved during export.
     payload["interpretation_revisions"] = {
@@ -161,6 +167,19 @@ def csv_export(release):
         "outcome",
         "evidence_ids",
         "youtube_links",
+        "score_history_id",
+        "source_id",
+        "cumulative_red_points",
+        "cumulative_yellow_points",
+        "board_red_points",
+        "board_yellow_points",
+        "ice_red_points",
+        "ice_yellow_points",
+        "score_comparison",
+        "ice_review_ids",
+        "lying_red_points",
+        "lying_yellow_points",
+        "end_completion_verified",
     ]
     writer = csv.DictWriter(out, fieldnames=fields)
     writer.writeheader()
@@ -218,4 +237,69 @@ def csv_export(release):
                     for k, v in row.items()
                 }
             )
+    if release["mode"] == "exploratory":
+        sources = {s["id"]: s for s in release["sources"]}
+        for report in release.get("reconciled_score_histories", []):
+            source = sources[report["source_id"]]
+            for history in report["histories"]:
+                base = {
+                    "score_history_id": history["id"],
+                    "source_id": source["id"],
+                    "sheet": source.get("sheet"),
+                    "label": source["title"],
+                    "acceptance": "proposed",
+                    "game_acceptance": "proposed",
+                    "coverage": history["coverage"],
+                    "completion": history["game_completion"],
+                }
+                final = history["final_result"] or {}
+                rows = [
+                    {
+                        **base,
+                        "row_type": "score_history",
+                        "red_points": final.get("red"),
+                        "yellow_points": final.get("yellow"),
+                    }
+                ]
+                for end in history["ends"]:
+                    ids = sorted(
+                        set(
+                            end["ice_evidence_ids"]
+                            + end["phase_evidence_ids"]
+                            + (end["board_evidence"] or {}).get("evidence_ids", [])
+                        )
+                    )
+                    rows.append(
+                        {
+                            **base,
+                            "row_type": "score_history_end",
+                            "acceptance": end["status"],
+                            "observed_index": end["observed_index"],
+                            "official_number": end["official_number"],
+                            "end_state": end["state"],
+                            "red_points": end["points"]["red"],
+                            "yellow_points": end["points"]["yellow"],
+                            "cumulative_red_points": end["score_after_end"]["red"],
+                            "cumulative_yellow_points": end["score_after_end"]["yellow"],
+                            **{
+                                f"{basis}_{c}_points": (end[f"{basis}_points"] or {}).get(c)
+                                for basis in ("board", "ice")
+                                for c in ("red", "yellow")
+                            },
+                            "score_comparison": end["comparison"],
+                            "ice_review_ids": "|".join(end["ice_review_ids"]),
+                            "lying_red_points": (end["lying_ice_points"] or {}).get("red"),
+                            "lying_yellow_points": (end["lying_ice_points"] or {}).get("yellow"),
+                            "end_completion_verified": end["end_completion_verified"],
+                            "evidence_ids": "|".join(ids),
+                            "youtube_links": "|".join(evidence[i].get("youtube_url") or "" for i in ids),
+                        }
+                    )
+                for row in rows:
+                    writer.writerow(
+                        {
+                            k: "'" + v if isinstance(v, str) and v.startswith(("=", "+", "-", "@")) else v
+                            for k, v in row.items()
+                        }
+                    )
     return out.getvalue()

@@ -177,6 +177,13 @@ def main():
     ice_timeline = commands.add_parser("ice-timeline", help="Inspect checked whole-recording ice coverage")
     ice_timeline.add_argument("source_id")
     ice_timeline.add_argument("--output")
+    ice_review = commands.add_parser("review-ice-end", help="Save an independent native-frame end review")
+    ice_review.add_argument("path")
+    score_history = commands.add_parser(
+        "score-history", help="Reconcile posted scores with independent ice reviews"
+    )
+    score_history.add_argument("source_id")
+    score_history.add_argument("--output")
     game_timeline = commands.add_parser("game-end-timeline", help="Reconstruct ends inside saved game spans")
     game_timeline.add_argument("game_id")
     house_scores = commands.add_parser(
@@ -483,6 +490,18 @@ def main():
                 from hogline.analytics.ice import source_ice_timeline
 
                 result = source_ice_timeline(db, args.source_id)
+                if args.output:
+                    Path(args.output).write_text(json.dumps(result, indent=2))
+                    print(args.output)
+                    return
+            case "review-ice-end":
+                from hogline.analytics.ice_reviews import save_ice_end_review
+
+                result = save_ice_end_review(db, json.loads(Path(args.path).read_text()))
+            case "score-history":
+                from hogline.analytics.ice_reviews import source_score_history
+
+                result = source_score_history(db, args.source_id)
                 if args.output:
                     Path(args.output).write_text(json.dumps(result, indent=2))
                     print(args.output)
