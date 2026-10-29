@@ -137,3 +137,38 @@ def test_high_cadence_does_not_duplicate_low_frame_rate_source_frames(video):
         WindowRequest(
             source_id="fixture", start_seconds=0, end_seconds=10, interval_seconds=1 / 30, max_frames=240
         )
+
+
+def test_scoring_decoder_keeps_keyframe_eligibility_explicit(video, tmp_path):
+    from hogline.media.windows import decode_scoring_segment
+
+    keyed = tmp_path / "keyed.mp4"
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-v",
+            "error",
+            "-i",
+            str(video),
+            "-c:v",
+            "libx264",
+            "-g",
+            "10",
+            "-keyint_min",
+            "10",
+            "-sc_threshold",
+            "0",
+            str(keyed),
+        ],
+        check=True,
+    )
+    keys = list(decode_scoring_segment(str(keyed), 0, 3, interval=0.5, max_frames=6))
+    dense = list(decode_scoring_segment(str(keyed), 0, 3, interval=0.5, max_frames=6, keyframes_only=False))
+
+    def seconds(frames):
+        return [t["pts"] * t["time_base_num"] / t["time_base_den"] for _, t in frames]
+
+    assert seconds(keys) == pytest.approx([0, 1, 2])
+    assert seconds(dense) == pytest.approx([0, 0.5, 1, 1.5, 2, 2.5])
+    with pytest.raises(ValueError, match="scoring segment"):
+        list(decode_scoring_segment("unused", 0, 601))

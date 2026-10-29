@@ -167,6 +167,16 @@ def main():
         "read-scorecards", help="Inspect cached board blanks/current end and ice views"
     )
     scorecard_read.add_argument("source_id")
+    ice_survey = commands.add_parser("survey-ice", help="Inspect both houses over a recording or interval")
+    ice_survey.add_argument("source_id")
+    ice_survey.add_argument("--references")
+    ice_survey.add_argument("--start", type=float, default=0)
+    ice_survey.add_argument("--end", type=float)
+    ice_survey.add_argument("--interval", type=float, default=5)
+    ice_survey.add_argument("--native", action="store_true", help="Include non-keyframes for refinement")
+    ice_timeline = commands.add_parser("ice-timeline", help="Inspect checked whole-recording ice coverage")
+    ice_timeline.add_argument("source_id")
+    ice_timeline.add_argument("--output")
     game_timeline = commands.add_parser("game-end-timeline", help="Reconstruct ends inside saved game spans")
     game_timeline.add_argument("game_id")
     house_scores = commands.add_parser(
@@ -457,6 +467,26 @@ def main():
                 from hogline.orchestration.scorecards import create_scorecard_batch
 
                 result = create_scorecard_batch(db, args.source_id)
+            case "survey-ice":
+                from hogline.orchestration.ice import create_ice_batch
+
+                result = create_ice_batch(
+                    db,
+                    args.source_id,
+                    references_path=args.references,
+                    start=args.start,
+                    end=args.end,
+                    interval=args.interval,
+                    keyframes_only=not args.native,
+                )
+            case "ice-timeline":
+                from hogline.analytics.ice import source_ice_timeline
+
+                result = source_ice_timeline(db, args.source_id)
+                if args.output:
+                    Path(args.output).write_text(json.dumps(result, indent=2))
+                    print(args.output)
+                    return
             case "retry":
                 result = retry(db, args.job_id)
             case "serve":

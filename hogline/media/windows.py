@@ -62,6 +62,47 @@ def decode_window(
         or not 1 <= timeout <= 120
     ):
         raise ValueError("Invalid bounded decoding window or frame/time budget")
+    yield from _decode_segment(media, start, end, interval, max_frames, timeout, tick, source_time_origin)
+
+
+SCORING_VERSION = "original-pts-keyframe-scoring-grid-v1"
+
+
+def decode_scoring_segment(
+    media,
+    start,
+    end,
+    *,
+    interval=5,
+    max_frames=120,
+    timeout=300,
+    tick=None,
+    source_time_origin=0,
+    keyframes_only=True,
+):
+    """Sample longer scoring coverage on a source grid, optionally from keyframes.
+
+    Keyframe sampling explicitly selects the first eligible keyframe in a bucket;
+    it is a survey, not full-cadence coverage of deliveries or a final stone.
+    """
+    if (
+        not all(math.isfinite(v) for v in (start, end, interval, timeout, source_time_origin))
+        or not 0 <= start < end <= start + 600
+        or not 0.5 <= interval <= 10
+        or not 1 <= max_frames <= 1200
+        or math.ceil((end - start) / interval) > max_frames
+        or not 1 <= timeout <= 600
+        or not isinstance(keyframes_only, bool)
+    ):
+        raise ValueError("Invalid scoring segment or frame/time budget")
+    yield from _decode_segment(
+        media, start, end, interval, max_frames, timeout, tick, source_time_origin, keyframes_only
+    )
+
+
+def _decode_segment(
+    media, start, end, interval, max_frames, timeout, tick, source_time_origin, keyframes_only=False
+):
     epsilon = 1e-7
     first_target = math.ceil((start - epsilon) / interval) * interval
     if first_target >= end - epsilon:
@@ -76,6 +117,9 @@ def decode_window(
     )
     command = ["ffmpeg", "-hide_banner", "-nostdin", "-loglevel", "info"]
     command += remote_options(media)
+    if keyframes_only:
+        command += ["-skip_frame", "nokey"]
+    command += ["-threads", "2"]
     command += [
         "-copyts",
         "-ss",

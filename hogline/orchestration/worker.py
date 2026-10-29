@@ -270,6 +270,10 @@ def vectors_from_doc(db, doc):
 
 
 def execute(db, job):
+    if job.get("kind") == "ice_survey":
+        from hogline.orchestration.ice import execute_ice
+
+        return execute_ice(db, job)
     if job.get("kind") == "scorecard_read":
         from hogline.orchestration.scorecards import execute_scorecard_read
 

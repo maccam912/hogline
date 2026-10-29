@@ -76,6 +76,14 @@ class AnalysisWindow(Base):
     document: Mapped[dict] = mapped_column(JSON)
 
 
+class ScoringSegment(Base):
+    __tablename__ = "scoring_segment"
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    job_id: Mapped[str] = mapped_column(ForeignKey("job.id"), unique=True)
+    source_id: Mapped[str] = mapped_column(ForeignKey("source_video.id"))
+    document: Mapped[dict] = mapped_column(JSON)
+
+
 class JobExecution(Base):
     __tablename__ = "job_execution"
     id: Mapped[str] = mapped_column(String, primary_key=True)  # lease token
