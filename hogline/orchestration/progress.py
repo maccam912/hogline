@@ -59,6 +59,7 @@ def analysis_progress(document, units, jobs, executions, state):
         "stage_fraction": stage_fraction,
         "overall_fraction": overall,
         "processing_elapsed_seconds": document.get("spent_worker_seconds", 0),
+        "live_worker_updates": [e.document.get("updated_at", e.document.get("started_at")) for e in running],
         "started_at": min(starts) if starts else None,
         "live_updated_at": (
             running[0].document.get("updated_at", running[0].document.get("started_at")) if running else None

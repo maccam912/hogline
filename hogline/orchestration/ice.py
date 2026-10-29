@@ -168,6 +168,7 @@ def create_ice_batch(
             units.append({"payload": payload, "disposition": disposition})
         plan = {
             "kind": KIND,
+            "parallelism": 3,
             "phase": "ice",
             "request": request,
             "units": units,

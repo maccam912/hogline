@@ -186,6 +186,8 @@ def publish_batch(session, plan):
             "reserved_image_bytes": 0,
             "pause_reason": None,
             "active_execution": None,
+            "active_executions": [],
+            "parallelism": plan.get("parallelism", 1) if plan.get("kind") == "ice_survey" else 1,
             "limits": {k: plan["request"][k] for k in ("max_image_growth_mb", "max_worker_seconds")},
             "control_history": [],
         }
@@ -265,6 +267,7 @@ class BatchControl(Model):
     max_image_growth_mb: int | None = Field(default=None, ge=1, le=4096)
     max_worker_seconds: int | None = Field(default=None, ge=5, le=86400)
     retry_failed: bool = False
+    parallelism: int | None = Field(default=None, ge=1, le=8)
 
 
 def freeze_outcomes(session, batch):
@@ -283,6 +286,8 @@ def control_batch(db, identifier, control):
             raise ValueError(
                 "Completed/cancelled batches are immutable; preview a new plan for remaining work"
             )
+        if control.parallelism is not None and batch.document.get("kind") != "ice_survey":
+            raise ValueError("Parallel units are supported only for independent ice segments")
         limits = dict(batch.document.get("limits", batch.document["request"]))
         for key in ("max_image_growth_mb", "max_worker_seconds"):
             if getattr(control, key) is not None:
@@ -311,10 +316,16 @@ def control_batch(db, identifier, control):
                         job.state = "cancelled"
         batch.document = {
             **batch.document,
+            "parallelism": control.parallelism or batch.document.get("parallelism", 1),
             "limits": limits,
             "control_history": [
                 *batch.document.get("control_history", []),
-                {"at": now(), "action": control.action, "limits": limits},
+                {
+                    "at": now(),
+                    "action": control.action,
+                    "limits": limits,
+                    "parallelism": control.parallelism or batch.document.get("parallelism", 1),
+                },
             ],
             "pause_reason": "operator" if control.action != "resume" else None,
         }
@@ -396,7 +407,12 @@ def finish_execution(session, token, state, elapsed=None, *, will_retry=False):
     execution.state = state
     execution.document = {**execution.document, "finished_at": now()}
     if batch:
-        batch.document = {**batch.document, "active_execution": None}
+        remaining = [t for t in active_tokens(batch.document) if t != token]
+        batch.document = {
+            **batch.document,
+            "active_execution": remaining[0] if remaining else None,
+            "active_executions": remaining,
+        }
         if state == "failed" and batch.state == "active" and not will_retry:
             batch.state = "paused"
             batch.document = {**batch.document, "pause_reason": "A work unit failed; inspect and retry it"}
@@ -414,3 +430,9 @@ def finish_execution(session, token, state, elapsed=None, *, will_retry=False):
             batch.state = "completed"
         if batch.state in ("completed", "cancelled"):
             freeze_outcomes(session, batch)
+
+
+def active_tokens(document):
+    return document.get("active_executions") or (
+        [document["active_execution"]] if document.get("active_execution") else []
+    )

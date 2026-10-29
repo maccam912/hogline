@@ -26,6 +26,7 @@ from hogline.media.frames import (
 )
 from hogline.orchestration.plans import (
     WorkStopped,
+    active_tokens,
     check_execution,
     enqueue_in_session,
     finish_execution,
@@ -121,7 +122,10 @@ def claim_transaction(db):
                 if candidate.document.get("batch_id")
                 else None
             )
-            if owner and (owner.state != "active" or owner.document.get("active_execution")):
+            if owner and (
+                owner.state != "active"
+                or len(active_tokens(owner.document)) >= owner.document.get("parallelism", 1)
+            ):
                 continue
             if owner:
                 # A bounded plan's order encodes its priorities (including quiet
@@ -172,7 +176,8 @@ def claim_transaction(db):
             )
         )
         if batch:
-            batch.document = {**batch.document, "active_execution": token}
+            tokens = [*active_tokens(batch.document), token]
+            batch.document = {**batch.document, "active_execution": tokens[0], "active_executions": tokens}
         session.refresh(job)
         return job_view(job)
 

@@ -143,3 +143,46 @@ def test_scoring_artifact_rejects_corruption_and_timeline_does_not_complete_game
     file.write_bytes(b"corrupt")
     with pytest.raises(ValueError, match="missing or corrupt"):
         source_ice_timeline(db, sources[0]["id"])
+
+
+def test_parallel_ice_claims_are_bounded_and_keep_other_owners_on_finish(db, sources):
+    from concurrent.futures import ThreadPoolExecutor
+
+    from hogline.db import Database, ProcessingBatch
+    from hogline.orchestration.plans import (
+        BatchControl,
+        WorkStopped,
+        active_tokens,
+        check_execution,
+        control_batch,
+        finish_execution,
+    )
+    from hogline.orchestration.worker import claim
+
+    path, _, _ = references(db, sources[0])
+    b = create_ice_batch(db, sources[0]["id"], references_path=path, end=2400)
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        claimed = [j for j in executor.map(lambda _: claim(Database(db.settings)), range(8)) if j]
+    assert len(claimed) == 3
+    with db.snapshot_session(write=True) as s:
+        one = claimed[1]
+        s.get(Job, one["id"]).state = "succeeded"
+        finish_execution(s, one["lease_token"], "succeeded", 5)
+        owner = s.get(ProcessingBatch, b["id"])
+        assert len(active_tokens(owner.document)) == 2
+        assert owner.document["spent_worker_seconds"] == 5
+        assert owner.document["active_execution"] != one["lease_token"]
+    more = claim(db)
+    assert more is not None
+    assert claim(db) is None
+    control_batch(db, b["id"], BatchControl(action="cancel"))
+    with pytest.raises(WorkStopped, match="cancelled"):
+        check_execution(db, claimed[0]["lease_token"], 7)
+    with db.snapshot_session(write=True) as s:
+        for j in [claimed[0], claimed[2], more]:
+            s.get(Job, j["id"]).state = "cancelled"
+            finish_execution(s, j["lease_token"], "cancelled", 7)
+        owner = s.get(ProcessingBatch, b["id"])
+        assert active_tokens(owner.document) == []
+        assert owner.document["spent_worker_seconds"] == 26
+        assert len(owner.document["unit_outcomes"]) == 4
