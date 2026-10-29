@@ -45,6 +45,7 @@ const state = {
 };
 let toastTimer;
 let catalogSignature;
+let catalogETag = null;
 function toast(text, error = false) {
   const el = $("#toast");
   // Native dialogs sit above body content, including fixed-position notices.
@@ -104,9 +105,30 @@ const youtube = (src, seconds) =>
     ? `https://www.youtube.com/watch?v=${encodeURIComponent(src.platform_id)}&t=${Math.floor(Math.max(0, seconds))}s`
     : null;
 
+let catalogRequest = null;
 async function refresh() {
-  const incoming = await api("/catalog");
-  const signature = JSON.stringify(incoming);
+  while (catalogRequest) await catalogRequest;
+  const request = refreshCatalog();
+  catalogRequest = request;
+  try {
+    await request;
+  } finally {
+    if (catalogRequest === request) catalogRequest = null;
+  }
+}
+async function refreshCatalog() {
+  const response = await fetch("/api/catalog", {
+    cache: "no-store",
+    headers: catalogETag ? { "If-None-Match": catalogETag } : {},
+  });
+  if (response.status === 304) return;
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: response.statusText }));
+    throw Error(typeof error.detail === "string" ? error.detail : JSON.stringify(error.detail));
+  }
+  const incoming = await response.json();
+  catalogETag = response.headers.get("ETag");
+  const signature = catalogETag || JSON.stringify(incoming);
   if (signature === catalogSignature) return;
   catalogSignature = signature;
   state.data = incoming;
@@ -1018,10 +1040,11 @@ document.addEventListener("submit", async (event) => {
 });
 function refreshFailed(error) {
   catalogSignature = null;
+  catalogETag = null;
   window.hoglineRecordings?.connectionLost();
   toast(error.message, true);
 }
 refresh().catch(refreshFailed);
 setInterval(() => {
-  if (!document.hidden) refresh().catch(refreshFailed);
+  if (!document.hidden && !catalogRequest) refresh().catch(refreshFailed);
 }, 4000);

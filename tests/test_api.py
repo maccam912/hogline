@@ -12,6 +12,10 @@ def test_empty_workbench_and_origin_guard(db):
         assert "/static/discovery.js?v=" in page.text
         assert client.get("/static/discovery.js").headers["cache-control"] == "no-cache"
         assert client.get("/api/catalog").json()["sources"] == []
+        cached = client.get("/api/catalog")
+        assert (
+            client.get("/api/catalog", headers={"If-None-Match": cached.headers["etag"]}).status_code == 304
+        )
         assert client.get("/api/health").json()["status"] == "ok"
         assert (
             client.post("/api/releases", json={}, headers={"Origin": "https://evil.invalid"}).status_code

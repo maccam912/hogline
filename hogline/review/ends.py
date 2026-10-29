@@ -1,6 +1,7 @@
 """End ledgers and exploratory house scoring in the local workbench."""
 
 from fastapi import HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import Field
 
 from hogline.analytics.end_timeline import (
@@ -20,11 +21,11 @@ class HouseScoreRequest(Model):
 def register_ends(app, db):
     @app.get("/api/sources/{source_id}/end-timeline")
     def get_source_ends(source_id: str, start: float | None = None, end: float | None = None):
-        return source_end_timeline(db, source_id, start, end)
+        return JSONResponse(source_end_timeline(db, source_id, start, end))
 
     @app.get("/api/games/{game_id}/end-timeline")
     def get_game_ends(game_id: str):
-        return game_end_timeline(db, game_id)
+        return JSONResponse(game_end_timeline(db, game_id))
 
     @app.post("/api/sources/{source_id}/house-scores")
     def create_scores(source_id: str, request: HouseScoreRequest):

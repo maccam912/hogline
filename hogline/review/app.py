@@ -112,6 +112,7 @@ from hogline.reconstruction.boundaries import boundary_links
 from hogline.reconstruction.deliveries import VERSION as DELIVERY_VERSION
 from hogline.reconstruction.house_states import VERSION as HOUSE_STATES_VERSION
 from hogline.review.board_evaluation import register_board_evaluation
+from hogline.review.catalog_response import CatalogResponseCache
 from hogline.review.ends import register_ends
 from hogline.review.house_evaluation import register_house_evaluation
 from hogline.review.learning import model_catalog, register_learning
@@ -137,6 +138,7 @@ def create_app(settings: Settings | None = None, start_worker=False):
     stop = threading.Event()
     worker_state = {"enabled": start_worker, "thread": None, "error": None}
     pool = None
+    catalog_responses = CatalogResponseCache()
 
     def worker_loop():
         try:
@@ -184,6 +186,8 @@ def create_app(settings: Settings | None = None, start_worker=False):
             if origin != str(request.base_url).rstrip("/"):
                 return JSONResponse({"detail": "Mutations require the same local origin"}, status_code=403)
         response = await call_next(request)
+        if request.method not in ("GET", "HEAD", "OPTIONS") and response.status_code < 400:
+            catalog_responses.invalidate()
         if request.url.path == "/" or request.url.path.startswith("/static/"):
             response.headers["Cache-Control"] = "no-cache"
         return response
@@ -196,50 +200,57 @@ def create_app(settings: Settings | None = None, start_worker=False):
     def find_moments(query: MomentQuery):
         return search_moments(db, query)
 
-    @app.get("/api/catalog")
-    def get_catalog():
+    def build_catalog():
         with db.snapshot_session() as session:
             data = catalog_in_session(session)
             broadcast = broadcast_catalog_in_session(session, db.settings.data_dir)
-            return {
-                **data,
-                "app_version": __version__,
-                "worker": {
-                    "enabled": worker_state["enabled"],
-                    "running": bool(worker_state["thread"] and worker_state["thread"].is_alive()),
-                    "error": worker_state["error"],
-                    **(
-                        pool.status()
-                        if pool
-                        else {"configured_workers": db.settings.workers, "alive_workers": 0}
+            # These documents already contain JSON values. Avoid FastAPI's recursive
+            # conversion of the whole archive on the event loop before serialization.
+            return JSONResponse(
+                {
+                    **data,
+                    "app_version": __version__,
+                    "worker": {
+                        "enabled": worker_state["enabled"],
+                        "running": bool(worker_state["thread"] and worker_state["thread"].is_alive()),
+                        "error": worker_state["error"],
+                        **(
+                            pool.status()
+                            if pool
+                            else {"configured_workers": db.settings.workers, "alive_workers": 0}
+                        ),
+                    },
+                    "jobs": jobs_in_session(session),
+                    "batches": batches_in_session(session),
+                    "observations": observations_in_session(session),
+                    "board_locations": board_locations_in_session(session),
+                    "window_version": WINDOW_VERSION,
+                    "window_tracking_version": TRACKING_VERSION,
+                    "window_tracks": tracks_in_session(session),
+                    "window_house_states": house_states_in_session(session),
+                    "house_states_version": HOUSE_STATES_VERSION,
+                    "window_actors": actors_in_session(session),
+                    "actor_version": ACTOR_VERSION,
+                    "window_deliveries": deliveries_in_session(session),
+                    "window_detector_version": DETECTOR_VERSION,
+                    "window_visibility_version": VISIBILITY_VERSION,
+                    "window_decoder_version": DECODER_VERSION,
+                    "window_delivery_version": DELIVERY_VERSION,
+                    "window_retention_version": RETENTION_VERSION,
+                    "broadcast": broadcast,
+                    "score_disagreements": conflicts_in_session(session, data, broadcast),
+                    "source_boundary_links": boundary_links(
+                        data["sources"],
+                        broadcast["observations"],
+                        broadcast["version"],
+                        {e["id"] for e in data["evidence"]},
                     ),
-                },
-                "jobs": jobs_in_session(session),
-                "batches": batches_in_session(session),
-                "observations": observations_in_session(session),
-                "board_locations": board_locations_in_session(session),
-                "window_version": WINDOW_VERSION,
-                "window_tracking_version": TRACKING_VERSION,
-                "window_tracks": tracks_in_session(session),
-                "window_house_states": house_states_in_session(session),
-                "house_states_version": HOUSE_STATES_VERSION,
-                "window_actors": actors_in_session(session),
-                "actor_version": ACTOR_VERSION,
-                "window_deliveries": deliveries_in_session(session),
-                "window_detector_version": DETECTOR_VERSION,
-                "window_visibility_version": VISIBILITY_VERSION,
-                "window_decoder_version": DECODER_VERSION,
-                "window_delivery_version": DELIVERY_VERSION,
-                "window_retention_version": RETENTION_VERSION,
-                "broadcast": broadcast,
-                "score_disagreements": conflicts_in_session(session, data, broadcast),
-                "source_boundary_links": boundary_links(
-                    data["sources"],
-                    broadcast["observations"],
-                    broadcast["version"],
-                    {e["id"] for e in data["evidence"]},
-                ),
-            }
+                }
+            )
+
+    @app.get("/api/catalog")
+    def get_catalog(request: Request):
+        return catalog_responses.response(build_catalog, request.headers.get("if-none-match"))
 
     @app.post("/api/perception/analyze")
     def analyze():
