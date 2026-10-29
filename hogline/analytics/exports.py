@@ -23,7 +23,7 @@ from hogline.perception.board_locator import board_locations_in_session
 from hogline.perception.broadcast import broadcast_catalog_in_session
 from hogline.perception.pipeline import observations_in_session
 from hogline.reconstruction.boundaries import boundary_links
-from hogline.reconstruction.continuations import continuation_score_groups
+from hogline.reconstruction.continuations import continuation_score_groups, reconcile_continuation_groups
 from hogline.reconstruction.ends import reconstruct_ends
 from hogline.reconstruction.scorecards import reconstruct_scorecards
 from hogline.reconstruction.scoring import reconcile_scores
@@ -135,6 +135,9 @@ def snapshot_in_session(session, mode, root):
     ]
     payload["continuation_score_groups"] = continuation_score_groups(
         payload["sources"], payload["scorecard_timelines"], payload["source_boundary_links"]
+    )
+    payload["grouped_score_histories"] = reconcile_continuation_groups(
+        payload["continuation_score_groups"], payload["reconciled_score_histories"]
     )
     validate_references(payload)
     # Use the same rows that were serialized, even if a review is saved during export.
@@ -306,4 +309,85 @@ def csv_export(release):
                             for k, v in row.items()
                         }
                     )
+    return out.getvalue()
+
+
+def grouped_scores_csv(release):
+    """One row per proposed grouped end; source-local rows remain in the ordinary CSV."""
+    if release["mode"] != "exploratory":
+        raise ValueError("Grouped proposed scores require exploratory export mode")
+    fields = [
+        "score_history_id",
+        "continuation_group_id",
+        "source_ids",
+        "source_history_ids",
+        "sheet",
+        "official_number",
+        "acceptance",
+        "comparison",
+        "red_points",
+        "yellow_points",
+        "cumulative_red_points",
+        "cumulative_yellow_points",
+        "board_red_points",
+        "board_yellow_points",
+        "ice_red_points",
+        "ice_yellow_points",
+        "lying_red_points",
+        "lying_yellow_points",
+        "end_completion_verified",
+        "game_completion",
+        "ice_review_ids",
+        "evidence_ids",
+        "youtube_links",
+    ]
+    out = io.StringIO()
+    writer = csv.DictWriter(out, fieldnames=fields)
+    writer.writeheader()
+    sources = {s["id"]: s for s in release["sources"]}
+    evidence = {e["id"]: e for e in release["evidence"]}
+    for history in release["grouped_score_histories"]["histories"]:
+        sheets = {sources[sid].get("sheet") for sid in history["source_ids"]}
+        for end in history["ends"]:
+            ids = sorted(
+                set(
+                    end["ice_evidence_ids"]
+                    + end["phase_evidence_ids"]
+                    + (end["board_evidence"] or {}).get("evidence_ids", [])
+                )
+            )
+            row = {
+                "score_history_id": history["id"],
+                "continuation_group_id": history["continuation_group_id"],
+                "source_ids": "|".join(history["source_ids"]),
+                "source_history_ids": "|".join(history["source_history_ids"]),
+                "sheet": next(iter(sheets)) if len(sheets) == 1 else None,
+                "official_number": end["official_number"],
+                "acceptance": end["status"],
+                "comparison": end["comparison"],
+                "red_points": end["points"]["red"],
+                "yellow_points": end["points"]["yellow"],
+                "cumulative_red_points": end["score_after_end"]["red"],
+                "cumulative_yellow_points": end["score_after_end"]["yellow"],
+                **{
+                    f"{basis}_{c}_points": (end[field] or {}).get(c)
+                    for basis, field in (
+                        ("board", "board_points"),
+                        ("ice", "ice_points"),
+                        ("lying", "lying_ice_points"),
+                    )
+                    for c in ("red", "yellow")
+                },
+                "end_completion_verified": end["end_completion_verified"],
+                "game_completion": history["game_completion"],
+                "ice_review_ids": "|".join(end["ice_review_ids"]),
+                "evidence_ids": "|".join(ids),
+                "youtube_links": "|".join(evidence[i].get("youtube_url") or "" for i in ids),
+            }
+            writer.writerow(
+                {
+                    k: "'" + v if isinstance(v, str) and v.startswith(("=", "+", "-", "@")) else v
+                    for k, v in row.items()
+                }
+            )
     return out.getvalue()

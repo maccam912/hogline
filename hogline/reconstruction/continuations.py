@@ -5,6 +5,7 @@ from collections import Counter, defaultdict
 from hogline.adapters.sources import digest
 
 VERSION = "clock-and-score-prefix-continuations-v2"
+RECONCILED_VERSION = "grouped-board-and-reviewed-ice-scores-v1"
 COLORS = ("red", "yellow")
 
 
@@ -163,3 +164,120 @@ def _group(chain, edges, books):
         "ends_played": None,
     }
     return {"id": digest(body), **body}
+
+
+def reconcile_continuation_groups(grouping, reports):
+    """Combine checked source projections while retaining every source's claim."""
+    by_board = {
+        h["board_history_id"]: h for report in reports for h in report["histories"] if h["board_history_id"]
+    }
+    inputs = [(g, [by_board[key] for key in g["history_ids"]]) for g in grouping["groups"]]
+    # Independent ice-only histories must not disappear just because no board was readable.
+    inputs.extend((None, [h]) for report in reports for h in report["histories"] if not h["board_history_id"])
+    histories = []
+    for group, members in inputs:
+        by_end = defaultdict(list)
+        for member in members:
+            for end in member["ends"]:
+                by_end[end["official_number"] or end["observed_index"]].append(
+                    {"source_id": member["source_id"], "history_id": member["id"], "end": end}
+                )
+        ends, totals, prefix = [], dict.fromkeys(COLORS, 0), 0
+        for number in range(1, max(by_end, default=0) + 1):
+            originals = by_end[number]
+
+            def claims(field, originals=originals):
+                return {
+                    tuple(v["end"][field][c] for c in COLORS)
+                    for v in originals
+                    if v["end"].get(field) and all(v["end"][field][c] is not None for c in COLORS)
+                }
+
+            scores = claims("points")
+            board, ice, lying = (
+                claims(field) for field in ("board_points", "ice_points", "lying_ice_points")
+            )
+            disputed = (
+                any(v["end"]["status"] == "disputed" for v in originals)
+                or len(scores) > 1
+                or len(board | ice) > 1
+            )
+
+            def single(values):
+                return dict(zip(COLORS, next(iter(values)), strict=True)) if len(values) == 1 else None
+
+            points = None if disputed else single(scores)
+            totals = {
+                c: totals[c] + points[c] if totals[c] is not None and points is not None else None
+                for c in COLORS
+            }
+            status = "disputed" if disputed else "proposed" if points is not None else "unresolved"
+            if prefix == number - 1 and status == "proposed":
+                prefix = number
+            board_ids = sorted(
+                {i for v in originals for i in (v["end"]["board_evidence"] or {}).get("evidence_ids", [])}
+            )
+            end = {
+                "official_number": number
+                if group or any(v["end"]["official_number"] for v in originals)
+                else None,
+                "observed_index": number,
+                "points": points or dict.fromkeys(COLORS, None),
+                "score_after_end": dict(totals),
+                "board_points": single(board),
+                "ice_points": single(ice),
+                "lying_ice_points": single(lying),
+                "end_completion_verified": any(v["end"]["end_completion_verified"] for v in originals),
+                "comparison": "disagreement"
+                if disputed
+                else "agreement"
+                if board and ice
+                else "scoreboard_only"
+                if board
+                else "ice_only"
+                if ice
+                else "unresolved",
+                "status": status,
+                "state": "unknown" if points is None else "played" if any(points.values()) else "blank",
+                "board_evidence": {"evidence_ids": board_ids} if board_ids else None,
+                "source_claims": originals,
+                **{
+                    field: sorted({i for v in originals for i in v["end"][field]})
+                    for field in ("ice_review_ids", "ice_evidence_ids", "phase_evidence_ids")
+                },
+            }
+            ends.append(end)
+        complete = bool(
+            ends
+            and prefix == len(ends)
+            and any(h["game_completion"] == "complete" and len(h["ends"]) == len(ends) for h in members)
+        )
+        body = {
+            "continuation_group_id": group["id"] if group else None,
+            "source_ids": [h["source_id"] for h in members],
+            "source_history_ids": [h["id"] for h in members],
+            "continuation_links": group["continuation_links"] if group else [],
+            "ends": ends,
+            "score_history_complete_through": prefix or None,
+            "known_end_scores": sum(e["status"] == "proposed" for e in ends),
+            "game_completion": "complete" if complete else "unknown",
+            "final_result": dict(totals) if complete else None,
+            "ends_played": len(ends) if complete else None,
+            "acceptance": "proposed",
+        }
+        histories.append({"id": digest(body), **body})
+    result = {
+        "version": RECONCILED_VERSION,
+        "grouping_sha256": grouping["sha256"],
+        "source_report_hashes": {r["source_id"]: r["sha256"] for r in reports},
+        "histories": histories,
+        "summary": {
+            "known_end_scores": sum(h["known_end_scores"] for h in histories),
+            "score_disagreements": sum(e["status"] == "disputed" for h in histories for e in h["ends"]),
+            "physical_game_count": None,
+        },
+        "notice": "Proposed continuation groups combine source-local board and independent ice evidence. "
+        "Every original claim and missing recording gap is retained; "
+        "lying stones alone do not prove completion.",
+    }
+    return {**result, "sha256": digest(result)}

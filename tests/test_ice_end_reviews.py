@@ -62,6 +62,13 @@ def test_independent_ice_review_is_idempotent_exported_and_stays_proposed(db, so
     assert book["acceptance"] == "proposed"
     release = snapshot(db, "exploratory")
     validate_references(release)
+    grouped = release["grouped_score_histories"]["histories"]
+    assert len(grouped) == 1 and grouped[0]["continuation_group_id"] is None
+    assert grouped[0]["final_result"] == {"red": 2, "yellow": 0}
+    grouped[0]["ends"][0]["points"]["red"] = 7
+    with pytest.raises(ValueError, match="grouped scores"):
+        validate_references(release)
+    grouped[0]["ends"][0]["points"]["red"] = 2
     assert release["ice_end_reviews"][0]["id"] == first["id"]
     import csv
     import io

@@ -7,7 +7,7 @@ from hogline.adapters.sources import import_local, import_youtube, inventory
 from hogline.analytics.actors import derive_window_actors
 from hogline.analytics.deliveries import derive_window_deliveries
 from hogline.analytics.end_timeline import analyze_house_scores, game_end_timeline, source_end_timeline
-from hogline.analytics.exports import csv_export, snapshot
+from hogline.analytics.exports import csv_export, grouped_scores_csv, snapshot
 from hogline.analytics.house_states import derive_house_states
 from hogline.analytics.moments import MomentQuery, search_moments
 from hogline.analytics.tracks import derive_window_tracks
@@ -265,6 +265,9 @@ def main():
     export = commands.add_parser("export", help="Create an immutable dataset release")
     export.add_argument("path")
     export.add_argument("--mode", choices=["confirmed", "exploratory"], default="confirmed")
+    export.add_argument(
+        "--grouped-scores", action="store_true", help="Export proposed grouped end scores as CSV"
+    )
     args = parser.parse_args()
     settings = Settings.load(args.data_dir)
     db = Database(settings)
@@ -523,10 +526,18 @@ def main():
                 return
             case "export":
                 path = Path(args.path)
+                if args.grouped_scores and (args.mode != "exploratory" or path.suffix != ".csv"):
+                    raise ValueError("--grouped-scores requires --mode exploratory and a .csv destination")
                 if path.exists():
                     raise ValueError("Export destination exists; choose a new filename for this release")
                 result = snapshot(db, args.mode)
-                path.write_text(csv_export(result) if path.suffix == ".csv" else json.dumps(result, indent=2))
+                path.write_text(
+                    grouped_scores_csv(result)
+                    if args.grouped_scores
+                    else csv_export(result)
+                    if path.suffix == ".csv"
+                    else json.dumps(result, indent=2)
+                )
                 result = {"id": result["id"], "path": str(path.resolve()), "sha256": result["sha256"]}
         print(json.dumps(result, indent=2))
     except (ValueError, OSError) as exc:
