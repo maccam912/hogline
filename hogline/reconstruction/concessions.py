@@ -31,4 +31,6 @@ def resolve_concession(facts, lying, previous):
         return result("unresolved", "prior_score_needed_for_outcome_exception")
     if previous[scoring] > previous[opponent]:
         return result("not_scored", "counting_team_finished_its_stones_and_already_leads")
+    if previous[scoring] + lying[scoring] <= previous[opponent]:
+        return result("unresolved", "points_do_not_establish_counting_team_lead")
     return result("scored", "points_required_to_determine_outcome", lying)

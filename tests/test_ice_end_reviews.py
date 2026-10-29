@@ -261,7 +261,7 @@ def test_conceded_unscored_end_keeps_prior_total_and_does_not_become_a_blank(db,
     assert history["known_end_scores"] == history["score_history_complete_through"] == 1
 
 
-def test_concession_facts_cannot_say_the_conceding_team_has_no_stone_left(db, sources):
+def test_concession_facts_cannot_replace_an_all_stones_completed_review(db, sources):
     edit = request(db, sources[0])
     edit.update(
         end_completed=False,
@@ -269,10 +269,10 @@ def test_concession_facts_cannot_say_the_conceding_team_has_no_stone_left(db, so
             "rule": "world-curling-2025-R12h",
             "conceding_color": "red",
             "red_remaining": 0,
-            "yellow_remaining": 1,
+            "yellow_remaining": 0,
         },
     )
-    with pytest.raises(ValueError, match="delivering team"):
+    with pytest.raises(ValueError, match="All stones played"):
         save_ice_end_review(db, edit)
 
 
@@ -321,3 +321,24 @@ def test_unscored_concession_conflicts_with_a_posted_or_completed_end(db, source
         "histories"
     ][0]
     assert history["ends"][0]["status"] == "disputed" and history["final_result"] is None
+
+
+def test_concession_may_follow_release_of_the_teams_last_stone(db, sources):
+    edit = request(db, sources[0])
+    edit.update(
+        end_completed=False,
+        red_points=0,
+        yellow_points=2,
+        concession={
+            "rule": "world-curling-2025-R12h",
+            "conceding_color": "red",
+            "red_remaining": 0,
+            "yellow_remaining": 1,
+        },
+        note="Red concedes while its eighth stone is still moving; yellow has not played hammer.",
+    )
+    save_ice_end_review(db, edit)
+    history = source_score_history(db, sources[0]["id"])["histories"][0]
+    assert history["final_result"] == {"red": 0, "yellow": 2}
+    assert history["ends_played"] is None
+    assert history["ends"][0]["concession_decisions"][0]["reason"] == "counting_team_has_last_stone_remaining"

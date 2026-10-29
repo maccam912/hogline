@@ -11,6 +11,8 @@ from hogline.reconstruction.concessions import RULE, resolve_concession
         ((0, 1), (0, 4), (6, 3), "scored", (0, 4)),
         ((1, 0), (0, 4), (6, 3), "scored", (0, 4)),
         ((1, 0), (0, 4), (3, 3), "scored", (0, 4)),
+        ((1, 0), (0, 4), (8, 2), "unresolved", None),
+        ((1, 0), (0, 4), (6, 2), "unresolved", None),
         ((1, 0), (0, 0), (1, 6), "not_scored", None),
         ((None, 0), (0, 4), (1, 6), "unresolved", None),
         ((1, 0), (None, None), (1, 6), "unresolved", None),

@@ -39,7 +39,7 @@ class IceEndReview(Model):
     end_completed: bool | None = None
     concession: ConcessionReview | None = None
     final_state_evidence_ids: list[str] = Field(min_length=2, max_length=12)
-    phase_evidence_ids: list[str] = Field(min_length=2, max_length=16)
+    phase_evidence_ids: list[str] = Field(min_length=2, max_length=32)
     author: str = Field(min_length=1, max_length=120)
     reviewer_kind: Literal["assistant_visual", "human"]
     note: str = Field(min_length=1, max_length=4000)
@@ -58,8 +58,6 @@ class IceEndReview(Model):
                 raise ValueError(
                     "Concession facts require a game-ending review without completed-end assertion"
                 )
-            if getattr(self.concession, f"{self.concession.conceding_color}_remaining") == 0:
-                raise ValueError("The conceding delivering team must still have a stone remaining")
             if all(v == 0 for v in remaining):
                 raise ValueError("All stones played requires a completed-end review")
         return self
