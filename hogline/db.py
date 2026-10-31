@@ -418,6 +418,89 @@ class ScoreConflictReview(Base):
     __table_args__ = (UniqueConstraint("conflict_id", "revision"),)
 
 
+class SkillCampaign(Base):
+    __tablename__ = "skill_campaign"
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=uid)
+    game_id: Mapped[str] = mapped_column(ForeignKey("game.id"), index=True)
+    plan_key: Mapped[str] = mapped_column(String, unique=True)
+    state: Mapped[str] = mapped_column(String, default="active", index=True)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    document: Mapped[dict] = mapped_column(JSON)
+    sha256: Mapped[str] = mapped_column(String)
+    __mapper_args__ = {"version_id_col": revision}
+
+
+class SkillDirectionRule(Base):
+    __tablename__ = "skill_direction_rule"
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    document: Mapped[dict] = mapped_column(JSON)
+    sha256: Mapped[str] = mapped_column(String)
+    __mapper_args__ = {"version_id_col": revision}
+
+
+class SkillMotionBatch(Base):
+    __tablename__ = "skill_motion_batch"
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=uid)
+    game_id: Mapped[str] = mapped_column(ForeignKey("game.id"), index=True)
+    plan_key: Mapped[str] = mapped_column(String, unique=True)
+    state: Mapped[str] = mapped_column(String, default="active", index=True)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    document: Mapped[dict] = mapped_column(JSON)
+    sha256: Mapped[str] = mapped_column(String)
+    __mapper_args__ = {"version_id_col": revision}
+
+
+class SkillSequence(Base):
+    __tablename__ = "skill_sequence"
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    game_id: Mapped[str] = mapped_column(ForeignKey("game.id"), index=True)
+    job_id: Mapped[str] = mapped_column(ForeignKey("job.id"), unique=True)
+    sha256: Mapped[str] = mapped_column(String)
+    document: Mapped[dict] = mapped_column(JSON)
+
+
+class SkillMotion(Base):
+    __tablename__ = "skill_motion"
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    game_id: Mapped[str] = mapped_column(ForeignKey("game.id"), index=True)
+    job_id: Mapped[str] = mapped_column(ForeignKey("job.id"), unique=True)
+    sha256: Mapped[str] = mapped_column(String)
+    document: Mapped[dict] = mapped_column(JSON)
+
+
+class SkillHouseContext(Base):
+    __tablename__ = "skill_house_context"
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    game_id: Mapped[str] = mapped_column(ForeignKey("game.id"), index=True)
+    input_key: Mapped[str] = mapped_column(String, unique=True)
+    created_at: Mapped[str] = mapped_column(String, default=now)
+    document: Mapped[dict] = mapped_column(JSON)
+    sha256: Mapped[str] = mapped_column(String)
+
+
+class SkillReview(Base):
+    __tablename__ = "skill_review"
+    id: Mapped[str] = mapped_column(ForeignKey("game.id"), primary_key=True)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    document: Mapped[dict] = mapped_column(JSON)
+    sha256: Mapped[str] = mapped_column(String)
+    __mapper_args__ = {"version_id_col": revision}
+
+
+class SkillRevision(Base):
+    __tablename__ = "skill_revision"
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=uid)
+    game_id: Mapped[str] = mapped_column(ForeignKey("game.id"))
+    number: Mapped[int] = mapped_column(Integer)
+    document: Mapped[dict] = mapped_column(JSON)
+    sha256: Mapped[str] = mapped_column(String)
+    author: Mapped[str] = mapped_column(String)
+    reason: Mapped[str] = mapped_column(String)
+    created_at: Mapped[str] = mapped_column(String, default=now)
+    __table_args__ = (UniqueConstraint("game_id", "number"),)
+
+
 class Database:
     def __init__(self, settings: Settings):
         self.settings = settings

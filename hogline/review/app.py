@@ -119,6 +119,7 @@ from hogline.review.learning import model_catalog, register_learning
 from hogline.review.players import register_players
 from hogline.review.recordings import register_recordings
 from hogline.review.score_conflicts import conflicts_in_session, register_score_conflicts
+from hogline.review.skills import register_skills
 
 
 class SourceImport(Model):
@@ -177,6 +178,7 @@ def create_app(settings: Settings | None = None, start_worker=False):
     register_score_conflicts(app, db)
     register_ends(app, db)
     register_recordings(app, db)
+    register_skills(app, db)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "testserver"])
 
     @app.middleware("http")

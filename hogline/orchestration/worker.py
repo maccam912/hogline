@@ -77,9 +77,13 @@ def jobs_in_session(session):
 
 def claim(db):
     from hogline.orchestration.automatic import advance_automatic
+    from hogline.orchestration.skill_campaigns import advance_skill_campaigns
+    from hogline.orchestration.skill_motion_batches import advance_motion_batches
 
     try:
         advance_automatic(db)
+        advance_skill_campaigns(db)
+        advance_motion_batches(db)
         return claim_transaction(db)
     except StaleDataError:
         return None  # Another worker/control updated this batch; retry on the next poll.
@@ -114,7 +118,17 @@ def claim_transaction(db):
         session.flush()
         eligible = (Job.state == "queued") & (Job.attempts < 3)
         job, batch = None, None
+        vision_busy = (
+            session.scalar(
+                select(Job.id)
+                .where(Job.state == "running", Job.document["kind"].as_string() == "skill_sequence")
+                .limit(1)
+            )
+            is not None
+        )
         for candidate in session.scalars(select(Job).where(eligible).order_by(Job.id)):
+            if vision_busy and candidate.document.get("kind") == "skill_sequence":
+                continue
             if (candidate.document.get("retry_after") or "") > now():
                 continue
             owner = (
@@ -275,6 +289,14 @@ def vectors_from_doc(db, doc):
 
 
 def execute(db, job):
+    if job.get("kind") == "skill_sequence":
+        from hogline.orchestration.skills import execute_skill_sequence
+
+        return execute_skill_sequence(db, job)
+    if job.get("kind") == "skill_motion":
+        from hogline.orchestration.skill_motion import execute_skill_motion
+
+        return execute_skill_motion(db, job)
     if job.get("kind") == "ice_survey":
         from hogline.orchestration.ice import execute_ice
 

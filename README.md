@@ -142,3 +142,16 @@ Tests use synthetic data and local FFmpeg fixtures, never download YouTube media
 The review API is documented at `/docs`. Its main routes are `GET /api/catalog`, `POST /api/sources`, `POST /api/scans`, `PUT /api/games/{id}`, `POST /api/perception/analyze`, and `POST /api/releases`.
 
 The public repository contains text source and documentation. Local data, media, model weights, environment files, and build outputs are ignored. `python3 scripts/check_repository.py` checks staged Git blobs for private/artifact paths, binary content, files over 1 MiB, and common credential patterns; CI checks every tracked blob. Enable the local hook after cloning with `git config core.hooksPath .githooks`, and review the staged diff before publishing.
+
+### Player skills and hierarchical delivery review
+
+Open **Player skills** to review anonymous throwing positions,
+delivery/call proposals, local motion and calibrated aim. Game → end-block → delivery
+exports preserve unknown labels and finish times. The Wausau odd/even direction rule
+is saved per layout without altering earlier processing profiles.
+
+Configure optional OpenAI vision through the ignored `.env`; copy `.env.example`
+and supply your own key. Requests use a bounded local budget and preserve proposal
+status. No validated real-player weight/aim cohort or complete action-only reel is
+claimed. See [skill reports](docs/SKILL_REPORTS.md) and the
+[shot-quality plan](docs/SHOT_QUALITY_PLAN.md).

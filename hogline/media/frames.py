@@ -240,3 +240,42 @@ def observe(
         key["acquisition_tier"] = "coarse-v1"
     result["evidence_key"] = digest(key)
     return result, vectors
+
+
+def image_content(image):
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def read_image_bytes(root, asset):
+    path = (root / asset["path"]).resolve()
+    if not path.is_relative_to((root / "evidence").resolve()):
+        raise ValueError("Evidence image path is outside the evidence archive")
+    if "derived_from" in asset:
+        if "derived_from" in asset["derived_from"]:
+            raise ValueError("Nested evidence crops are not supported")
+        parent = read_image(root, asset["derived_from"])
+        bounds = asset["pixel_bounds"]
+        if (
+            len(bounds) != 4
+            or not all(isinstance(v, int) for v in bounds)
+            or not 0 <= bounds[0] < bounds[2] <= parent.width
+            or not 0 <= bounds[1] < bounds[3] <= parent.height
+        ):
+            raise ValueError("Evidence crop bounds are outside their parent")
+        content = image_content(parent.crop(bounds))
+    elif path.is_file():
+        content = path.read_bytes()
+    else:
+        raise ValueError("Evidence image is unavailable; use its original timestamp link")
+    if len(content) != asset["bytes"] or hashlib.sha256(content).hexdigest() != asset["sha256"]:
+        raise ValueError("Evidence image is missing or corrupt (checksum mismatch)")
+    return content
+
+
+def read_image(root, asset):
+    with Image.open(io.BytesIO(read_image_bytes(root, asset))) as image:
+        if image.size != (asset["width"], asset["height"]):
+            raise ValueError("Evidence image dimensions disagree with its manifest")
+        return image.convert("RGB")

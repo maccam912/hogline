@@ -16,17 +16,36 @@ MAX_CANDIDATES = 64
 
 
 def track_handles(
-    rows, input_sha256, *, views=("house_top", "house_bottom"), version=VERSION, require_ring=True
+    rows,
+    input_sha256,
+    *,
+    views=("house_top", "house_bottom"),
+    version=VERSION,
+    require_ring=True,
+    min_samples=MIN_SAMPLES,
+    min_span_seconds=MIN_SPAN_SECONDS,
+    max_speed_fraction_per_second=0.35,
+    view_speed_limits=None,
+    prediction_error_fraction=None,
 ):
+    if min_samples < 3 or min_span_seconds <= 0 or not 0 < max_speed_fraction_per_second <= 2:
+        raise ValueError("Invalid tracking sample/span/speed limits")
+    if view_speed_limits and any(
+        view not in views or not 0 < speed <= 2 for view, speed in view_speed_limits.items()
+    ):
+        raise ValueError("Invalid per-view tracking speed limits")
+    if prediction_error_fraction is not None and not 0 < prediction_error_fraction <= 0.1:
+        raise ValueError("Invalid prediction error limit")
     tracks, diagnostics = [], Counter()
     for view in views:
+        speed_limit = (view_speed_limits or {}).get(view, max_speed_fraction_per_second)
         active, previous = [], None
 
         def finish(track, reason, view=view):
             points = track["points"]
             if (
-                len(points) < MIN_SAMPLES
-                or points[-1]["source_seconds"] - points[0]["source_seconds"] < MIN_SPAN_SECONDS
+                len(points) < min_samples
+                or points[-1]["source_seconds"] - points[0]["source_seconds"] < min_span_seconds
             ):
                 diagnostics["short_fragments_excluded"] += 1
                 return
@@ -124,9 +143,14 @@ def track_handles(
                     for j, (_, b) in enumerate(detections)
                 )
             }
-            gate = max(4, row["crop_width"] * min(0.4, 0.35 * (dt or row["requested_interval_seconds"])))
+            gate = max(
+                4,
+                row["crop_width"] * min(0.4, speed_limit * (dt or row["requested_interval_seconds"])),
+            )
             margin = max(2, row["crop_width"] * 0.015)
             costs = np.full((len(active), len(detections)), 1e9)
+            predictions = []
+            prediction_gates = []
             for a, track in enumerate(active):
                 last = track["points"][-1]
                 predicted = np.asarray(last["center_px"], dtype=float)
@@ -137,6 +161,13 @@ def track_handles(
                         * dt
                         / (last["source_seconds"] - earlier["source_seconds"])
                     )
+                prediction_gate = (
+                    min(gate, max(3, row["crop_width"] * prediction_error_fraction))
+                    if prediction_error_fraction is not None and len(track["points"]) >= 2
+                    else gate
+                )
+                predictions.append(predicted)
+                prediction_gates.append(prediction_gate)
                 for b, (_, detection) in enumerate(detections):
                     if (
                         b not in crowded
@@ -144,14 +175,20 @@ def track_handles(
                         and math.dist(last["center_px"], detection["center_px"]) <= gate
                     ):
                         distance = math.dist(predicted, detection["center_px"])
-                        if distance <= gate:
+                        if distance <= prediction_gate:
                             costs[a, b] = distance
             ambiguous_tracks = {
                 a
                 for a, track in enumerate(active)
                 if any(
                     track["color"] == detections[b][1]["color"]
-                    and math.dist(track["points"][-1]["center_px"], detections[b][1]["center_px"]) <= gate
+                    and math.dist(
+                        predictions[a]
+                        if prediction_error_fraction is not None
+                        else track["points"][-1]["center_px"],
+                        detections[b][1]["center_px"],
+                    )
+                    <= prediction_gates[a]
                     for b in crowded
                 )
             }
@@ -213,8 +250,11 @@ def track_handles(
         "version": version,
         "tracks": sorted(tracks, key=lambda t: (t["start_seconds"], t["view"], t["id"])),
         "diagnostics": dict(diagnostics),
-        "minimum_samples": MIN_SAMPLES,
-        "minimum_span_seconds": MIN_SPAN_SECONDS,
+        "minimum_samples": min_samples,
+        "minimum_span_seconds": min_span_seconds,
+        "maximum_speed_fraction_per_second": max_speed_fraction_per_second,
+        "view_speed_limits": view_speed_limits,
+        "prediction_error_fraction": prediction_error_fraction,
         "association_gate": "same color, bounded displacement and velocity prediction; ambiguous pairs split",
         "notice": (
             "Discrete image-space handle fragments. No interpolation across missing/obstructed samples, "
