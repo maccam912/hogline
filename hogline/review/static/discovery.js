@@ -18,7 +18,7 @@
             (f) => `<article class="batch-card discovery-card">
       <div class="batch-heading"><strong>${f.discovered_sources} recordings discovered</strong><span class="pill">${status(f.backfill_state)}</span></div>
       <p><a class="evidence-link" href="${escapeHTML(f.url)}" target="_blank" rel="noopener">Channel / playlist ↗</a> · next listing position ${f.next_index} · pass ${f.generation}</p>
-      <p class="fine-print">${f.config.page_size} entries/page, ${f.config.overlap} shared · scheduled ${f.config.scheduled ? `every ${f.config.reconcile_hours}h while running` : "off"}. Discovery is separate from media processing.</p>
+      <p class="fine-print">${f.config.page_size} entries/page, ${f.config.overlap} shared · scheduled ${f.config.scheduled ? `every ${f.config.reconcile_hours}h while running` : "off"}.</p>
       ${f.pause_reason ? `<p class="job-error">${escapeHTML(f.pause_reason)}</p>` : ""}
       <div class="batch-actions">${f.backfill_state === "ready" ? `<button class="button secondary" data-feed="${f.id}" data-feed-action="next">Next page →</button>` : ""}
       ${f.backfill_state !== "paused" ? `<button class="button quiet" data-feed="${f.id}" data-feed-action="head">Check latest page</button><button class="button quiet" data-feed="${f.id}" data-feed-action="pause">Pause feed</button>` : `<button class="button quiet" data-feed="${f.id}" data-feed-action="resume">Resume feed</button>`}
@@ -27,7 +27,7 @@
       <details data-feed-runs="${f.id}" ${expanded.has(f.id) ? "open" : ""}><summary>${f.runs.length} recent page runs</summary>${f.runs.map((r) => `<p class="fine-print"><a href="/api/discovery/runs/${r.id}" target="_blank" rel="noopener">${r.request.mode === "head" ? "Head check" : `Position ${r.request.start}`} ↗</a> · ${status(r.state)} · ${r.attempts} ${r.attempts === 1 ? "attempt" : "attempts"}${r.source_count != null ? ` · ${r.source_count} listed recordings` : ""}${r.superseded ? " · superseded pass" : ""}${r.error ? `<br><span class="job-error">${escapeHTML(r.error)}</span>` : ""}</p>`).join("")}</details></article>`,
           )
           .join("") ||
-        '<p class="fine-print">No discovery feeds yet. Adding a single recording still works independently.</p>';
+        '<p class="fine-print">No feeds added.</p>';
     } catch (error) {
       toast(error.message, true);
     } finally {

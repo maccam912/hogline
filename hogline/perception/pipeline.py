@@ -1,12 +1,11 @@
-import hashlib
 from uuid import NAMESPACE_URL, uuid5
 
 import cv2
 import numpy as np
-from PIL import Image
 from sqlalchemy import select
 
 from hogline.db import Evidence, FrameObservation
+from hogline.media.frames import read_image
 from hogline.perception.board_locator import analyze_board_location
 from hogline.perception.house import house_ring
 from hogline.perception.stones import VERSION, HSVHandleDetector, StoneDetector
@@ -26,10 +25,7 @@ def analyze_frame(session, evidence, root, detector: StoneDetector | None = None
     frame, views = evidence.document, {}
     for view in ("house_top", "house_bottom"):
         asset = frame["crops"][view]
-        path = root / asset["path"]
-        if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != asset["sha256"]:
-            raise ValueError("Cannot analyze missing/corrupt evidence; reacquire that frame first")
-        image = np.asarray(Image.open(path).convert("RGB"))
+        image = np.asarray(read_image(root, asset))
         analysis = (
             detector.inspect(image)
             if isinstance(detector, HSVHandleDetector)
@@ -71,6 +67,31 @@ def analyze_frame(session, evidence, root, detector: StoneDetector | None = None
     return document
 
 
+def prepare_frame_observations(db, documents, tick=lambda: None):
+    """Compute frame analysis in a read snapshot; publication holds the writer only for inserts."""
+    prepared = []
+    with db.snapshot_session() as session, session.no_autoflush:
+        for doc in documents:
+            tick()
+            evidence = session.get(Evidence, doc["id"]) or Evidence(
+                id=doc["id"], source_id=doc["source_id"], evidence_key=doc["evidence_key"], document=doc
+            )
+            analyze_frame(session, evidence, db.settings.data_dir)
+            for row in list(session.new):
+                if not isinstance(row, FrameObservation):
+                    raise ValueError("Unexpected write during frame preparation")
+                prepared.append(row)
+                session.expunge(row)
+            tick()
+    return prepared
+
+
+def publish_frame_observations(session, prepared):
+    for row in prepared:
+        if session.get(FrameObservation, row.id) is None:
+            session.add(row)
+
+
 def analyze_cached(db):
     """Reprocess retained frames with no video acquisition or interpretation edits."""
     with db.session() as session:
@@ -86,8 +107,10 @@ def observations(db):
         return observations_in_session(session)
 
 
-def observations_in_session(session):
-    return [
-        r.document
-        for r in session.scalars(select(FrameObservation).where(FrameObservation.model_version == VERSION))
-    ]
+def observations_in_session(session, source_id=None):
+    query = select(FrameObservation).where(FrameObservation.model_version == VERSION)
+    if source_id is not None:
+        query = query.join(Evidence, FrameObservation.evidence_id == Evidence.id).where(
+            Evidence.source_id == source_id
+        )
+    return [r.document for r in session.scalars(query)]

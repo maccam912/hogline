@@ -1,5 +1,6 @@
 (() => {
-  const links = () => state.data.source_boundary_links || [];
+  let loadedSource = null, requestSource = null, loadedLinks = [];
+  const links = () => loadedSource === state.source ? loadedLinks : state.data.source_boundary_links || [];
   const label = (link) =>
     link.kind === "possible_continuation"
       ? "Possible continuation"
@@ -8,13 +9,13 @@
     const related = links().filter((p) =>
       [p.left_source_id, p.right_source_id].includes(state.source),
     );
-    $("#source-boundary-panel").hidden = !related.length;
+    $("#source-boundary-panel").hidden = !state.source;
     $("#source-boundary-list").innerHTML = related
       .map(
         (p) =>
           `<article class="activity-card"><div><strong>${label(p)}</strong><p class="fine-print">${time(p.estimated_recording_gap_seconds)} estimated recording gap · ${p.clock_alternatives.length} clock alternatives · ${p.board_comparison.agreeing_colors.length ? `posted ${p.board_comparison.agreeing_colors.join(" / ")} row agrees` : "board continuity unresolved"}</p></div><button class="button secondary" data-boundary="${p.id}">Compare recordings →</button></article>`,
       )
-      .join("");
+      .join("") + `<button class="button quiet" id="find-recording-links" ${requestSource === state.source ? "disabled" : ""}>${requestSource === state.source ? "Finding recording links…" : "Find nearby recording links"}</button>${loadedSource === state.source && !related.length ? '<p class="fine-print">No supported recording links found.</p>' : ""}`;
   }
   function compare(id) {
     const p = links().find((p) => p.id === id);
@@ -89,9 +90,26 @@
       "Spans added to the draft. Review membership and boundaries before saving.",
     );
   }
-  document.addEventListener("click", (event) => {
+  document.addEventListener("click", async (event) => {
     const button = event.target.closest("button");
     if (!button) return;
+    if (button.id === "find-recording-links") {
+      const sid = state.source;
+      requestSource = sid;
+      render();
+      try {
+        const result = await api(`/sources/${encodeURIComponent(sid)}/boundary-links`);
+        if (sid === state.source) {
+          loadedLinks = result.links;
+          loadedSource = sid;
+        }
+      } catch (error) {
+        toast(error.message, true);
+      } finally {
+        if (requestSource === sid) requestSource = null;
+        render();
+      }
+    }
     if (button.dataset.boundary) compare(button.dataset.boundary);
     if (button.dataset.useBoundary) use(button.dataset.useBoundary);
   });

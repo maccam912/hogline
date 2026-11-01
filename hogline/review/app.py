@@ -97,6 +97,7 @@ from hogline.orchestration.plans import (
     preview_plan,
 )
 from hogline.orchestration.pool import WorkerPool
+from hogline.orchestration.recording_campaigns import tick as tick_recording_campaigns
 from hogline.orchestration.windows import RETENTION_VERSION, WindowRequest, enqueue_window
 from hogline.orchestration.worker import enqueue, jobs_in_session, retry
 from hogline.perception.actors import VERSION as ACTOR_VERSION
@@ -114,12 +115,17 @@ from hogline.reconstruction.house_states import VERSION as HOUSE_STATES_VERSION
 from hogline.review.board_evaluation import register_board_evaluation
 from hogline.review.catalog_response import CatalogResponseCache
 from hogline.review.ends import register_ends
+from hogline.review.examples import register_examples
 from hogline.review.house_evaluation import register_house_evaluation
 from hogline.review.learning import model_catalog, register_learning
+from hogline.review.lineups import register_lineups
 from hogline.review.players import register_players
+from hogline.review.reconstructions import register_reconstructions
+from hogline.review.recording_campaigns import register_campaigns
 from hogline.review.recordings import register_recordings
 from hogline.review.score_conflicts import conflicts_in_session, register_score_conflicts
 from hogline.review.skills import register_skills
+from hogline.review.workspace import overview_in_session, source_processing_in_session
 
 
 class SourceImport(Model):
@@ -140,10 +146,14 @@ def create_app(settings: Settings | None = None, start_worker=False):
     worker_state = {"enabled": start_worker, "thread": None, "error": None}
     pool = None
     catalog_responses = CatalogResponseCache()
+    overview_responses = CatalogResponseCache()
+    source_responses = CatalogResponseCache(ttl=5, max_entries=4)
+    boundary_responses = CatalogResponseCache(ttl=30, max_entries=4)
 
     def worker_loop():
         try:
             while not stop.is_set():
+                tick_recording_campaigns(db)
                 if run_discovery_once(db) is None:
                     stop.wait(1)
         except Exception as exc:
@@ -170,15 +180,22 @@ def create_app(settings: Settings | None = None, start_worker=False):
                 pool.close()
 
     app = FastAPI(title="Hogline", version=__version__, lifespan=lifespan)
+    from hogline.review.screening import router as screening_router
+
+    app.include_router(screening_router(db))
     app.state.db = db
     register_board_evaluation(app, db)
     register_house_evaluation(app, db)
     register_learning(app, db)
     register_players(app, db)
+    register_lineups(app, db)
+    register_skills(app, db)
+    register_examples(app, db)
+    register_reconstructions(app, db)
     register_score_conflicts(app, db)
     register_ends(app, db)
     register_recordings(app, db)
-    register_skills(app, db)
+    register_campaigns(app, db)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "testserver"])
 
     @app.middleware("http")
@@ -190,6 +207,9 @@ def create_app(settings: Settings | None = None, start_worker=False):
         response = await call_next(request)
         if request.method not in ("GET", "HEAD", "OPTIONS") and response.status_code < 400:
             catalog_responses.invalidate()
+            overview_responses.invalidate()
+            source_responses.invalidate()
+            boundary_responses.invalidate()
         if request.url.path == "/" or request.url.path.startswith("/static/"):
             response.headers["Cache-Control"] = "no-cache"
         return response
@@ -253,6 +273,115 @@ def create_app(settings: Settings | None = None, start_worker=False):
     @app.get("/api/catalog")
     def get_catalog(request: Request):
         return catalog_responses.response(build_catalog, request.headers.get("if-none-match"))
+
+    @app.get("/api/workspace")
+    def get_workspace(request: Request):
+        def load():
+            with db.snapshot_session() as session:
+                data = overview_in_session(session)
+            return JSONResponse(
+                {
+                    **data,
+                    "app_version": __version__,
+                    "worker": {
+                        "enabled": worker_state["enabled"],
+                        "running": bool(worker_state["thread"] and worker_state["thread"].is_alive()),
+                        "error": worker_state["error"],
+                        **(
+                            pool.status()
+                            if pool
+                            else {
+                                "configured_workers": db.settings.workers,
+                                "alive_workers": 0,
+                            }
+                        ),
+                    },
+                }
+            )
+
+        return overview_responses.response(load, request.headers.get("if-none-match"))
+
+    @app.get("/api/sources/{source_id}/workspace")
+    def get_source_workspace(source_id: str, request: Request):
+        def load():
+            with db.snapshot_session() as session:
+                if session.get(Source, source_id) is None:
+                    raise HTTPException(404, "Recording not found")
+                data = catalog_in_session(session, source_id)
+                broadcast = broadcast_catalog_in_session(session, db.settings.data_dir, source_id)
+                processing = source_processing_in_session(session, source_id)
+                return JSONResponse(
+                    {
+                        **{
+                            k: v
+                            for k, v in data.items()
+                            if k
+                            not in (
+                                "sources",
+                                "games",
+                                "retired_games",
+                                "review_tasks",
+                                "reconciliations",
+                            )
+                        },
+                        **processing,
+                        "source_id": source_id,
+                        "observations": observations_in_session(session, source_id),
+                        "board_locations": board_locations_in_session(session, source_id),
+                        "window_version": WINDOW_VERSION,
+                        "window_tracking_version": TRACKING_VERSION,
+                        "window_tracks": tracks_in_session(session, source_id=source_id),
+                        "window_house_states": house_states_in_session(session, source_id=source_id),
+                        "house_states_version": HOUSE_STATES_VERSION,
+                        "window_actors": actors_in_session(session, source_id=source_id),
+                        "actor_version": ACTOR_VERSION,
+                        "window_deliveries": deliveries_in_session(session, source_id=source_id),
+                        "window_detector_version": DETECTOR_VERSION,
+                        "window_visibility_version": VISIBILITY_VERSION,
+                        "window_decoder_version": DECODER_VERSION,
+                        "window_delivery_version": DELIVERY_VERSION,
+                        "window_retention_version": RETENTION_VERSION,
+                        "broadcast": broadcast,
+                        "score_disagreements": conflicts_in_session(session, data, broadcast),
+                        # Cross-recording comparisons require the archive-wide endpoint.
+                        "source_boundary_links": [],
+                    }
+                )
+
+        return source_responses.response(load, request.headers.get("if-none-match"), key=source_id)
+
+    @app.get("/api/sources/{source_id}/boundary-links")
+    def get_source_boundary_links(source_id: str, request: Request):
+        def load():
+            with db.snapshot_session() as session:
+                source = session.get(Source, source_id)
+                if source is None:
+                    raise HTTPException(404, "Recording not found")
+                sources = [
+                    {**s.document, "id": s.id}
+                    for s in session.scalars(select(Source))
+                    if s.id == source_id
+                    or (
+                        source.document.get("sheet") is not None
+                        and s.document.get("sheet") == source.document["sheet"]
+                    )
+                ]
+                ids = [s["id"] for s in sources]
+                broadcast = broadcast_catalog_in_session(session, db.settings.data_dir, source_ids=ids)
+                evidence_ids = set(session.scalars(select(Evidence.id).where(Evidence.source_id.in_(ids))))
+                links = boundary_links(sources, broadcast["observations"], broadcast["version"], evidence_ids)
+                return JSONResponse(
+                    {
+                        "source_id": source_id,
+                        "links": [
+                            link
+                            for link in links
+                            if source_id in (link["left_source_id"], link["right_source_id"])
+                        ],
+                    }
+                )
+
+        return boundary_responses.response(load, request.headers.get("if-none-match"), key=source_id)
 
     @app.post("/api/perception/analyze")
     def analyze():
@@ -581,13 +710,17 @@ def create_app(settings: Settings | None = None, start_worker=False):
             asset = frame.document["image"] if view == "composite" else frame.document["crops"].get(view)
             if asset is None:
                 raise HTTPException(404, "View not available")
-            path = db.settings.data_dir / asset["path"]
-            if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != asset["sha256"]:
+            from hogline.media.frames import read_image_bytes
+
+            try:
+                content = read_image_bytes(db.settings.data_dir, asset)
+            except ValueError as exc:
                 raise HTTPException(
-                    410, "Cached frame is missing or corrupt. Use its original timestamp link."
-                )
-            return FileResponse(
-                path, media_type="image/png", headers={"Cache-Control": "private, max-age=3600"}
+                    410,
+                    "Cached image unavailable or released to save space. Use its original timestamp link.",
+                ) from exc
+            return Response(
+                content, media_type="image/png", headers={"Cache-Control": "private, max-age=3600"}
             )
 
     @app.get("/api/media/{source_id}")

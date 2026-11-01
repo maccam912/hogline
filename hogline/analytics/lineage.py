@@ -397,9 +397,11 @@ def validate_references(payload):
                     raise ValueError("Scorecard header reference differs from original evidence")
         expected = [
             reconstruct_scorecards(
-                source["id"], select_inputs(source["id"], payload["broadcast"]["observations"], inspected)
+                source["id"],
+                select_inputs(source["id"], payload["broadcast"]["observations"], inspected),
+                version=saved["version"],
             )
-            for source in payload["sources"]
+            for source, saved in zip(payload["sources"], payload["scorecard_timelines"], strict=True)
         ]
         if payload["scorecard_timelines"] != expected:
             raise ValueError("Release scorecard timelines disagree with their pinned observations")

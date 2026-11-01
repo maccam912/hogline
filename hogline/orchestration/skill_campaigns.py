@@ -121,7 +121,7 @@ def preview_campaign(db, game_id, request):
     }
 
 
-def start_campaign(db, game_id, request):
+def start_campaign(db, game_id, request, *, automatic=False):
     config = load_vision_config()
     if not config.enabled or not config.api_key:
         raise ValueError("Configure and enable vision before starting excerpt processing")
@@ -139,10 +139,16 @@ def start_campaign(db, game_id, request):
                 "refinements": [],
                 "refinements_planned": False,
                 "last_dispatched_at": None,
+                "automatic": automatic,
             }
             row = SkillCampaign(game_id=game_id, plan_key=key, document=document, sha256=digest(document))
             session.add(row)
             session.flush()
+        elif automatic and not checked(row).get("automatic"):
+            # Adopt the same immutable plan without undoing operator pause/cancel decisions.
+            assign(row, {**checked(row), "automatic": True})
+            if row.state == "paused" and (checked(row).get("pause_reason") or "").startswith("Clip failed:"):
+                assign(row, {**checked(row), "pause_reason": None, "pause_code": None}, "active")
         return campaign_view(session, row)
 
 
@@ -174,7 +180,7 @@ def context_error(session, plan, config):
 def plan_refinements(session, document):
     plan = document["plan"]
     request = CampaignRequest.model_validate(plan["request"])
-    job_ids = [unit["job_id"] for unit in document["survey"]]
+    job_ids = [unit["job_id"] for unit in document["survey"] if not unit.get("skipped_failed")]
     sequences = []
     for row in session.scalars(select(SkillSequence).where(SkillSequence.job_id.in_(job_ids))):
         if digest(row.document) != row.sha256:
@@ -235,7 +241,22 @@ def plan_refinements(session, document):
 def advance_skill_campaigns(db):
     """Short writer transaction. One outstanding vision job globally before admitting another."""
     with db.snapshot_session(write=True) as session:
-        rows = list(session.scalars(select(SkillCampaign).where(SkillCampaign.state == "active")))
+        rows = list(
+            session.scalars(select(SkillCampaign).where(SkillCampaign.state.in_(["active", "paused"])))
+        )
+        rows = [
+            row
+            for row in rows
+            if row.state == "active"
+            or (
+                db.settings.auto_skills
+                and checked(row).get("automatic")
+                and (
+                    checked(row).get("pause_code") == "vision_budget"
+                    or checked(row).get("pause_reason") == "Local vision reservation budget reached"
+                )
+            )
+        ]
         if not rows:
             return
         try:
@@ -263,6 +284,8 @@ def advance_skill_campaigns(db):
         for row in rows:
             document = {**checked(row)}
             plan = document["plan"]
+            if document.get("automatic") and not db.settings.auto_skills:
+                continue
             try:
                 error = context_error(session, plan, config)
             except ValueError as exc:
@@ -270,9 +293,17 @@ def advance_skill_campaigns(db):
             if error:
                 assign(row, {**document, "pause_reason": error}, "paused")
                 continue
+            if row.state == "paused":
+                status = budget_status(db.settings.data_dir / "skill-vision")
+                if status["committed_cents"] + RESERVATION_CENTS > int(config.budget_usd * 100):
+                    continue
+                document = {**document, "pause_reason": None, "pause_code": None}
+                assign(row, document, "active")
             units = document["survey"] if document["phase"] == "survey" else document["refinements"]
             pending = None
             for index, unit in enumerate(units):
+                if unit.get("skipped_failed"):
+                    continue
                 job = session.get(Job, unit["job_id"]) if unit["job_id"] else None
                 if job is not None and job.state == "succeeded":
                     continue
@@ -300,6 +331,23 @@ def advance_skill_campaigns(db):
                 continue
             index, unit, job = pending
             if job is not None:
+                if job.state == "failed" and document.get("automatic"):
+                    # Keep the failed job/reservation. Continue other clips without paying
+                    # for a retry or pretending the missing interval was observed.
+                    updated = [dict(u) for u in units]
+                    updated[index].update(skipped_failed=True, error=job.document.get("error"))
+                    field = "survey" if document["phase"] == "survey" else "refinements"
+                    gaps = [
+                        *document.get("coverage_gaps", []),
+                        {
+                            "phase": document["phase"],
+                            "job_id": job.id,
+                            "request": unit["request"],
+                            "error": job.document.get("error"),
+                        },
+                    ]
+                    assign(row, {**document, field: updated, "coverage_gaps": gaps})
+                    continue
                 if job.state in ("failed", "cancelled"):
                     assign(
                         row,
@@ -320,7 +368,13 @@ def advance_skill_campaigns(db):
                 status = budget_status(db.settings.data_dir / "skill-vision")
                 if status["committed_cents"] + RESERVATION_CENTS > int(config.budget_usd * 100):
                     assign(
-                        row, {**document, "pause_reason": "Local vision reservation budget reached"}, "paused"
+                        row,
+                        {
+                            **document,
+                            "pause_reason": "Local vision reservation budget reached",
+                            "pause_code": "vision_budget",
+                        },
+                        "paused",
                     )
                     continue
                 job = enqueue_in_session(session, payload)
@@ -381,9 +435,17 @@ def control_campaign(db, campaign_id, control):
         if control.action == "resume":
             if error := context_error(session, document["plan"], load_vision_config()):
                 raise ValueError(error)
-            assign(row, {**document, "pause_reason": None}, "active")
+            assign(row, {**document, "pause_reason": None, "pause_code": None}, "active")
         else:
             state = "paused" if control.action == "pause" else "cancelled"
-            assign(row, {**document, "pause_reason": "Stopped by operator; admitted clip may finish"}, state)
+            assign(
+                row,
+                {
+                    **document,
+                    "pause_reason": "Stopped by operator; admitted clip may finish",
+                    "pause_code": "operator",
+                },
+                state,
+            )
         session.flush()
         return campaign_view(session, row)

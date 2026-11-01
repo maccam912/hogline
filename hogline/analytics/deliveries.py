@@ -106,9 +106,14 @@ def derive_window_deliveries(db, window_id):
         return save_deliveries_in_session(session, window, actors, rows)
 
 
-def deliveries_in_session(session, *, full=False):
+def deliveries_in_session(session, *, full=False, source_id=None):
     output = []
-    for row in session.scalars(select(WindowDeliveries).order_by(WindowDeliveries.id)):
+    query = select(WindowDeliveries)
+    if source_id is not None:
+        query = query.join(AnalysisWindow, WindowDeliveries.window_id == AnalysisWindow.id).where(
+            AnalysisWindow.source_id == source_id
+        )
+    for row in session.scalars(query.order_by(WindowDeliveries.id)):
         result = checked_delivery_result(row)
         if not full:
             result["candidate_count"] = len(result.pop("candidates"))

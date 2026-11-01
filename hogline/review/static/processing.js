@@ -54,7 +54,7 @@
     };
   }
   function render() {
-    $("#batch-list").innerHTML = (state.data.batches || [])
+    $("#batch-list").innerHTML = (state.data.batches || []).filter((b) => !b.summary_only)
       .filter((b) => b.request.source_ids.includes(state.source))
       .map((b) => {
         const mb = b.reserved_image_bytes / 1024 ** 2;

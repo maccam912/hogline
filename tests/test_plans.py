@@ -129,7 +129,7 @@ def test_growth_budget_stops_before_write_and_resumes_original(db, sources, medi
     assert paused["state"] == "paused"
     assert "image-growth" in paused["pause_reason"]
     assert 0 < paused["reserved_image_bytes"] <= 1024**2
-    assert calls == [0]
+    assert calls == [0, 30]  # One original now fits without duplicate crop PNGs.
     assert paused["executions"][0]["state"] == "stopped"
     with db.session() as session:
         assert session.get(Job, batch["units"][0]["job_id"]).attempts == 0
@@ -139,7 +139,7 @@ def test_growth_budget_stops_before_write_and_resumes_original(db, sources, medi
     assert resumed["limits"]["max_image_growth_mb"] == 4
     assert resumed["control_history"][-1]["action"] == "resume"
     assert worker.run_one(db)["state"] == "succeeded"
-    assert calls == [0, 30]
+    assert calls == [0, 30, 30]  # The first original is reused; the unwritten second frame is retried.
     assert batches(db)[0]["state"] == "completed"
 
 

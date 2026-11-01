@@ -158,7 +158,7 @@ def test_examples_reject_missing_class_partial_review_cap_and_corruption(db, tra
     with pytest.raises(ValueError, match="independently reviewed"):
         prepare_examples(db.settings.data_dir, records, 100, lambda: None)
     asset = training_dataset["records"][0]["evidence"]["crops"]["house_bottom"]
-    (db.settings.data_dir / asset["path"]).write_bytes(b"broken")
+    (db.settings.data_dir / asset.get("derived_from", asset)["path"]).write_bytes(b"broken")
     with pytest.raises(ValueError, match="corrupt"):
         train(db, training_dataset)
     with db.snapshot_session() as session:

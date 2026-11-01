@@ -12,6 +12,7 @@ LABELS = {
     "scan": "Scanning for activity",
     "delivery_detail": "Refining delivery evidence",
     "ocr": "Reading scoreboards",
+    "lineup": "Finding on-ice faces for a game lineup",
 }
 
 
@@ -51,7 +52,11 @@ def analysis_progress(document, units, jobs, executions, state):
     starts = [e.document["started_at"] for e in executions if e.document.get("started_at")]
     return {
         "phase": phase,
-        "phase_label": LABELS.get(phase, "Processing recording"),
+        "phase_label": (
+            "Queued · waiting for a recording slot"
+            if whole and document.get("storage_policy") and not starts and state == "active"
+            else LABELS.get(phase, "Processing recording")
+        ),
         "stage_index": PHASES.index(phase) + 1 if whole and phase in PHASES else None,
         "stage_count": len(PHASES) if whole else None,
         "completed_tasks": completed,

@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Hogline · The curling archive</title>
+    <title>Hogline</title>
     <link rel="stylesheet" href="/static/app.css" />
     <script src="/static/app.js" defer></script>
     <script src="/static/evaluation.js" defer></script>
@@ -16,6 +16,7 @@
     <script src="/static/house-states.js" defer></script>
     <script src="/static/actors.js" defer></script>
     <script src="/static/players.js" defer></script>
+    <script src="/static/lineups.js" defer></script>
     <script src="/static/house-evaluation.js" defer></script>
     <script src="/static/moments.js" defer></script>
     <script src="/static/score-conflicts.js" defer></script>
@@ -26,6 +27,9 @@
     <script src="/static/ends.js" defer></script>
     <script src="/static/board-refinement.js" defer></script>
     <script src="/static/recordings.js" defer></script>
+    <script src="/static/workspace.js" defer></script>
+    <script src="/static/batch-work.js" defer></script>
+    <link rel="stylesheet" href="/static/workspace.css" />
     <link rel="stylesheet" href="/static/recordings.css" />
   </head>
   <body>
@@ -34,17 +38,16 @@
         ><span class="stone-mark">●</span> hogline<span class="brand-dot"
           >.</span
         ></a
-      ><span class="header-label">THE CURLING ARCHIVE</span>
+      >
       <div class="header-right">
-        <span class="local-light"></span> LOCAL WORKBENCH
-        <span class="version" id="build-label">LOCAL PILOT</span>
+        <span class="local-light"></span> Local
+        <span class="version" id="build-label">Version</span>
       </div>
     </header>
     <div class="shell">
       <aside class="sidebar">
         <div class="club-mark">W<span>WISCONSIN · USA</span></div>
         <h2>Wausau Curling Club</h2>
-        <p class="muted small">Eight sheets. Every story has a source.</p>
         <div class="nav-label">WORKSPACE</div>
         <button class="nav-item selected" id="archive-nav">
           ▤ <span>Recordings</span><b id="recording-count">0</b></button
@@ -54,25 +57,35 @@
         <button class="nav-item" id="score-disagreements-button">
           Score disagreements <b id="score-disagreement-count">0</b>
         </button>
-        <button class="nav-item" id="players-button">Players · optional names</button>
-        <a class="nav-item" href="/static/skills.html">Player skills</a>
+        <button class="nav-item" id="players-button">Players</button>
+        <button class="nav-item" id="lineups-button">People &amp; lineups</button>
+        <a class="nav-item" href="/screening">Find my team</a>
+        <a class="nav-item" href="/static/skills.html">Shot analysis</a>
         <div class="sidebar-rule"></div>
-        <div class="nav-label">FILTER BY SHEET</div>
+
         <div class="sheet-grid" id="sheet-filters"></div>
+        <div id="recording-date-filters">
+          <label>From date<input type="date" id="date-from-filter"></label>
+          <label>Through date<input type="date" id="date-through-filter"></label>
+          <fieldset id="weekday-filters"><legend>Days of the week</legend>
+            <label><input type="checkbox" value="0" checked> Monday</label>
+            <label><input type="checkbox" value="1" checked> Tuesday</label>
+            <label><input type="checkbox" value="2" checked> Wednesday</label>
+            <label><input type="checkbox" value="3" checked> Thursday</label>
+            <label><input type="checkbox" value="4" checked> Friday</label>
+            <label><input type="checkbox" value="5" checked> Saturday</label>
+            <label><input type="checkbox" value="6" checked> Sunday</label>
+          </fieldset>
+          <button class="button quiet" id="clear-date-filters">Show all dates, days &amp; sheets</button>
+        </div>
         <div class="sidebar-bottom">
-          <span class="eyebrow">EVIDENCE FIRST</span>
-          <p>Every score has a source.<br />Unknown stays unknown.</p>
           <a href="/docs" target="_blank" rel="noopener">API documentation ↗</a>
         </div>
       </aside>
       <main>
         <section class="page-heading">
           <div>
-            <div class="eyebrow">THE FIRST PASS</div>
-            <h1>From footage to facts.</h1>
-            <p class="muted">
-              Find the game. Follow the evidence. Keep what you can verify.
-            </p>
+            <h1>Recordings</h1>
           </div>
           <div class="heading-actions">
             <button class="button secondary" id="moments-button">
@@ -99,12 +112,10 @@
         </section>
         <section class="stats" aria-label="Archive coverage">
           <div>
-            <span>RECORDINGS</span><strong id="stat-sources">0</strong
-            ><small>metadata in the archive</small>
+            <span>RECORDINGS</span><strong id="stat-sources">0</strong>
           </div>
           <div>
-            <span>INVENTORIED FOOTAGE</span><strong id="stat-hours">0h</strong
-            ><small>duration known · media fetched on demand</small>
+            <span>RECORDING DURATION</span><strong id="stat-hours">0h</strong>
           </div>
           <div>
             <span>GAME INTERVALS</span><strong id="stat-games">0</strong
@@ -113,8 +124,7 @@
             >
           </div>
           <div>
-            <span>FINAL RESULTS</span><strong id="stat-results">0</strong
-            ><small>confirmed with evidence</small>
+            <span>FINAL RESULTS</span><strong id="stat-results">0</strong>
           </div>
         </section>
         <section class="workbench">
@@ -126,34 +136,25 @@
             <input
               type="search"
               id="search"
-              placeholder="Search title, date, or team…"
+              placeholder="Search title, date, team or player…"
               aria-label="Search archive"
             />
             <div id="source-list"></div>
-            <p class="fine-print">
-              A recording may hold several games. A game may span several
-              recordings.
-            </p>
           </div>
           <div class="review-panel">
             <div class="source-header">
               <div>
                 <span class="eyebrow" id="source-kicker">SOURCE VIEWER</span>
-                <h2 id="source-title">Your archive starts here.</h2>
+                <h2 id="source-title">No recording selected</h2>
               </div>
               <span class="pill amber" id="clock-status">Clock unresolved</span>
             </div>
+            <p id="source-data-status" class="fine-print" role="status" hidden></p>
             <div id="empty-viewer" class="empty-viewer">
-              <div class="house-symbol"><i></i></div>
-              <h3>A whole day. A single sheet. A place to begin.</h3>
-              <p>
-                Add a YouTube recording to import its metadata.<br />Then sample
-                a small section when you’re ready.
-              </p>
+              <div class="house-symbol"><i></i></div><h3>Choose a recording to get started</h3><p>Select one from the list, or add a YouTube recording.</p>
               <button class="button primary" id="empty-import">
-                Add your first recording ↗
+                Add recording
               </button>
-              <p class="fine-print">No full-stream download required.</p>
             </div>
             <div id="viewer-content" hidden>
               <div class="view-tabs" role="group" aria-label="Camera crop">
@@ -246,11 +247,7 @@
               <p class="fine-print" id="coverage-summary"></p>
               <div class="scan-bar">
                 <div>
-                  <h3>Make a bounded first pass</h3>
-                  <p>
-                    Sample camera panels for activity. Every proposal needs
-                    review.
-                  </p>
+                  <h3>Analysis tools</h3>
                 </div>
                 <button class="button primary" id="automatic-button">
                   Run automatic analysis →
@@ -271,7 +268,6 @@
                 <div class="section-heading"><h2>Games, ends and scores</h2>
                   <button class="button secondary" id="end-timeline-button">Reconstruct ends →</button>
                 </div>
-                <p class="fine-print">Follow numbered ends and score histories. Inspect play and clearing candidates, later board updates and experimental house scores.</p>
               </section>
               <section id="board-timeline-panel">
                 <div class="section-heading">
@@ -279,8 +275,7 @@
                   <span class="pill" id="board-change-count">0</span>
                 </div>
                 <p class="fine-print">
-                  Compare repeated card readings with before-and-after source
-                  links. These intervals do not establish when an end finished.
+                  Board changes may occur after an end finishes.
                 </p>
                 <div id="board-change-list"></div>
                 <details id="board-epochs"></details>
@@ -293,8 +288,7 @@
                   </button>
                 </div>
                 <p class="fine-print">
-                  Compare repeated handle observations. Calibration, hidden
-                  stones, and end phase remain unresolved.
+                  Counts include detected handles only.
                 </p>
                 <div id="window-list"></div>
               </section>
@@ -327,18 +321,14 @@
             </div>
           </div>
         </section>
-        <footer>
-          Hogline / Wausau pilot
-          <span>Observations → review → a dataset you can trace.</span>
-        </footer>
       </main>
     </div>
     <dialog id="import-dialog">
       <form id="import-form">
         <button class="close-dialog" type="button" aria-label="Close">×</button
-        ><span class="eyebrow">METADATA FIRST</span>
+        >
         <h2>Add a recording</h2>
-        <p>Import a source without downloading the stream.</p>
+        <p>Imports metadata only. Analysis downloads video as needed.</p>
         <label
           >YouTube recording URL<input
             name="url"
@@ -346,17 +336,13 @@
             required
             placeholder="https://www.youtube.com/watch?v=…"
         /></label>
-        <p class="fine-print">
-          Video duration is never interpreted as game duration. Dates and clock
-          mappings remain separate.
-        </p>
         <button class="button primary" type="submit">Import recording →</button>
       </form>
     </dialog>
     <dialog id="scan-dialog">
       <form id="scan-form">
         <button class="close-dialog" type="button" aria-label="Close">×</button
-        ><span class="eyebrow">SMALL, RESUMABLE STEPS</span>
+        >
         <h2>Scan a section</h2>
         <p>Frames are sought on demand. Full video is not stored.</p>
         <div class="form-grid">
@@ -408,10 +394,10 @@
     <dialog id="export-dialog">
       <form id="export-form">
         <button class="close-dialog" type="button" aria-label="Close">×</button
-        ><span class="eyebrow">REPRODUCIBLE BY DESIGN</span>
+        >
         <h2>Export a dataset</h2>
         <p>
-          Save an immutable snapshot with exact revisions and evidence links.
+          Includes saved revisions and evidence links.
         </p>
         <label
           >Interpretations<select name="mode">
@@ -442,7 +428,6 @@
       >
         ×
       </button>
-      <span class="eyebrow">VISIBLE CARDS · EVALUATION LABELS</span>
       <h2>Label this board</h2>
       <p>
         Read the movable end cards and their cumulative point columns. Include
@@ -459,7 +444,6 @@
       >
         ×
       </button>
-      <span class="eyebrow">CHECK ACROSS SHEETS AND DAYS</span>
       <h2>Board benchmark</h2>
       <p>
         Freeze reviewed labels, keep whole recordings and known days together,
@@ -470,7 +454,7 @@
     </dialog>
     <dialog id="evaluation-dialog">
       <button class="close-dialog" type="button" aria-label="Close">×</button
-      ><span class="eyebrow">MEASURE BEFORE ACCEPTING</span>
+      >
       <h2>Detector evaluation</h2>
       <p>
         Freeze label revisions and whole recording/day groups. Complete reviewed
@@ -480,11 +464,9 @@
     </dialog>
     <dialog id="plan-dialog">
       <button class="close-dialog" type="button" aria-label="Close">×</button>
-      <span class="eyebrow">PREVIEW BEFORE PROCESSING</span>
       <h2>Plan a recording</h2>
       <p>
-        Queue a limited set of chunks with shared context. Each owns its central
-        interval. Chunks do not define games.
+        Preview processing chunks and resource limits.
       </p>
       <form id="plan-form">
         <div class="form-grid">
@@ -566,17 +548,15 @@
     <div id="toast" role="status" aria-live="polite" hidden></div>
     <dialog id="boundary-dialog">
       <button class="close-dialog" type="button" aria-label="Close">×</button
-      ><span class="eyebrow">TWO RECORDINGS · ONE QUESTION</span>
+      >
       <h2>Inspect a recording link</h2>
       <div id="boundary-comparison"></div>
     </dialog>
     <dialog id="discovery-dialog">
       <button class="close-dialog" type="button" aria-label="Close">×</button>
-      <span class="eyebrow">METADATA FIRST</span>
       <h2>Discover source recordings</h2>
       <p>
-        Track a channel or playlist in bounded pages. No video or scan jobs are
-        fetched or created by discovery.
+        Imports recording listings without downloading video.
       </p>
       <form id="discovery-form">
         <label
@@ -629,10 +609,8 @@
           while this app is running</label
         >
         <p class="fine-print">
-          Each scheduled cycle checks the latest page and the declared
-          backfill-page budget. Listing positions can move; a missing overlap
-          stops cursor advancement. Finding a listed recording does not prove it
-          is fully accessible or processed.
+          Each cycle checks for new recordings and imports older pages.
+          Import pauses if shared entries between pages cannot be found.
         </p>
         <button class="button primary" type="submit">
           Add feed and queue metadata →
@@ -641,8 +619,7 @@
       <section class="batch-card">
         <h3>Complete recording metadata</h3>
         <p>
-          Upgrade incomplete or changed listings in the background. Earlier
-          manifests and evidence remain retained. No video is fetched.
+          Refreshes incomplete or changed metadata without downloading video.
         </p>
         <form id="metadata-refresh-form" class="form-grid">
           <label
@@ -708,11 +685,9 @@
     <dialog id="window-dialog">
       <form id="window-form">
         <button class="close-dialog" type="button" aria-label="Close">×</button>
-        <span class="eyebrow">DETAILED ANALYSIS</span>
         <h2>Analyze a short window</h2>
         <p>
-          Decode this interval once, compare both overhead views, and keep a few
-          evidence frames plus downloadable observations.
+          Samples both overhead views and saves selected frames.
         </p>
         <label
           >Start at source time<input
@@ -761,9 +736,7 @@
           /></label>
         </div>
         <p class="fine-print">
-          Up to 240 selected frames and eight retained anchors. Unretained
-          pixels require decoding this small interval again. Persistent colored
-          objects remain proposals; no end score or final result is assigned.
+          Up to 240 samples and eight saved frames. Scores require separate review.
         </p>
         <button class="button primary" type="submit">
           Queue detailed window →
@@ -772,11 +745,9 @@
     </dialog>
     <dialog id="adaptive-dialog">
       <button class="close-dialog" type="button" aria-label="Close">×</button>
-      <span class="eyebrow">FOLLOW ACTIVITY · AUDIT QUIET FOOTAGE</span>
       <h2>Choose detailed windows</h2>
       <p>
-        Use retained sparse observations to select short intervals. Unknown gaps
-        stay unknown. Previewing fetches no media.
+        Selects intervals from existing scans. Previewing downloads no video.
       </p>
       <form id="adaptive-form">
         <div class="form-grid">
@@ -837,9 +808,7 @@
           /></label>
         </div>
         <p class="fine-print">
-          Activity transitions, motion, and uncertain samples guide selection.
-          Quiet audits help reveal missed activity. Both overhead views are
-          sampled every half second; no accepted game or score is created.
+          Quiet audits sample low-activity intervals to check for missed events.
         </p>
         <button class="button secondary" type="submit">
           Preview selected windows →
@@ -851,7 +820,7 @@
           type="button"
           disabled
         >
-          Start bounded detail batch →
+          Start detail batch →
         </button>
       </form>
     </dialog>
@@ -915,9 +884,7 @@
           </button>
         </div>
         <p>
-          Scan for activity, inspect selected short windows, then read retained
-          scoreboard and clock frames. One bounded run, with a reviewable record
-          of each stage.
+          Scans for activity, inspects selected intervals, and reads scoreboards and clocks.
         </p>
         <div class="form-grid">
           <label
@@ -1024,8 +991,7 @@
       >
         ×
       </button>
-      <span class="eyebrow">POSTED CARDS · PROPOSED CHANGE</span>
-      <h2>Check both sides of the change</h2>
+      <h2>Board change</h2>
       <div id="board-change-comparison"></div>
     </dialog>
     <dialog id="board-refinement-dialog" class="wide-dialog">
@@ -1037,8 +1003,7 @@
         >
           ×
         </button>
-        <span class="eyebrow">TARGETED EVIDENCE</span>
-        <h2>Narrow a board-change gap</h2>
+        <h2>Refine board-change timing</h2>
         <p id="refinement-context"></p>
         <div class="form-grid">
           <label
@@ -1114,6 +1079,11 @@
       <p class="muted">Anonymous groups keep a stable ID. Add a name whenever you want.</p>
       <p id="players-status" role="status"></p><div id="players-content"></div>
     </dialog>
+    <dialog id="lineups-dialog" class="wide-dialog">
+      <div class="dialog-heading"><h2>Faces &amp; lineups</h2><button class="close-dialog" aria-label="Close faces and lineups">×</button></div>
+      <p class="muted">Faces of people on the ice are found after each recording analysis, grouped per game, and linked across games when they clearly match. Select a face to see every game it appears in. Name only the people you want; everyone else stays anonymous. Face data stays on this computer.</p>
+      <p id="lineups-status" role="status"></p><div id="lineups-content"></div>
+    </dialog>
     <dialog id="actors-dialog" class="wide-dialog">
       <button
         class="close-dialog"
@@ -1122,7 +1092,7 @@
       >
         ×
       </button>
-      <h2>People through a short window</h2>
+      <h2>Person fragments</h2>
       <div id="actors-content" aria-live="polite"></div>
     </dialog>
     <dialog id="house-label-dialog" class="wide-dialog">
@@ -1179,8 +1149,7 @@
         </div>
         <h3>Inclusive sample ranges</h3>
         <p class="fine-print">
-          Gaps remain unknown. Use unobservable where visibility prevents
-          assessment; leave counts blank outside stable ranges.
+          Use unobservable when the view is blocked. Leave counts blank outside stable ranges.
         </p>
         <div id="house-label-segments"></div>
         <button class="button quiet" type="button" id="house-add-segment">
@@ -1301,8 +1270,7 @@
       >
         ×
       </button>
-      <span class="eyebrow">CACHED OBSERVATIONS · PROPOSED ASSOCIATIONS</span>
-      <h2>Trace visible handle fragments</h2>
+      <h2>Handle fragments</h2>
       <div id="tracks-content" aria-live="polite"></div>
     </dialog>
     <dialog id="moments-dialog" class="wide-dialog">
@@ -1313,8 +1281,7 @@
       >
         ×
       </button>
-      <span class="eyebrow">ACROSS RECORDINGS · SOURCE EVIDENCE</span>
-      <h2>Find a moment worth checking</h2>
+      <h2>Find moments</h2>
       <form id="moments-form">
         <label
           >Search descriptions<input
@@ -1408,12 +1375,9 @@
       >
         ×
       </button>
-      <span class="eyebrow">SAVED SCORES · MODEL DISAGREEMENTS</span>
-      <h2>Compare before correcting</h2>
+      <h2>Score disagreements</h2>
       <p class="fine-print">
-        New board readings can flag a discrepancy. They never overwrite a saved
-        score or its acceptance. Review the card history and linked game before
-        deciding.
+        New readings do not overwrite saved scores. Review the linked game to correct a score.
       </p>
       <button
         class="button quiet"
@@ -1436,8 +1400,7 @@
           >Reason<textarea name="reason" required maxlength="2000"></textarea>
         </label>
         <p class="fine-print">
-          This records a decision about this exact game revision and proposal
-          evidence. To change a score, use Open game review.
+          To change a score, use Open game review.
         </p>
         <div class="batch-actions">
           <button class="button primary" type="submit">

@@ -2,6 +2,7 @@
 
 import hashlib
 import math
+from pathlib import Path
 
 import cv2
 import numpy as np
@@ -11,11 +12,49 @@ from sqlalchemy import select
 from hogline.db import Evidence, Source
 from hogline.perception.ocr import normalized_crop
 
+REFERENCE_ROOT = Path(__file__).resolve().parents[1] / "media"
+
+
+def packaged_reference(reference):
+    asset = reference["asset"]
+    path = (REFERENCE_ROOT / asset["path"]).resolve()
+    if not path.is_relative_to(REFERENCE_ROOT.resolve()) or not path.is_file():
+        raise ValueError(
+            f"Required scoreboard reference is missing: {asset['path']}. Restore the app assets."
+        )
+    if hashlib.sha256(path.read_bytes()).hexdigest() != asset["sha256"]:
+        raise ValueError(
+            f"Required scoreboard reference is corrupt: {asset['path']}. Restore the app assets."
+        )
+    with Image.open(path) as image:
+        result = image.convert("RGB")
+    return result, {
+        "asset_path": asset["path"],
+        "image_sha256": asset["sha256"],
+        "source_key": reference["source_key"],
+        "source_seconds": reference["source_seconds"],
+        "evidence_id": reference.get("evidence_id"),
+        "youtube_url": reference.get("youtube_url"),
+    }
+
+
+def validate_reference_assets(layout):
+    """Fail before queueing analysis if an explicitly pinned app asset is unavailable."""
+    config = layout.get("broadcast", {})
+    templates = list(config.get("scoreboards", {}).values())
+    templates.append(config.get("automatic_board_header", {}).get("reference", {}))
+    for template in templates:
+        reference = template.get("layout_reference", {})
+        if reference.get("asset"):
+            packaged_reference(reference)
+
 
 def reference_image(session, root, template):
     reference = template.get("layout_reference")
     if not reference:
         return None, {"status": "unavailable", "missing_reason": "layout_reference_not_configured"}
+    if reference.get("asset"):
+        return packaged_reference(reference)
     source = session.scalar(select(Source).where(Source.source_key == reference["source_key"]))
     if source:
         target = reference["source_seconds"]

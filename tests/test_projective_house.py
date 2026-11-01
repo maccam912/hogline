@@ -90,3 +90,12 @@ def test_cli_records_exact_input_and_preserves_existing_diagnostic(tmp_path, mon
         main()
     assert output.read_bytes() == before
     assert "destination exists" in capsys.readouterr().err
+
+
+def test_red_inner_rings_used_in_2025_recordings():
+    image = projected_paint(obstruct=True)
+    green = np.all(image == [30, 160, 90], axis=2)
+    image[green] = [190, 40, 40]
+    report = diagnose_house_projection(image)
+    assert report["status"] == "candidate", report
+    assert report["metric_calibration"] is None

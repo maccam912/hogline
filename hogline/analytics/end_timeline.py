@@ -18,6 +18,7 @@ from hogline.analytics.scorecards import scorecard_observations_in_session, sele
 from hogline.db import AnalysisWindow, Evidence, FrameObservation, GameRow
 from hogline.domain.catalog import source_or_error
 from hogline.domain.provenance import observation_manifest, resolve_observation_manifests
+from hogline.media.frames import read_image
 from hogline.perception.broadcast import broadcast_catalog_in_session
 from hogline.perception.house_score import VERSION, inspect_house_score
 from hogline.perception.pipeline import analyze_frame
@@ -25,19 +26,25 @@ from hogline.perception.scoreboard import persistent_board_claims
 from hogline.perception.stones import VERSION as DETECTOR_VERSION
 from hogline.perception.visibility import VERSION as VISIBILITY_VERSION
 from hogline.reconstruction.ends import reconstruct_ends
+from hogline.reconstruction.result_review import result_review
 from hogline.reconstruction.scorecards import reconstruct_scorecards
 from hogline.reconstruction.scoring import reconcile_scores
 
 SCORE_VERSION = f"{VERSION}:{DETECTOR_VERSION}:{VISIBILITY_VERSION}"
 
 
-def house_scores_in_session(session):
+def house_scores_in_session(session, source_id=None):
     output = []
-    for row in session.scalars(
-        select(FrameObservation)
-        .where(FrameObservation.model_version == SCORE_VERSION)
-        .order_by(FrameObservation.id)
-    ):
+    query = select(FrameObservation).where(
+        FrameObservation.model_version.in_(
+            (SCORE_VERSION, f"image-space-granite-score-v3:{DETECTOR_VERSION}:{VISIBILITY_VERSION}")
+        )
+    )
+    if source_id is not None:
+        query = query.join(Evidence, FrameObservation.evidence_id == Evidence.id).where(
+            Evidence.source_id == source_id
+        )
+    for row in session.scalars(query.order_by(FrameObservation.id)):
         document = row.document
         if (
             document["id"] != row.id
@@ -95,15 +102,9 @@ def analyze_house_scores(db, source_id, limit=24, max_seconds=30):
             views = {}
             for view, measurements in detector["views"].items():
                 asset = frame.document["crops"][view]
-                path = (db.settings.data_dir / asset["path"]).resolve()
-                if (
-                    not path.is_relative_to((db.settings.data_dir / "evidence").resolve())
-                    or not path.is_file()
-                    or hashlib.sha256(path.read_bytes()).hexdigest() != asset["sha256"]
-                ):
-                    raise ValueError("House-score source crop is missing or corrupt")
-                with Image.open(path) as image:
-                    views[view] = inspect_house_score(np.asarray(image.convert("RGB")), measurements)
+                views[view] = inspect_house_score(
+                    np.asarray(read_image(db.settings.data_dir, asset)), measurements
+                )
             identifier = str(uuid5(NAMESPACE_URL, f"{frame.id}:{SCORE_VERSION}"))
             document = {
                 "id": identifier,
@@ -153,7 +154,7 @@ def source_end_timeline(db, source_id, start=None, end=None):
         raise ValueError("End timeline scope must have finite ordered nonnegative bounds")
     with db.snapshot_session() as session:
         source_or_error(session, source_id)
-        broadcast = broadcast_catalog_in_session(session, db.settings.data_dir)
+        broadcast = broadcast_catalog_in_session(session, db.settings.data_dir, source_id=source_id)
         windows = [
             {**w.document, "id": w.id, "source_id": w.source_id}
             for w in session.scalars(select(AnalysisWindow).where(AnalysisWindow.source_id == source_id))
@@ -168,8 +169,8 @@ def source_end_timeline(db, source_id, start=None, end=None):
         result = reconstruct_ends(
             source_id,
             broadcast["observations"],
-            house_states_in_session(session, full=True) + play["results"],
-            house_scores_in_session(session),
+            house_states_in_session(session, full=True, source_id=source_id) + play["results"],
+            house_scores_in_session(session, source_id=source_id),
             (start, end) if start is not None else None,
         )
         eligible = [
@@ -185,9 +186,9 @@ def source_end_timeline(db, source_id, start=None, end=None):
             (start, end) if start is not None else None,
         )
         result["scorecard_inspected_frames"] = len(inspected)
-        result["reconciled_score_history"] = reconcile_scores(
-            result["scorecard_reconstruction"], ice_reviews_in_session(session, source_id)
-        )
+        reviews = ice_reviews_in_session(session, source_id)
+        result["reconciled_score_history"] = reconcile_scores(result["scorecard_reconstruction"], reviews)
+        result["result_review"] = result_review(result, reviews)
         result["play_input_exclusions"] = play["exclusions"]
         result["sha256"] = digest({k: v for k, v in result.items() if k != "sha256"})
         return result

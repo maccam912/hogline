@@ -51,3 +51,20 @@ def test_mutation_during_build_invalidates_that_snapshot_and_failures_are_not_ca
     with pytest.raises(ValueError, match="Unavailable"):
         cache.response(fail)
     assert cache.response(lambda: JSONResponse({"revision": 3})).body == b'{"revision":3}'
+
+
+def test_source_cache_is_bounded_and_uses_separate_etags():
+    cache = CatalogResponseCache(max_entries=2)
+    calls = []
+
+    def load(key):
+        calls.append(key)
+        return JSONResponse({"source": key})
+
+    a = cache.response(lambda: load("a"), key="a")
+    b = cache.response(lambda: load("b"), a.headers["etag"], key="b")
+    assert b.status_code == 200
+    assert cache.response(lambda: load("a"), a.headers["etag"], key="a").status_code == 304
+    cache.response(lambda: load("c"), key="c")  # Evicts b, the least recently used recording.
+    cache.response(lambda: load("b"), key="b")
+    assert calls == ["a", "b", "c", "b"] and len(cache.entries) == 2

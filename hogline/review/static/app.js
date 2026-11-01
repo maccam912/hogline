@@ -40,12 +40,95 @@ const state = {
   overlay: true,
   sheet: null,
   reviewOnly: false,
+  dateFrom: "",
+  dateThrough: "",
+  weekdays: [0, 1, 2, 3, 4, 5, 6],
   draft: null,
   audit: {},
+};
+const inDayScope = (s) => {
+  const date = s.title_date || "";
+  if (state.dateFrom && date < state.dateFrom) return false;
+  if (state.dateThrough && (!date || date > state.dateThrough)) return false;
+  if (state.weekdays.length === 7) return true;
+  return /^\d{4}-\d{2}-\d{2}$/.test(date) && state.weekdays.includes((new Date(`${date}T12:00:00Z`).getUTCDay()+6)%7);
 };
 let toastTimer;
 let catalogSignature;
 let catalogETag = null;
+let archiveOverview = null;
+let selectedWorkspace = null;
+let workspaceETag = null;
+let workspaceRequest = null;
+let workspaceController = null;
+let workspaceSource = null;
+
+function applyWorkspace() {
+  if (!archiveOverview) return;
+  const detail = selectedWorkspace?.source_id === state.source ? selectedWorkspace : {};
+  const batches = new Map(archiveOverview.batches.map((b) => [b.id, b]));
+  for (const b of detail.batches || []) {
+    if (b.revision === batches.get(b.id)?.revision) batches.set(b.id, b);
+  }
+  const jobs = new Map((detail.jobs || []).map((j) => [j.id, j]));
+  for (const j of archiveOverview.jobs) jobs.set(j.id, j);
+  state.data = {...archiveOverview, ...detail, batches: [...batches.values()], jobs: [...jobs.values()]};
+}
+
+async function refreshSelectedWorkspace() {
+  const sid = state.source;
+  if (!sid || !archiveOverview) return;
+  if (workspaceRequest && workspaceSource === sid) return workspaceRequest;
+  workspaceController?.abort();
+  const controller = new AbortController();
+  workspaceController = controller;
+  if (workspaceSource !== sid) {
+    workspaceETag = null;
+    selectedWorkspace = null;
+    workspaceSource = sid;
+    applyWorkspace();
+  }
+  const status = $("#source-data-status");
+  if (!selectedWorkspace) {
+    status.hidden = false;
+    status.textContent = "Loading this recording’s evidence…";
+  }
+  const timer = setTimeout(() => controller.abort(), 30000);
+  const request = (async () => {
+    try {
+      const response = await fetch(`/api/sources/${encodeURIComponent(sid)}/workspace`, {
+        cache: "no-store", signal: controller.signal,
+        headers: workspaceETag ? {"If-None-Match": workspaceETag} : {},
+      });
+      if (response.status === 304) {
+        status.hidden = true;
+        return;
+      }
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({detail: response.statusText}));
+        throw Error(typeof error.detail === "string" ? error.detail : JSON.stringify(error.detail));
+      }
+      const incoming = await response.json();
+      if (sid !== state.source || controller.signal.aborted) return;
+      selectedWorkspace = incoming;
+      workspaceETag = response.headers.get("ETag");
+      applyWorkspace();
+      status.hidden = true;
+      render();
+    } catch (error) {
+      if (sid !== state.source || workspaceController !== controller) return;
+      status.hidden = false;
+      status.textContent = error.name === "AbortError"
+        ? "Loading evidence timed out. Retrying shortly…"
+        : `This recording’s evidence could not load: ${error.message}. Retrying shortly…`;
+    } finally {
+      clearTimeout(timer);
+      if (workspaceController === controller) workspaceRequest = null;
+    }
+  })();
+  workspaceRequest = request;
+  return request;
+}
 function toast(text, error = false) {
   const el = $("#toast");
   // Native dialogs sit above body content, including fixed-position notices.
@@ -117,11 +200,15 @@ async function refresh() {
   }
 }
 async function refreshCatalog() {
-  const response = await fetch("/api/catalog", {
+  const response = await fetch("/api/workspace", {
     cache: "no-store",
+    signal: AbortSignal.timeout(15000),
     headers: catalogETag ? { "If-None-Match": catalogETag } : {},
   });
-  if (response.status === 304) return;
+  if (response.status === 304) {
+    refreshSelectedWorkspace();
+    return;
+  }
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: response.statusText }));
     throw Error(typeof error.detail === "string" ? error.detail : JSON.stringify(error.detail));
@@ -131,17 +218,19 @@ async function refreshCatalog() {
   const signature = catalogETag || JSON.stringify(incoming);
   if (signature === catalogSignature) return;
   catalogSignature = signature;
-  state.data = incoming;
-  if (!state.data.sources.some((s) => s.id === state.source) && state.data.sources.length) {
-    state.source = state.data.sources[0].id;
-    state.seconds = frames()[0]?.source_seconds || 0;
+  archiveOverview = incoming;
+  if (!incoming.sources.some((s) => s.id === state.source && inDayScope(s))) {
+    state.source = incoming.sources.find(inDayScope)?.id || null;
+    state.seconds = 0;
   }
+  applyWorkspace();
   render();
+  refreshSelectedWorkspace();
 }
 function render() {
   const { sources, games, review_tasks } = state.data;
   window.hoglineScoreConflicts?.render();
-  $("#build-label").textContent = `PILOT ${state.data.app_version || ""}`;
+  $("#build-label").textContent = `v${state.data.app_version || ""}`;
   $("#recording-count").textContent = sources.length;
   $("#review-count").textContent = review_tasks.filter(
     (t) => t.state === "open",
@@ -165,15 +254,19 @@ function render() {
       `<button class="${state.sheet === i + 1 ? "active" : ""}" data-sheet="${i + 1}" aria-pressed="${state.sheet === i + 1}">${i + 1}</button>`,
   ).join("");
   const query = $("#search").value.toLowerCase();
+  $("#date-from-filter").value = state.dateFrom;
+  $("#date-through-filter").value = state.dateThrough;
+  $$("#weekday-filters input").forEach(input => {input.checked=state.weekdays.includes(Number(input.value));});
   const filtered = sources.filter((s) => {
     const related = games.filter((g) =>
       g.spans.some((p) => p.source_id === s.id),
     );
     return (
       (!state.sheet || s.sheet === state.sheet) &&
+      inDayScope(s) &&
       (!state.reviewOnly ||
         related.some((g) => g.acceptance !== "human_confirmed")) &&
-      `${s.title} ${s.title_date} ${related.map((g) => `${g.label} ${g.red_team} ${g.yellow_team} ${g.league}`).join(" ")}`
+      `${s.title} ${s.title_date} ${related.map((g) => `${g.label} ${g.red_team} ${g.yellow_team} ${g.league}`).join(" ")} ${(window.hoglineFaces?.names(s.id) || []).join(" ")}`
         .toLowerCase()
         .includes(query)
     );
@@ -195,9 +288,9 @@ function render() {
   $("#empty-viewer").hidden = !!src;
   $("#viewer-content").hidden = !src;
   $("#clock-status").hidden = !src;
-  $("#source-title").textContent = src?.title || "Your archive starts here.";
+  $("#source-title").textContent = src?.title || "No recording selected";
   $("#source-kicker").textContent = src
-    ? `SHEET ${src.sheet || "?"} / ${src.title_date || "DATE UNKNOWN"} / SOURCE RECORDING`
+    ? `SHEET ${src.sheet || "?"} / ${src.title_date || "DATE UNKNOWN"}`
     : "SOURCE VIEWER";
   if (!src) return;
   const duration = src.duration_seconds || Math.max(state.seconds + 600, 3600);
@@ -217,6 +310,8 @@ function render() {
   window.hoglineBoardTimeline?.render();
   window.hoglineReconciliation?.render();
   window.hoglineRecordings?.render();
+  window.hoglineFaces?.render();
+  window.hoglineWorkspace?.render();
 }
 function renderFrame() {
   const src = source(),
@@ -455,7 +550,7 @@ function renderTimeline(duration) {
           `<article class="activity-card"><div><strong>${time(r.start_seconds)}–${time(r.end_seconds)}</strong><p class="fine-print">Motion activity · ±${r.boundary_uncertainty_seconds}s sample spacing · ${r.evidence_ids.length} supporting frames</p></div>${r.youtube_url ? `<a class="evidence-link" href="${escapeHTML(r.youtube_url)}" target="_blank" rel="noopener">YouTube ↗</a>` : ""}<button class="button quiet" data-activity="${r.id}">Review interval →</button></article>`,
       )
       .join("") ||
-    '<p class="fine-print">No motion runs yet. A quiet sample does not prove the sheet is empty.</p>';
+    '<p class="fine-print">No motion detected in sampled frames.</p>';
 }
 function renderGames() {
   $("#game-list").innerHTML =
@@ -476,7 +571,7 @@ function renderJobs() {
           `<div class="job-card"><span class="pill ${j.state === "failed" ? "amber" : ""}">${escapeHTML(j.state)}</span><code>${j.kind === "metadata_refresh" ? "Metadata refresh" : `${time(j.request.start_seconds)}–${time(j.request.end_seconds)}`}</code><span>${j.kind === "metadata_refresh" ? "No media requested" : `${j.completed_frames || 0} frames · ${j.cache_hits || 0} reused`}</span>${j.state === "running" ? `<progress max="1" value="${j.progress || 0}"></progress>` : ""}${j.state === "failed" && j.attempts < 3 && !(j.kind === "dense_window" && (j.stage_version !== state.data.window_version || j.perception_version !== state.data.window_detector_version || j.visibility_version !== state.data.window_visibility_version || j.decoder_version !== state.data.window_decoder_version || j.retention_version !== state.data.window_retention_version)) ? `<button class="button quiet" data-retry="${j.id}">Retry</button>` : ""}${j.error ? `<span class="job-error">${escapeHTML(j.error)}</span>` : ""}</div>`,
       )
       .join("") ||
-    '<p class="no-data">No work queued. Metadata imports never start a video backfill.</p>';
+    '<p class="no-data">No work queued.</p>';
 }
 
 function cleanGame(raw) {
@@ -540,7 +635,7 @@ function newGame(activity = null) {
     game: {
       id: crypto.randomUUID(),
       sheet: src.sheet,
-      label: "Game · sheet " + src.sheet,
+      label: src.title_teams?.length ? src.title_teams.join(" vs ") : "Game · sheet " + src.sheet,
       league: null,
       red_team: "Red · unidentified",
       yellow_team: "Yellow · unidentified",
@@ -592,7 +687,7 @@ function renderEditor() {
   const { game, revision } = state.draft,
     ev = evidenceOptions(game);
   box.innerHTML = `<form class="editor" id="edit-form"><div class="section-heading"><h3>Review game interval</h3><span class="pill">${revision ? "REVISION " + revision : "NEW INTERPRETATION"}</span></div><p>Confirm boundaries separately from scores and final results. Only attached evidence can support a score.</p>
-    <div class="form-grid">${input("Game label", "label", game.label)}${input("League · leave blank if unknown", "league", game.league)}${input("Red team", "red_team", game.red_team)}${input("Yellow team", "yellow_team", game.yellow_team)}</div>
+    <div class="form-grid">${input("Game label", "label", game.label)}${input("League · leave blank if unknown", "league", game.league)}${input("Red team", "red_team", game.red_team, "text", 'list="game-team-names"')}${input("Yellow team", "yellow_team", game.yellow_team, "text", 'list="game-team-names"')}</div>
     <div class="form-grid three">${select("Boundary review", "acceptance", acceptanceOptions, game.acceptance)}${select(
       "Recording coverage",
       "coverage",
@@ -613,7 +708,7 @@ function renderEditor() {
       ],
       game.completion,
     )}</div>
-    <h4>Linked source spans</h4><p class="fine-print">Add another recording to represent a continuation or overlap. These spans describe one canonical game.</p>
+    <datalist id="game-team-names">${[...new Set(game.spans.flatMap(s=>state.data.sources.find(src=>src.id===s.source_id)?.title_teams || []))].map(name=>`<option value="${escapeHTML(name)}">`).join("")}</datalist><h4>Linked source spans</h4><p class="fine-print">Add another recording if this game continues or overlaps across recordings.</p>
     ${game.spans
       .map(
         (s, i) =>
@@ -664,7 +759,7 @@ function renderEditor() {
             )}${select("Review", `end-${i}-acceptance`, acceptanceOptions, e.acceptance)}</div><div class="form-grid">${input("Red points · null until known", `end-${i}-red`, e.red_points, "number", 'min="0" max="8" class="red-score"')}${input("Yellow points · null until known", `end-${i}-yellow`, e.yellow_points, "number", 'min="0" max="8" class="yellow-score"')}</div>${select("Supporting frame", `end-${i}-evidence`, ev, e.evidence_ids[0] || "")}${e.evidence_ids[0] ? `<a class="evidence-link" target="_blank" rel="noopener" href="${state.data.evidence.find((f) => f.id === e.evidence_ids[0])?.youtube_url || "#"}">Check score on YouTube ↗</a>` : ""}</div>`,
         )
         .join("") ||
-      '<p class="fine-print">No ends recorded. A missing score is never zero.</p>'
+      '<p class="fine-print">No ends recorded.</p>'
     }<button type="button" class="button quiet" id="add-end">＋ Add an observed end</button>
     <h4>Final result · independent confirmation</h4><p class="fine-print">A partial recording or a leading score does not establish a winner.</p><div class="form-grid">${select(
       "Outcome",
@@ -770,11 +865,15 @@ document.addEventListener("click", async (event) => {
     if (button.dataset.source) {
       if (window.hoglineLabels && !window.hoglineLabels.beforeNavigate())
         return;
+      if (state.source !== button.dataset.source) selectedWorkspace = null;
       state.source = button.dataset.source;
-      state.seconds = frames()[0]?.source_seconds || 0;
+      applyWorkspace();
+      state.seconds = 0;
       state.draft = null;
       $("#game-editor").hidden = true;
+      if ($("#jobs-dialog")?.open) $("#jobs-dialog").close();
       render();
+      refreshSelectedWorkspace();
     }
     if (button.dataset.sheet) {
       state.sheet =
@@ -937,6 +1036,26 @@ document.addEventListener("click", async (event) => {
   }
 });
 $("#search").addEventListener("input", render);
+function changeScope() {
+  if (!state.data.sources.some((s) => s.id === state.source && inDayScope(s))) {
+    state.source = state.data.sources.find(inDayScope)?.id || null;
+    state.seconds = 0;
+    localStorage.setItem("hogline-source", state.source || "");
+    selectedWorkspace = null;
+    applyWorkspace();
+    refreshSelectedWorkspace();
+  }
+  render();
+}
+$("#weekday-filters").addEventListener("change", () => {
+  state.weekdays=$$("#weekday-filters input:checked").map(input=>Number(input.value));
+  changeScope();
+});
+$("#date-from-filter").addEventListener("change", event => { state.dateFrom=event.target.value; changeScope(); });
+$("#date-through-filter").addEventListener("change", event => { state.dateThrough=event.target.value; changeScope(); });
+$("#clear-date-filters").addEventListener("click", () => {
+  state.dateFrom=""; state.dateThrough=""; state.weekdays=[0,1,2,3,4,5,6]; state.sheet=null; changeScope();
+});
 $("#scrubber").addEventListener("input", (event) => {
   if (window.hoglineLabels && !window.hoglineLabels.beforeNavigate()) {
     event.target.value = state.seconds;

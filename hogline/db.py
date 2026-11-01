@@ -1,8 +1,24 @@
+import sqlite3
+import time
 from contextlib import contextmanager
 from datetime import UTC, datetime
 
-from sqlalchemy import JSON, Float, ForeignKey, Index, Integer, String, UniqueConstraint, create_engine, event
+from sqlalchemy import (
+    JSON,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    UniqueConstraint,
+    create_engine,
+    event,
+    literal,
+    select,
+)
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
+from sqlalchemy.schema import CreateIndex
 
 from hogline.config import Settings
 from hogline.domain.models import uid
@@ -10,6 +26,23 @@ from hogline.domain.models import uid
 
 def now():
     return datetime.now(UTC).isoformat()
+
+
+def temporary_database_lock(exc):
+    if not isinstance(exc, OperationalError):
+        return False
+    original = exc.orig
+    code = getattr(original, "sqlite_errorcode", None)
+    if code is not None:
+        return code & 0xFF in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED)
+    return str(original).lower() in ("database is locked", "database table is locked")
+
+
+def rows_by_ids(session, model, column, identifiers, *, chunk_size=500):
+    """Keep lookups below SQLite's bind limit without dropping or duplicating IDs."""
+    values = sorted(set(identifiers))
+    for offset in range(0, len(values), chunk_size):
+        yield from session.scalars(select(model).where(column.in_(values[offset : offset + chunk_size])))
 
 
 class Base(DeclarativeBase):
@@ -139,6 +172,115 @@ class GameRow(Base):
     revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     document: Mapped[dict] = mapped_column(JSON)
     __mapper_args__ = {"version_id_col": revision}
+
+
+class SkillCampaign(Base):
+    __tablename__ = "skill_campaign"
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=uid)
+    game_id: Mapped[str] = mapped_column(ForeignKey("game.id"), index=True)
+    plan_key: Mapped[str] = mapped_column(String, unique=True)
+    state: Mapped[str] = mapped_column(String, default="active", index=True)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    document: Mapped[dict] = mapped_column(JSON)
+    sha256: Mapped[str] = mapped_column(String)
+    __mapper_args__ = {"version_id_col": revision}
+
+
+class SkillDirectionRule(Base):
+    __tablename__ = "skill_direction_rule"
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    document: Mapped[dict] = mapped_column(JSON)
+    sha256: Mapped[str] = mapped_column(String)
+    __mapper_args__ = {"version_id_col": revision}
+
+
+class SkillMotionBatch(Base):
+    __tablename__ = "skill_motion_batch"
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=uid)
+    game_id: Mapped[str] = mapped_column(ForeignKey("game.id"), index=True)
+    plan_key: Mapped[str] = mapped_column(String, unique=True)
+    state: Mapped[str] = mapped_column(String, default="active", index=True)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    document: Mapped[dict] = mapped_column(JSON)
+    sha256: Mapped[str] = mapped_column(String)
+    __mapper_args__ = {"version_id_col": revision}
+
+
+class SkillSequence(Base):
+    __tablename__ = "skill_sequence"
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    game_id: Mapped[str] = mapped_column(ForeignKey("game.id"), index=True)
+    job_id: Mapped[str] = mapped_column(ForeignKey("job.id"), unique=True)
+    sha256: Mapped[str] = mapped_column(String)
+    document: Mapped[dict] = mapped_column(JSON)
+
+
+class SkillMotion(Base):
+    __tablename__ = "skill_motion"
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    game_id: Mapped[str] = mapped_column(ForeignKey("game.id"), index=True)
+    job_id: Mapped[str] = mapped_column(ForeignKey("job.id"), unique=True)
+    sha256: Mapped[str] = mapped_column(String)
+    document: Mapped[dict] = mapped_column(JSON)
+
+
+class SkillHouseContext(Base):
+    __tablename__ = "skill_house_context"
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    game_id: Mapped[str] = mapped_column(ForeignKey("game.id"), index=True)
+    input_key: Mapped[str] = mapped_column(String, unique=True)
+    created_at: Mapped[str] = mapped_column(String, default=now)
+    document: Mapped[dict] = mapped_column(JSON)
+    sha256: Mapped[str] = mapped_column(String)
+
+
+class SkillReview(Base):
+    __tablename__ = "skill_review"
+    id: Mapped[str] = mapped_column(ForeignKey("game.id"), primary_key=True)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    document: Mapped[dict] = mapped_column(JSON)
+    sha256: Mapped[str] = mapped_column(String)
+    __mapper_args__ = {"version_id_col": revision}
+
+
+class SkillEstimateRevision(Base):
+    """Append-only assistant/operator observations, separate from confirmed measurements."""
+
+    __tablename__ = "skill_estimate_revision"
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=uid)
+    game_id: Mapped[str] = mapped_column(ForeignKey("game.id"), index=True)
+    number: Mapped[int] = mapped_column(Integer)
+    document: Mapped[dict] = mapped_column(JSON)
+    sha256: Mapped[str] = mapped_column(String)
+    created_at: Mapped[str] = mapped_column(String, default=now)
+    __table_args__ = (UniqueConstraint("game_id", "number"),)
+
+
+class SkillDeliveryRay(Base):
+    """Immutable local delivery-house measurement and receiving-image projection."""
+
+    __tablename__ = "skill_delivery_ray"
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=uid)
+    game_id: Mapped[str] = mapped_column(ForeignKey("game.id"), index=True)
+    candidate_id: Mapped[str] = mapped_column(String, index=True)
+    plan_key: Mapped[str] = mapped_column(String, unique=True)
+    sha256: Mapped[str] = mapped_column(String)
+    document: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[str] = mapped_column(String, default=now)
+
+
+class SkillRevision(Base):
+    __tablename__ = "skill_revision"
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=uid)
+    game_id: Mapped[str] = mapped_column(ForeignKey("game.id"))
+    number: Mapped[int] = mapped_column(Integer)
+    document: Mapped[dict] = mapped_column(JSON)
+    sha256: Mapped[str] = mapped_column(String)
+    author: Mapped[str] = mapped_column(String)
+    reason: Mapped[str] = mapped_column(String)
+    created_at: Mapped[str] = mapped_column(String, default=now)
+    __table_args__ = (UniqueConstraint("game_id", "number"),)
 
 
 class Revision(Base):
@@ -418,94 +560,136 @@ class ScoreConflictReview(Base):
     __table_args__ = (UniqueConstraint("conflict_id", "revision"),)
 
 
-class SkillCampaign(Base):
-    __tablename__ = "skill_campaign"
-    id: Mapped[str] = mapped_column(String, primary_key=True, default=uid)
-    game_id: Mapped[str] = mapped_column(ForeignKey("game.id"), index=True)
-    plan_key: Mapped[str] = mapped_column(String, unique=True)
-    state: Mapped[str] = mapped_column(String, default="active", index=True)
-    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    document: Mapped[dict] = mapped_column(JSON)
-    sha256: Mapped[str] = mapped_column(String)
-    __mapper_args__ = {"version_id_col": revision}
+class LineupSegment(Base):
+    """Face observations for one bounded game interval; templates live in the biometric store."""
 
-
-class SkillDirectionRule(Base):
-    __tablename__ = "skill_direction_rule"
+    __tablename__ = "lineup_segment"
     id: Mapped[str] = mapped_column(String, primary_key=True)
-    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    document: Mapped[dict] = mapped_column(JSON)
-    sha256: Mapped[str] = mapped_column(String)
-    __mapper_args__ = {"version_id_col": revision}
-
-
-class SkillMotionBatch(Base):
-    __tablename__ = "skill_motion_batch"
-    id: Mapped[str] = mapped_column(String, primary_key=True, default=uid)
-    game_id: Mapped[str] = mapped_column(ForeignKey("game.id"), index=True)
-    plan_key: Mapped[str] = mapped_column(String, unique=True)
-    state: Mapped[str] = mapped_column(String, default="active", index=True)
-    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    document: Mapped[dict] = mapped_column(JSON)
-    sha256: Mapped[str] = mapped_column(String)
-    __mapper_args__ = {"version_id_col": revision}
-
-
-class SkillSequence(Base):
-    __tablename__ = "skill_sequence"
-    id: Mapped[str] = mapped_column(String, primary_key=True)
-    game_id: Mapped[str] = mapped_column(ForeignKey("game.id"), index=True)
     job_id: Mapped[str] = mapped_column(ForeignKey("job.id"), unique=True)
+    source_id: Mapped[str] = mapped_column(ForeignKey("source_video.id"))
     sha256: Mapped[str] = mapped_column(String)
     document: Mapped[dict] = mapped_column(JSON)
-
-
-class SkillMotion(Base):
-    __tablename__ = "skill_motion"
-    id: Mapped[str] = mapped_column(String, primary_key=True)
-    game_id: Mapped[str] = mapped_column(ForeignKey("game.id"), index=True)
-    job_id: Mapped[str] = mapped_column(ForeignKey("job.id"), unique=True)
-    sha256: Mapped[str] = mapped_column(String)
-    document: Mapped[dict] = mapped_column(JSON)
-
-
-class SkillHouseContext(Base):
-    __tablename__ = "skill_house_context"
-    id: Mapped[str] = mapped_column(String, primary_key=True)
-    game_id: Mapped[str] = mapped_column(ForeignKey("game.id"), index=True)
-    input_key: Mapped[str] = mapped_column(String, unique=True)
     created_at: Mapped[str] = mapped_column(String, default=now)
-    document: Mapped[dict] = mapped_column(JSON)
-    sha256: Mapped[str] = mapped_column(String)
 
 
-class SkillReview(Base):
-    __tablename__ = "skill_review"
-    id: Mapped[str] = mapped_column(ForeignKey("game.id"), primary_key=True)
-    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    document: Mapped[dict] = mapped_column(JSON)
+class GameLineup(Base):
+    __tablename__ = "game_lineup"
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    source_id: Mapped[str] = mapped_column(ForeignKey("source_video.id"))
+    batch_id: Mapped[str] = mapped_column(String, index=True)
     sha256: Mapped[str] = mapped_column(String)
+    document: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[str] = mapped_column(String, default=now)
+
+
+class LineupPerson(Base):
+    __tablename__ = "lineup_person"
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=uid)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    sha256: Mapped[str] = mapped_column(String)
+    document: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[str] = mapped_column(String, default=now)
     __mapper_args__ = {"version_id_col": revision}
 
 
-class SkillRevision(Base):
-    __tablename__ = "skill_revision"
-    id: Mapped[str] = mapped_column(String, primary_key=True, default=uid)
-    game_id: Mapped[str] = mapped_column(ForeignKey("game.id"))
-    number: Mapped[int] = mapped_column(Integer)
-    document: Mapped[dict] = mapped_column(JSON)
+class LineupLink(Base):
+    """An operator's decision that one anonymous game player is a named person."""
+
+    __tablename__ = "lineup_link"
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    lineup_id: Mapped[str] = mapped_column(ForeignKey("game_lineup.id"), index=True)
+    person_id: Mapped[str] = mapped_column(ForeignKey("lineup_person.id"), index=True)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
     sha256: Mapped[str] = mapped_column(String)
+    document: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[str] = mapped_column(String, default=now)
+    __mapper_args__ = {"version_id_col": revision}
+
+
+class LineupRevision(Base):
+    __tablename__ = "lineup_revision"
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=uid)
+    kind: Mapped[str] = mapped_column(String)
+    entity_id: Mapped[str] = mapped_column(String)
+    number: Mapped[int] = mapped_column(Integer)
     author: Mapped[str] = mapped_column(String)
     reason: Mapped[str] = mapped_column(String)
+    sha256: Mapped[str] = mapped_column(String)
+    document: Mapped[dict] = mapped_column(JSON)
     created_at: Mapped[str] = mapped_column(String, default=now)
-    __table_args__ = (UniqueConstraint("game_id", "number"),)
+    __table_args__ = (UniqueConstraint("kind", "entity_id", "number"),)
+
+
+class LineupGrouping(Base):
+    """An undoable operator decision that several face groups are one person."""
+
+    __tablename__ = "lineup_grouping"
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=uid)
+    sha256: Mapped[str] = mapped_column(String)
+    document: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[str] = mapped_column(String, default=now)
+
+
+class LineupSeparation(Base):
+    """An operator's decision that a game player is not another player or a named person.
+
+    Cross-game face identities are recomputed from templates; separations keep a rejected
+    pairing apart on every recomputation.
+    """
+
+    __tablename__ = "lineup_separation"
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=uid)
+    player_id: Mapped[str] = mapped_column(String, index=True)
+    sha256: Mapped[str] = mapped_column(String)
+    document: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[str] = mapped_column(String, default=now)
+
+
+class AutoLineup(Base):
+    """One recording's place in the automatic face-finding queue (one row per recording)."""
+
+    __tablename__ = "auto_lineup"
+    source_id: Mapped[str] = mapped_column(ForeignKey("source_video.id"), primary_key=True)
+    state: Mapped[str] = mapped_column(String, index=True)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    document: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[str] = mapped_column(String, default=now)
+    __mapper_args__ = {"version_id_col": revision}
+
+
+def queue_field(model, key):
+    """Fixed JSON queue keys must render literally for SQLite expression indexes to match."""
+    return model.document[literal(key, type_=JSON.JSONStrIndexType(), literal_execute=True)].as_string()
+
+
+QUEUE_INDEXES = [
+    Index("evidence_source", Evidence.source_id, Evidence.id),
+    Index("scan_source", Scan.source_id),
+    Index("window_source", AnalysisWindow.source_id, AnalysisWindow.id),
+    Index("execution_batch", JobExecution.batch_id),
+    Index("job_state_owner", Job.state, queue_field(Job, "batch_id"), Job.attempts),
+    Index("job_state_lease", Job.state, Job.lease_until),
+    Index(
+        "recording_admission",
+        queue_field(ProcessingBatch, "campaign_purpose"),
+        ProcessingBatch.state,
+        queue_field(ProcessingBatch, "created_at"),
+        ProcessingBatch.id,
+    ),
+    Index(
+        "recording_cleanup",
+        ProcessingBatch.state,
+        queue_field(ProcessingBatch, "storage_policy"),
+        queue_field(ProcessingBatch, "image_cleanup"),
+    ),
+]
 
 
 class Database:
     def __init__(self, settings: Settings):
         self.settings = settings
         kwargs = (
-            {"connect_args": {"check_same_thread": False, "timeout": 30}}
+            {"connect_args": {"check_same_thread": False, "timeout": 5}}
             if settings.database_url.startswith("sqlite")
             else {}
         )
@@ -518,6 +702,10 @@ class Database:
                 conn.execute("PRAGMA journal_mode=WAL")
 
         Base.metadata.create_all(self.engine)
+        # create_all does not add new indexes to existing tables.
+        with self.engine.begin() as connection:
+            for index in QUEUE_INDEXES:
+                connection.execute(CreateIndex(index, if_not_exists=True))
         self.sessions = sessionmaker(self.engine, expire_on_commit=False)
 
     @contextmanager
@@ -532,7 +720,15 @@ class Database:
             if self.engine.dialect.name == "sqlite":
                 # Python's legacy SQLite mode does not begin a transaction for
                 # SELECT. Explicit BEGIN is necessary for a real read snapshot.
-                session.connection().exec_driver_sql("BEGIN IMMEDIATE" if write else "BEGIN")
+                deadline = time.monotonic() + 60
+                while True:
+                    try:
+                        session.connection().exec_driver_sql("BEGIN IMMEDIATE" if write else "BEGIN")
+                        break
+                    except OperationalError as exc:
+                        if not write or not temporary_database_lock(exc) or time.monotonic() >= deadline:
+                            raise
+                        time.sleep(0.1)
             elif self.engine.dialect.name == "postgresql":
                 session.connection(execution_options={"isolation_level": "REPEATABLE READ"})
             else:

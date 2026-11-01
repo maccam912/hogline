@@ -127,7 +127,15 @@
             0.37,
             0.99,
             0.67
-          ]
+          ],
+          "asset": {
+            "path": "references/es9urvYvLiE-300.png",
+            "sha256": "13bea59e530e169c38cf996ad8ab0e9e9c054f479e02e747ebad7c13967b5c14",
+            "width": 1920,
+            "height": 1080
+          },
+          "evidence_id": "ac6aa3ad-a265-5082-ac4d-99e06a1c31af",
+          "youtube_url": "https://www.youtube.com/watch?v=es9urvYvLiE&t=300s"
         }
       }
     },
@@ -165,7 +173,15 @@
             0.33,
             0.99,
             0.66
-          ]
+          ],
+          "asset": {
+            "path": "references/BXv6b907n7A-300.png",
+            "sha256": "9d76d0f89a6970b56e76cffde443b8b1ab0d78b3bcde936047e101a8aec4c667",
+            "width": 1920,
+            "height": 1080
+          },
+          "evidence_id": "f7791c0b-7ef0-5b7e-8134-7f873da47fc9",
+          "youtube_url": "https://www.youtube.com/watch?v=BXv6b907n7A&t=300s"
         }
       },
       "status": "experimental_cross_sheet_header_registration"

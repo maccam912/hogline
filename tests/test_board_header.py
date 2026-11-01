@@ -218,3 +218,17 @@ def test_tail_registration_refuses_another_board_or_obscured_tail():
         register_header(target, candidate, reference, template, PANEL, fixed_tail_start=8)["status"]
         != "proposed"
     )
+
+
+def test_broadcast_logo_connected_to_red_stripe_does_not_hide_board():
+    reference, template = reference_board()
+    rgb = np.array(reference)
+    # A logo connected by a narrow red vertical region used to make the entire
+    # scoreboard stripe fail the component aspect-ratio check.
+    rgb[20:101, 260:275] = [180, 25, 45]
+    rgb[20:55, 200:300] = [180, 25, 45]
+    target = Image.fromarray(rgb).resize((1280, 720))
+    location = locate_board(target, PANEL)
+    assert location["status"] == "proposed"
+    result = register_header(target, location["selected"], reference, template, PANEL)
+    assert result["status"] == "proposed"

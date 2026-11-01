@@ -65,6 +65,32 @@ def decode_window(
     yield from _decode_segment(media, start, end, interval, max_frames, timeout, tick, source_time_origin)
 
 
+def decode_native_crop(media, start, end, bounds, *, fps=60, timeout=120):
+    """Original source PTS, at most 720 samples / 30 s (12 s at 60 Hz)."""
+    if (
+        not all(math.isfinite(v) for v in (start, end, fps, timeout))
+        or not 1 <= fps <= 60
+        or not 0 <= start < end <= start + min(30, 720 / fps)
+        or not 1 <= timeout <= 120
+        or len(bounds) != 4
+        or not all(isinstance(v, int) for v in bounds)
+        or not 0 <= bounds[0] < bounds[2] <= 4096
+        or not 0 <= bounds[1] < bounds[3] <= 2160
+    ):
+        raise ValueError("Invalid native-crop frame/time bounds")
+    yield from _decode_segment(
+        media,
+        start,
+        end,
+        1 / fps,
+        math.ceil((end - start) * fps),
+        timeout,
+        None,
+        0,
+        crop_bounds=bounds,
+    )
+
+
 SCORING_VERSION = "original-pts-keyframe-scoring-grid-v1"
 
 
@@ -101,7 +127,16 @@ def decode_scoring_segment(
 
 
 def _decode_segment(
-    media, start, end, interval, max_frames, timeout, tick, source_time_origin, keyframes_only=False
+    media,
+    start,
+    end,
+    interval,
+    max_frames,
+    timeout,
+    tick,
+    source_time_origin,
+    keyframes_only=False,
+    crop_bounds=None,
 ):
     epsilon = 1e-7
     first_target = math.ceil((start - epsilon) / interval) * interval
@@ -120,6 +155,10 @@ def _decode_segment(
     if keyframes_only:
         command += ["-skip_frame", "nokey"]
     command += ["-threads", "2"]
+    crop = ""
+    if crop_bounds:
+        x1, y1, x2, y2 = crop_bounds
+        crop = f",crop={x2 - x1}:{y2 - y1}:{x1}:{y1}"
     command += [
         "-copyts",
         "-ss",
@@ -131,7 +170,7 @@ def _decode_segment(
         "-map",
         "0:v:0",
         "-vf",
-        f"select='{selection}',showinfo",
+        f"select='{selection}',showinfo{crop}",
         "-frames:v",
         str(max_frames + 1),
         "-an",

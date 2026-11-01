@@ -8,9 +8,10 @@ from scipy.ndimage import binary_fill_holes
 
 from hogline.perception.house import house_ring
 from hogline.perception.house_score import normalized_point, score_footprints
+from hogline.perception.score_options import predict_score
 from hogline.perception.stones import RawHSVHandleDetector
 
-VERSION = "registered-background-ice-score-v2"
+VERSION = "registered-background-ice-score-v3"
 
 
 class IceInspector:
@@ -238,7 +239,7 @@ class IceInspector:
                     )
                 ),
             }
-        result["footprints"], result["scoring"] = fitted, scoring
+        result["footprints"], result["scoring"] = fitted, {**scoring, **predict_score(scoring)}
         result["limitations"] = [
             "background_calibration_is_development_data",
             "stable_house_is_not_necessarily_final_end_state",

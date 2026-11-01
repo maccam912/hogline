@@ -50,14 +50,56 @@ def video_link(source, seconds=0):
     return None
 
 
-def title_hints(title):
+def title_hints(title, metadata=None):
     sheet = re.search(r"SHEET\s*(\d+)", title, re.I)
     date = re.search(r"\b(\d{2}-\d{2}-\d{2})\b", title)
     try:
         day = datetime.strptime(date[1], "%m-%d-%y").date().isoformat() if date else None
     except ValueError:
         day = None
-    return {"sheet": int(sheet[1]) if sheet and 1 <= int(sheet[1]) <= 8 else None, "title_date": day}
+    # Current channel titles use "Oct 30 … (Sheet 4)". Infer a year only
+    # when a publication date supports a nearby calendar day, never from today.
+    if day is None and metadata:
+        month_day = re.match(r"([A-Za-z]{3,9})\s+(\d{1,2})\b", title)
+        published = metadata.get("release_date") or metadata.get("upload_date")
+        if month_day and published:
+            try:
+                reference = datetime.strptime(published, "%Y%m%d").date()
+                candidates = []
+                for year in range(reference.year - 1, reference.year + 2):
+                    for fmt in ("%b %d %Y", "%B %d %Y"):
+                        try:
+                            candidate = datetime.strptime(f"{month_day[1]} {month_day[2]} {year}", fmt).date()
+                            if abs((candidate - reference).days) <= 7:
+                                candidates.append(candidate)
+                        except ValueError:
+                            pass
+                if len(set(candidates)) == 1:
+                    day = candidates[0].isoformat()
+            except ValueError:
+                pass
+    # Keep matchup names independent of stone colors and player identities.
+    parts = [p.strip() for p in re.split(r"\s+[—–|]\s+", title)]
+    matchup = re.sub(r"\s*\(Sheet\s*\d+\)\s*$", "", parts[-1], flags=re.I).strip()
+    teams = re.split(r"\s+vs\.?\s+", matchup, flags=re.I)
+    teams = [team.strip() for team in teams] if len(teams) == 2 and all(teams) else []
+    return {
+        "sheet": int(sheet[1]) if sheet and 1 <= int(sheet[1]) <= 8 else None,
+        "title_date": day,
+        "title_teams": teams,
+        "title_draw": parts[-2] if teams and len(parts) >= 3 else None,
+    }
+
+
+def source_view(document):
+    """Derived title hints for old imports, without changing their evidence manifest."""
+    hints = title_hints(document.get("title", ""), document)
+    return {
+        **document,
+        **hints,
+        "sheet": hints["sheet"] or document.get("sheet"),
+        "title_date": hints["title_date"] or document.get("title_date"),
+    }
 
 
 def curated_metadata(raw):
@@ -71,6 +113,7 @@ def curated_metadata(raw):
         "upload_date",
         "timestamp",
         "release_timestamp",
+        "release_date",
         "availability",
         "live_status",
         "width",
@@ -129,12 +172,14 @@ def upsert_source_in_session(session, key, metadata, platform, metadata_kind="fu
         "platform_id": metadata.get("id"),
         "title": title,
         "duration_seconds": metadata.get("duration"),
-        **title_hints(title),
+        **title_hints(title, metadata),
         "upload_date": metadata.get("upload_date"),
+        "release_date": metadata.get("release_date"),
         "availability": metadata.get("availability") or "unknown",
         "metadata_sha256": fingerprint,
         "last_checked_at": now(),
         "metadata_completeness": metadata_kind,
+        "live_status": metadata.get("live_status"),
         "metadata_refresh_needed": metadata_kind == "listing",
     }
     if metadata_kind == "listing":
@@ -159,7 +204,21 @@ def upsert_source_in_session(session, key, metadata, platform, metadata_kind="fu
             "last_discovered_at": now(),
         }
     else:
-        row.document = {**row.document, "last_full_metadata_at": now(), "metadata_refresh_needed": False}
+        row.document = {
+            **row.document,
+            "last_full_metadata_at": now(),
+            # A live or just-ended stream has no final duration or seekable video yet; refresh later.
+            "metadata_refresh_needed": metadata.get("live_status") in ("is_live", "is_upcoming", "post_live"),
+        }
+    saved = row.document.get("verified_download") or {}
+    reported_duration = row.document.get("duration_seconds")
+    if saved and reported_duration and abs(saved.get("duration_seconds", 0) - reported_duration) <= 5:
+        # Retain YouTube's reported length, but never schedule past the verified local file.
+        row.document = {
+            **row.document,
+            "youtube_duration_seconds": reported_duration,
+            "duration_seconds": min(reported_duration, saved["duration_seconds"]),
+        }
     if platform == "youtube":
         row.document = {**row.document, "url": video_link(row.document)}
     else:

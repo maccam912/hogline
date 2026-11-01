@@ -21,6 +21,11 @@ async function load() {
   $('#review').hidden = !$('#game').value;
   if(!$('#game').value) { $('#status').textContent='No game spans yet. Add a span below to begin review.'; return; }
   current=await api('/games/'+encodeURIComponent($('#game').value)+'/skills');
+  try {
+    const estimates=await api('/games/'+encodeURIComponent(current.game_id)+'/skill-estimates');
+    const href='/api/games/'+encodeURIComponent(current.game_id)+'/skill-estimates/report';
+    $('#estimated-player-reports').innerHTML=`<p>${estimates.stale?'Evidence changed; earlier findings need review. ':''}${estimates.coverage.attributed_deliveries} attributed deliveries · <a href="${href}" target="_blank" rel="noopener">Open player reports</a></p>`+estimates.players.map(p=>`<details><summary>${esc(p.name)} · ${esc(p.position)} · ${p.observed_deliveries} deliveries</summary><ul>${p.findings.map(f=>`<li>${esc(f.text)}</li>`).join('')}</ul><a href="${href}#player-${encodeURIComponent(p.person_id)}" target="_blank" rel="noopener">Open ${esc(p.name)}'s report and shot evidence</a></details>`).join('');
+  } catch(e) { $('#estimated-player-reports').textContent='Estimated reports unavailable: '+e.message; }
   const game=catalog.games.find(g=>g.id===$('#game').value);
   $('#shot-source').innerHTML=options([...new Set(game.spans.map(s=>s.source_id))].map(id=>[id,catalog.sources.find(s=>s.id===id)?.title || id]));
   $('#sequence-source').innerHTML=$('#shot-source').innerHTML;
@@ -113,7 +118,7 @@ $('#create').onsubmit=e=>{e.preventDefault();act(async()=>{
   await api('/games/'+id,'PUT',{expected_revision:0,author:'Local operator',reason:'Game span for skill review',game:{id,sheet:source.sheet,label:source.title+' · skill review',spans:[{source_id:source.id,start_seconds:Number(f.get('start')),end_seconds:Number(f.get('end'))}]}});
   await loadCatalog(id);
 });};
-act(()=>loadCatalog());
+act(()=>loadCatalog(new URLSearchParams(location.search).get('game')));
 
 $('#sequence').onsubmit=e=>{e.preventDefault();act(async()=>{
   const f=new FormData(e.target), start=Number(f.get('start_seconds'));
@@ -197,9 +202,15 @@ $('#skill-actors').onclick=e=>{
 };
 
 function renderCampaigns() {
+  const automatic=campaignState.filter(c=>c.automatic);
+  const gaps=campaignState.reduce((n,c)=>n+(c.coverage_gaps?.length || 0),0);
+  const units=automatic.flatMap(c=>c.survey);
+  $('#automatic-skill-status').textContent=automatic.length
+    ? `Recording automation: ${units.filter(u=>u.state==='succeeded').length}/${units.length} survey clips analyzed. Detected deliveries receive local motion tracking automatically.${gaps?` ${gaps} failed clips are retained as coverage gaps; they are not retried automatically.`:''}`
+    : 'Recording analysis schedules delivery surveys and local motion tracking automatically. Reviewed player assignments, calls and calibration are still required for skill ratings.';
   $('#skill-campaigns').innerHTML=campaignState.map(c=>{
     const survey=c.survey.filter(u=>u.state==='succeeded').length, refined=c.refinements.filter(u=>u.state==='succeeded').length;
-    return `<details><summary>${clock(c.plan.request.start_seconds)}–${clock(c.plan.request.end_seconds)} · ${esc(c.state)} · survey ${survey}/${c.survey.length}${c.stale?' · source/game changed':''}</summary><p>${c.refinements_planned?`${refined}/${c.refinements.length} follow-up clips completed; ${c.deferred_refinements || 0} beyond the selected limit.`:`Up to ${c.plan.request.max_refinements} delivery close-ups and up to ${(c.plan.request.max_call_candidates || 0)*2} call-search clips after the survey.`}</p>${c.pause_reason?`<p>${esc(c.pause_reason)}</p>`:''}${c.state==='active'?`<button data-campaign="${esc(c.id)}" data-control="pause">Pause</button>`:''}${c.state==='paused'&&!c.stale?`<button data-campaign="${esc(c.id)}" data-control="resume">Resume</button>`:''}${['active','paused'].includes(c.state)?` <button data-campaign="${esc(c.id)}" data-control="cancel">Cancel remaining clips</button>`:''}<table><tr><th>Stage</th><th>Clip</th><th>State</th></tr>${[['Survey',c.survey],['Delivery follow-up',c.refinements]].flatMap(([label,units])=>units.map(u=>`<tr><td>${u.request.purpose==='pre_delivery_call'?'Call search · '+esc(u.request.view):label}</td><td>${clock(u.request.start_seconds)}–${clock(u.request.end_seconds)}</td><td>${esc(u.state.replaceAll('_',' '))}</td></tr>`)).join('')}</table><p class="muted">${esc(c.plan.notice)}</p></details>`;
+    return `<details><summary>${clock(c.plan.request.start_seconds)}–${clock(c.plan.request.end_seconds)} · ${esc(c.state)}${c.coverage_gaps?.length?' · with coverage gaps':''} · survey ${survey}/${c.survey.length}${c.stale?' · source/game changed':''}</summary><p>${c.refinements_planned?`${refined}/${c.refinements.length} follow-up clips completed; ${c.deferred_refinements || 0} beyond the selected limit.`:`Up to ${c.plan.request.max_refinements} delivery close-ups and up to ${(c.plan.request.max_call_candidates || 0)*2} call-search clips after the survey.`}</p>${c.pause_reason?`<p>${esc(c.pause_reason)}</p>`:''}${c.state==='active'?`<button data-campaign="${esc(c.id)}" data-control="pause">Pause</button>`:''}${c.state==='paused'&&!c.stale?`<button data-campaign="${esc(c.id)}" data-control="resume">Resume</button>`:''}${['active','paused'].includes(c.state)?` <button data-campaign="${esc(c.id)}" data-control="cancel">Cancel remaining clips</button>`:''}<table><tr><th>Stage</th><th>Clip</th><th>State</th></tr>${[['Survey',c.survey],['Delivery follow-up',c.refinements]].flatMap(([label,units])=>units.map(u=>`<tr><td>${u.request.purpose==='pre_delivery_call'?'Call search · '+esc(u.request.view):label}</td><td>${clock(u.request.start_seconds)}–${clock(u.request.end_seconds)}</td><td>${esc(u.state.replaceAll('_',' '))}${u.skipped_failed?' · coverage gap; continued without retry':''}</td></tr>`)).join('')}</table><p class="muted">${esc(c.plan.notice)}</p></details>`;
   }).join('') || '<p>No excerpt processing runs yet.</p>';
 }
 $('#campaign').onsubmit=e=>{e.preventDefault();act(async()=>{
@@ -215,7 +226,7 @@ $('#skill-campaigns').onclick=e=>{const id=e.target.dataset.campaign, action=e.t
   campaignState=(await api('/games/'+encodeURIComponent(current.game_id)+'/skill-campaigns')).campaigns;renderCampaigns();
 });};
 setInterval(async()=>{
-  if(!current || !campaignState.some(c=>c.state==='active'))return;
+  if(!current || !campaignState.some(c=>c.state==='active' || (c.automatic && c.state==='paused')))return;
   const gameId=current.game_id;
   try {
     const [result,budget]=await Promise.all([api('/games/'+encodeURIComponent(gameId)+'/skill-campaigns'),api('/skills/vision-status')]);
@@ -228,7 +239,7 @@ setInterval(async()=>{
 },5000);
 
 function renderVisionBudget(status) {
-  $('#vision-budget').textContent=`Reserved/estimated usage: $${(status.committed_cents/100).toFixed(2)} of the local $${Number(status.budget_usd).toFixed(2)} limit. This is not your OpenAI invoice.`;
+  $('#vision-budget').textContent=`Recording automation ${status.automatic_skills?'enabled':'disabled'}. Reserved/estimated usage: $${(status.committed_cents/100).toFixed(2)} of the local $${Number(status.budget_usd).toFixed(2)} limit. Budget-paused automatic runs resume when reservation capacity is available. This is not your OpenAI invoice.`;
 }
 
 function renderCalls() {

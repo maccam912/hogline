@@ -94,3 +94,34 @@ def test_unchanged_listing_does_not_invalidate_legacy_full_snapshot(db, sources)
     assert listing["metadata_completeness"] == "full"
     assert listing["metadata_refresh_needed"] is False
     assert listing["metadata_sha256"] == sources[0]["metadata_sha256"]
+
+
+def test_current_channel_matchup_and_date_parsing():
+    from hogline.adapters.sources import source_view, title_hints
+
+    title = "Oct 30 — Friday 6:15 - Mixed League   — Koski, Lindsey vs Dobbs, Jason (Sheet 4)"
+    parsed = title_hints(title, {"upload_date": "20261031"})
+    assert parsed["sheet"] == 4
+    assert parsed["title_date"] == "2026-10-30"
+    assert parsed["title_teams"] == ["Koski, Lindsey", "Dobbs, Jason"]
+    assert parsed["title_draw"] == "Friday 6:15 - Mixed League"
+    assert title_hints(title)["title_date"] is None
+    assert title_hints(title, {"upload_date": "20260301"})["title_date"] is None
+    assert (
+        title_hints("Dec 31 — Team A vs Team B (Sheet 2)", {"upload_date": "20270101"})["title_date"]
+        == "2026-12-31"
+    )
+    original = {"title": title, "upload_date": "20261031", "metadata_sha256": "unchanged"}
+    view = source_view(original)
+    assert view["title_teams"] == parsed["title_teams"]
+    assert view["metadata_sha256"] == "unchanged"
+    assert "title_teams" not in original
+
+
+def test_old_titles_and_unrecognized_titles_do_not_invent_teams():
+    from hogline.adapters.sources import title_hints
+
+    old = title_hints("SHEET 5 | 01-16-26")
+    assert old["title_date"] == "2026-01-16"
+    assert old["title_teams"] == []
+    assert title_hints("Practice on Sheet 3")["title_teams"] == []

@@ -369,6 +369,10 @@ The technical path is face detection, quality/pose filtering, alignment, embeddi
 
 Low-resolution faces, hats, profile views, and distant players will often require abstention. Use human confirmation for ambiguous matches and keep a non-biometric workflow fully functional. New enrollments must not silently relabel historical games outside their consent scope.
 
+**Operator decision, October 29 2026 (pre-public pilot).** The archive owner chose a narrower local workflow before any enrollment gallery exists: [game lineups](docs/LINEUPS.md) group on-ice faces anonymously for games the operator selects, names are attached only by the operator (initially only to the owner's own team), templates stay in a separate local biometric store excluded from releases, and a game's face data is deleted with its lineup. Junior events are not processed. Revisit consent, enrollment and access controls before other teams use it or the archive becomes public.
+
+**Operator decision, October 30 2026.** The owner asked for lineups to run automatically with every recording analysis and for faces to be browsable across games. Analyzed recordings now queue a lineup per posted game span (titles naming junior/youth events are skipped; older recordings join only when the operator queues them), and cross-game identities are recomputed proposals from per-game templates with hard same-game, different-name and operator-separation constraints. Names still attach only through operator links. The same consent and access review applies before other teams or a public archive.
+
 ### 11.4 Data access and correction
 
 Default named participation and player analysis to a private club/operator workspace. Provide participant correction, opt-out, enrollment withdrawal, and deletion workflows. Keep biometric templates encrypted with separate access controls and retention; do not distribute them in analysis exports. Exclude spectators, people behind glass, and adjacent-sheet bystanders from identity processing. Junior participation requires a separately approved club/guardian workflow; keep biometric matching disabled for juniors initially.

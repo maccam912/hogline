@@ -8,7 +8,6 @@ from uuid import uuid4
 
 import cv2
 import numpy as np
-from PIL import Image
 from pydantic import Field, model_validator
 from sqlalchemy import select
 
@@ -47,15 +46,9 @@ class HandleTrainingRequest(Model):
 
 def image_for_record(root, record):
     asset = record["evidence"]["crops"][record["labels"]["view"]]
-    path = (root / asset["path"]).resolve()
-    if (
-        not path.is_relative_to((root / "evidence").resolve())
-        or not path.is_file()
-        or path.stat().st_size > 16 * 1024**2
-        or hashlib.sha256(path.read_bytes()).hexdigest() != asset["sha256"]
-    ):
-        raise ValueError("Training evidence is missing, corrupt or outside the evidence directory")
-    image = np.asarray(Image.open(path).convert("RGB"))
+    from hogline.media.frames import read_image
+
+    image = np.asarray(read_image(root, asset))
     if image.shape[:2] != (asset["height"], asset["width"]):
         raise ValueError("Training image dimensions disagree with the frozen crop")
     return image

@@ -2,7 +2,7 @@
 
 Open **Players · optional names** in the sidebar. Each indexed body fragment gets a persistent anonymous group ID; no roster or name is required. A group can contain several fragments. Naming a group updates its display name without changing its ID or original observations. The gallery shows body context only when a retained frame exactly matches a fragment's original PTS and crop geometry; otherwise use **Inspect source fragment** and its original source links.
 
-This implements optional user naming and corrected grouping without face recognition, biometric embeddings or automatic cross-recording identification. A person can still have multiple groups, and a body proposal may be a spectator or someone on an adjacent sheet. Names supplied by the operator do not establish a thrower, delivery, team membership, or weight measurement.
+This body-fragment gallery uses no face recognition, biometric embeddings or automatic cross-recording identification. Face-based grouping is a separate, operator-requested feature: see [game lineups](LINEUPS.md). A person can still have multiple groups, and a body proposal may be a spectator or someone on an adjacent sheet. Names supplied by the operator do not establish a thrower, delivery, team membership, or weight measurement.
 
 ## Automatic links
 

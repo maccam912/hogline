@@ -194,7 +194,7 @@ def test_partition_leakage_is_rejected_between_views_of_one_recording(db, labele
 def test_missing_evidence_is_not_scored_as_detector_failure(db, labeled_frame):
     dataset = freeze(db)
     asset = dataset["records"][0]["evidence"]["crops"]["house_bottom"]
-    (db.settings.data_dir / asset["path"]).write_bytes(b"corrupt")
+    (db.settings.data_dir / asset.get("derived_from", asset)["path"]).write_bytes(b"corrupt")
     with pytest.raises(ValueError, match="No reproducible"):
         evaluate_dataset(db, EvaluationRequest(dataset_id=dataset["id"]))
 

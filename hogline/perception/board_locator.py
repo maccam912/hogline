@@ -8,10 +8,10 @@ import numpy as np
 from PIL import Image
 from sqlalchemy import select
 
-from hogline.db import FrameObservation
+from hogline.db import Evidence, FrameObservation
 from hogline.perception.ocr import normalized_crop
 
-VERSION = "traditional-board-color-bands-v2"
+VERSION = "traditional-board-color-bands-v3"
 
 
 def locate_board(image, panel_bounds):
@@ -37,7 +37,10 @@ def locate_board(image, panel_bounds):
         closed = cv2.morphologyEx(
             mask, cv2.MORPH_CLOSE, np.ones((max(1, round(ph * 0.005)), max(3, round(pw * 0.07))), np.uint8)
         )
-        _, _, stats, _ = cv2.connectedComponentsWithStats(closed)
+        # Broadcast logos and nearby clothing can connect vertically to a stripe.
+        # Keep horizontal runs at least one plausible board-width before measuring bands.
+        stripes = cv2.morphologyEx(closed, cv2.MORPH_OPEN, np.ones((1, max(3, round(pw * 0.2))), np.uint8))
+        _, _, stats, _ = cv2.connectedComponentsWithStats(stripes)
         return [
             tuple(map(int, s))
             for s in stats[1:]
@@ -157,8 +160,10 @@ def analyze_board_location(session, evidence, root):
     return document
 
 
-def board_locations_in_session(session):
-    return [
-        r.document
-        for r in session.scalars(select(FrameObservation).where(FrameObservation.model_version == VERSION))
-    ]
+def board_locations_in_session(session, source_id=None):
+    query = select(FrameObservation).where(FrameObservation.model_version == VERSION)
+    if source_id is not None:
+        query = query.join(Evidence, FrameObservation.evidence_id == Evidence.id).where(
+            Evidence.source_id == source_id
+        )
+    return [r.document for r in session.scalars(query)]

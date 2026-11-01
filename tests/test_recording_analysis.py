@@ -79,7 +79,7 @@ def test_pipeline_restart_all_stages_and_result_checksum(db, sources):
 
 
 @pytest.mark.usefixtures("media")
-def test_source_change_and_budget_pause_preserve_whole_recording_intent(db, sources):
+def test_source_change_and_budget_failure_preserve_whole_recording_intent(db, sources):
     source_id = small_source(db, sources)
     first = start_recording_analysis(db, source_id, RecordingAnalysisRequest())
     assert worker.run_one(db)["state"] == "succeeded"
@@ -89,16 +89,16 @@ def test_source_change_and_budget_pause_preserve_whole_recording_intent(db, sour
     assert worker.run_one(db) is None
     with db.session() as session:
         row = session.get(ProcessingBatch, first["id"])
-        assert row.state == "paused"
+        assert row.state == "failed"
         assert row.document["request"]["end_seconds"] == 180
-    control_batch(db, first["id"], BatchControl(action="resume", max_worker_seconds=1800))
+    second = start_recording_analysis(db, source_id, RecordingAnalysisRequest(max_worker_seconds=1800))
     with db.session() as session:
         source = session.get(Source, source_id)
         source.document = {**source.document, "metadata_sha256": "changed"}
     assert worker.run_one(db) is None
     with db.session() as session:
-        row = session.get(ProcessingBatch, first["id"])
-        assert row.state == "paused" and "metadata changed" in row.document["pause_reason"]
+        row = session.get(ProcessingBatch, second["id"])
+        assert row.state == "failed" and "metadata changed" in row.document["pause_reason"]
 
 
 def test_retry_and_resume_is_atomic_and_retains_failed_attempt_history(db, sources):
@@ -133,3 +133,62 @@ def test_recording_api_refuses_unknown_duration_and_returns_conflict_until_ready
         row = session.get(Source, sources[1]["id"])
         row.document = {**row.document, "duration_seconds": None}
     assert client.post(f"/api/recordings/{sources[1]['id']}/analyze", json={}).status_code == 422
+
+
+def test_new_recording_prioritizes_bounded_ending_windows_without_actor_analysis(db, sources, monkeypatch):
+    from hogline.orchestration import recording
+    from hogline.perception import broadcast
+    from hogline.reconstruction import scorecards
+
+    sid = small_source(db, sources, 8000)
+    batch = start_recording_analysis(db, sid, RecordingAnalysisRequest(detail_windows=8))
+    monkeypatch.setattr(
+        recording,
+        "adaptive_in_session",
+        lambda *_: {
+            "units": [],
+            "deferred_units": 0,
+            "selected_quiet_audits": 0,
+        },
+    )
+    monkeypatch.setattr(broadcast, "broadcast_catalog_in_session", lambda *_, **kw: {"observations": []})
+    monkeypatch.setattr(
+        scorecards,
+        "reconstruct_scorecards",
+        lambda *_: {
+            "sha256": "pinned-report",
+            "scorecards": [
+                {
+                    "id": "first",
+                    "first_seconds": 0,
+                    "ends": [{}],
+                    "after_reset_epoch": {"first_seconds": 7440, "evidence_ids": ["reset"]},
+                }
+            ],
+        },
+    )
+    with db.session() as session:
+        owner = session.get(ProcessingBatch, batch["id"])
+        recording.detail_phase(session, db.settings.data_dir, owner)
+        added = [u for u in owner.document["units"] if u["payload"].get("kind") == "dense_window"]
+        assert len(added) == 8
+        assert all(u["payload"]["request"]["analyze_actors"] is False for u in added)
+        assert any(
+            u["payload"]["request"]["start_seconds"] <= 7015 < u["payload"]["request"]["end_seconds"]
+            for u in added
+        )
+        assert all(u["selection"]["scorecard_sha256"] == "pinned-report" for u in added)
+
+
+def test_new_analysis_reacquires_cleaned_up_survey(db, sources):
+    source_id = small_source(db, sources)
+    with db.session() as session:
+        row = session.get(Source, source_id)
+        row.document = {**row.document, "image_retention": {"routine_images_released": True}}
+    result = start_recording_analysis(db, source_id, RecordingAnalysisRequest())
+    with db.session() as session:
+        batch = session.get(ProcessingBatch, result["id"])
+        assert batch.document["repair_run"]
+        for unit in batch.document["units"]:
+            assert unit["payload"]["repair_run"] == batch.document["repair_run"]
+            assert unit["disposition"] == "new"

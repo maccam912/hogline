@@ -1,10 +1,8 @@
-import hashlib
 import io
 import math
 
 from fastapi import HTTPException
 from fastapi.responses import Response
-from PIL import Image
 
 from hogline.db import ActorIdentity, Evidence
 from hogline.domain.players import (
@@ -73,15 +71,9 @@ def register_players(app, db):
                 asset = frame["crops"][track["view"]]
                 if (asset["width"], asset["height"]) != (track["crop_width"], track["crop_height"]):
                     continue
-                path = (db.settings.data_dir / asset["path"]).resolve()
-                if (
-                    not path.is_relative_to((db.settings.data_dir / "evidence").resolve())
-                    or not path.is_file()
-                    or path.stat().st_size > 16 * 1024**2
-                    or hashlib.sha256(path.read_bytes()).hexdigest() != asset["sha256"]
-                ):
-                    raise ValueError("Player thumbnail evidence missing or corrupt")
-                with Image.open(path) as image:
+                from hogline.media.frames import read_image
+
+                with read_image(db.settings.data_dir, asset) as image:
                     if image.size != (asset["width"], asset["height"]):
                         raise ValueError("Player thumbnail image dimensions disagree")
                     x, y, w, h = point["bbox_px"]

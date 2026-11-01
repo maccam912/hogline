@@ -3,7 +3,7 @@
 from sqlalchemy import or_, select
 
 from hogline.adapters.sources import digest
-from hogline.db import Evidence, FrameObservation, ProcessingBatch
+from hogline.db import Evidence, FrameObservation, ProcessingBatch, rows_by_ids
 from hogline.perception.scorecard import VERSION
 
 
@@ -30,17 +30,22 @@ def check_observation(document, frame, parents):
 
 def scorecard_observations_in_session(session, source_id=None):
     supported = ("wausau-middle-row-plates-v2", VERSION)
-    rows = list(
-        session.scalars(
-            select(FrameObservation)
-            .where(or_(*(FrameObservation.model_version.startswith(f"{v}:") for v in supported)))
-            .order_by(FrameObservation.created_at, FrameObservation.id)
-        )
+    query = select(FrameObservation).where(
+        or_(*(FrameObservation.model_version.startswith(f"{v}:") for v in supported))
     )
+    if source_id is not None:
+        query = query.join(Evidence, FrameObservation.evidence_id == Evidence.id).where(
+            Evidence.source_id == source_id
+        )
+    rows = list(session.scalars(query.order_by(FrameObservation.created_at, FrameObservation.id)))
     complete = {
         u["payload"]["model_version"]
-        for b in session.scalars(select(ProcessingBatch).where(ProcessingBatch.state == "completed"))
-        if b.document.get("kind") == "scorecard_read"
+        for b in session.scalars(
+            select(ProcessingBatch).where(
+                ProcessingBatch.state == "completed",
+                ProcessingBatch.document["kind"].as_string() == "scorecard_read",
+            )
+        )
         for u in b.document["units"]
     }
     latest_versions, ranks = {}, {}
@@ -65,14 +70,13 @@ def scorecard_observations_in_session(session, source_id=None):
     )
     frames = {
         e.id: {**e.document, "source_id": e.source_id}
-        for e in session.scalars(select(Evidence).where(Evidence.id.in_(ids)))
+        for e in rows_by_ids(session, Evidence, Evidence.id, ids)
     }
     parent_ids = {
         r.document.get(k) for r in selected for k in ("parent_observation_id", "detector_observation_id")
     } - {None}
     parents = {
-        r.id: r.document
-        for r in session.scalars(select(FrameObservation).where(FrameObservation.id.in_(parent_ids)))
+        r.id: r.document for r in rows_by_ids(session, FrameObservation, FrameObservation.id, parent_ids)
     }
     for row in selected:
         check_observation(row.document, frames.get(row.evidence_id), parents)
@@ -94,7 +98,5 @@ def parent_observations_in_session(session, observations):
     }
     return [
         r.document
-        for r in session.scalars(
-            select(FrameObservation).where(FrameObservation.id.in_(ids)).order_by(FrameObservation.id)
-        )
+        for r in sorted(rows_by_ids(session, FrameObservation, FrameObservation.id, ids), key=lambda r: r.id)
     ]

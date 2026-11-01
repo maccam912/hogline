@@ -1,10 +1,8 @@
 """Durable, bounded scoreboard/ice inspection of retained full-resolution frames."""
 
-import hashlib
 import time
 from uuid import NAMESPACE_URL, uuid5
 
-from PIL import Image
 from sqlalchemy import select
 
 from hogline.adapters.sources import digest
@@ -158,15 +156,9 @@ def create_scorecard_batch(db, source_id, *, frames_per_job=12):
 
 
 def checked_image(root, asset):
-    path = (root / asset["path"]).resolve()
-    if (
-        not path.is_relative_to((root / "evidence").resolve())
-        or not path.is_file()
-        or hashlib.sha256(path.read_bytes()).hexdigest() != asset["sha256"]
-    ):
-        raise ValueError("Scorecard source image is missing, corrupt, or outside the evidence archive")
-    with Image.open(path) as image:
-        return image.convert("RGB")
+    from hogline.media.frames import read_image
+
+    return read_image(root, asset)
 
 
 def ice_measurements(detector):

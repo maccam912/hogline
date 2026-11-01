@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Throw reconstructions · Hogline</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,sans-serif;color:#edf5f7;background:#0d202b}
+body{margin:0}main{max-width:1440px;margin:auto;padding:28px}h1{margin-bottom:8px;font-size:32px}
+p{line-height:1.6;color:#b5cad3}a{color:#73e4cc}button,select,input{font:inherit}
+button,select{background:#1c3d4d;color:white;border:1px solid #557987;border-radius:7px;padding:9px 14px;cursor:pointer}
+button:disabled{opacity:.5;cursor:wait}.controls{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:16px 0}
+input[type=range]{flex:1;min-width:150px}canvas{display:block;width:100%;border-radius:10px;background:#173441}
+#sheet{aspect-ratio:5.5/1}#players label{display:inline-flex;align-items:center;gap:8px;margin-right:20px}
+#status[role=alert]{color:#ffc47c}.panel{background:#142e3b;border:1px solid #355564;border-radius:10px;padding:20px;margin:24px 0}
+.throws{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}
+.throw{padding:14px;background:#193744;border-radius:7px}.throw p{margin:8px 0;font-size:14px}
+.throw button{margin:4px 8px 0 0;font-size:14px}.single{display:grid;grid-template-columns:3fr 1fr;gap:18px}
+video{display:block;width:100%;background:#10232e;border-radius:8px}#source{aspect-ratio:16/9;max-height:450px;object-fit:contain}
+#warp{height:650px;width:auto;max-width:100%;aspect-ratio:220/855;margin:auto;object-fit:contain}
+#single-sheet{margin-top:16px;aspect-ratio:1280/230}
+.muted{font-size:14px;color:#b5cad3}#detail:empty{display:none}#time{font-variant-numeric:tabular-nums;min-width:65px}
+@media(max-width:650px){main{padding:14px}.single{grid-template-columns:1fr}#warp{height:500px}.controls{gap:9px}}
+</style></head>
+<body><main id="app" data-game="__GAME_ID__">
+<a id="back" href="#">← Player report</a><h1>All throws, one sheet</h1>
+<p>Every selected throw plays at the same time. They align at the delivery-tee crossing and keep their real timing.
+Opposite directions are rotated onto the same sheet.</p>
+<div class="controls"><button id="generate">Generate all throw paths</button><span id="coverage">Loading…</span></div>
+<p id="status" role="status" aria-live="polite"></p>
+<div id="players" class="controls"></div>
+<canvas id="sheet" width="1440" height="265" aria-label="Simultaneous top-down replay of all selected throws"></canvas>
+<div class="controls"><button id="play">Play all</button><button id="reset">Restart together</button>
+<input id="scrub" type="range" min="0" max="45" value="0" step=".05" aria-label="Replay time">
+<span id="time">0.00 s</span><label>Speed <select id="speed"><option value=".5">½×</option>
+<option value="1" selected>1×</option><option value="2">2×</option></select></label>
+<label><input id="trails" type="checkbox" checked>Trails</label><label><input id="loop" type="checkbox" checked>Loop</label></div>
+<p class="muted">Solid paths: camera-supported portions. Dashed paths: inferred gaps. Hollow markers: partial/contact tracks.
+Unresolved tracks fade after their last observation; they do not become resting stones. Click a marker to inspect its throw.</p>
+<div id="detail" class="panel"></div>
+<section id="single" class="panel" hidden><h2 id="single-title">Throw reconstruction</h2>
+<p id="single-status"></p><div class="single"><div><video id="source" controls playsinline preload="metadata"></video>
+<canvas id="single-sheet" width="1280" height="230" aria-label="This throw’s reconstructed stone path synchronized to its video"></canvas></div>
+<div><canvas id="warp" width="220" height="855" aria-label="Video reprojected onto a top-down ice plane"></canvas>
+<p class="muted">Flat-ice video warp. Raised people stretch. Hidden stone motion is estimated in the path replay.</p></div></div>
+<div class="controls"><button id="sync">Replay this throw on the sheet</button><a id="download">Download original clip</a></div></section>
+<section class="panel"><h2>Team throws</h2><div id="throws" class="throws"></div></section>
+<p class="muted">Approximate reconstruction using nominal 114 ft geometry. No called-target accuracy, physical-error guarantee,
+or calibrated probability is implied. All processing is local; clips are generated only when requested.</p>
+</main><script type="module" src="/static/reconstructions.js"></script></body></html>

@@ -34,7 +34,7 @@ from hogline.perception.people import MODEL_SHA256, optional_person_detector
 from hogline.perception.people import VERSION as PERSON_VERSION
 from hogline.perception.perspective_stones import VERSION as PERSPECTIVE_HANDLES_VERSION
 from hogline.perception.perspective_stones import perspective_handles
-from hogline.perception.pipeline import analyze_frame
+from hogline.perception.pipeline import prepare_frame_observations, publish_frame_observations
 from hogline.perception.pose import MODEL_SHA256 as POSE_SHA256
 from hogline.perception.pose import VERSION as POSE_VERSION
 from hogline.perception.pose import optional_body_pose
@@ -44,7 +44,7 @@ from hogline.perception.visibility import VERSION as VISIBILITY_VERSION
 from hogline.perception.visibility import visibility_observation
 from hogline.reconstruction.deliveries import VERSION as DELIVERY_VERSION
 
-RETENTION_VERSION = "endpoints-midpoint-and-configuration-anchors-v3"
+RETENTION_VERSION = "derived-crops-and-configuration-anchors-v4"
 
 
 class WindowRequest(Model):
@@ -444,6 +444,7 @@ def execute_window(db, job):
         "evidence_bytes": budget.logical_bytes,
         "media_selection": media_selection,
     }
+    prepared = prepare_frame_observations(db, evidence.values(), tick)
     check_execution(db, token, time.monotonic() - started)
     with db.snapshot_session(write=True) as session:
         row = session.get(Job, job["id"])
@@ -459,8 +460,7 @@ def execute_window(db, job):
                     )
                 )
         session.flush()
-        for evidence_id in evidence:
-            analyze_frame(session, session.get(Evidence, evidence_id), db.settings.data_dir)
+        publish_frame_observations(session, prepared)
         window_row = AnalysisWindow(id=result["id"], job_id=row.id, source_id=source["id"], document=result)
         session.add(window_row)
         session.flush()

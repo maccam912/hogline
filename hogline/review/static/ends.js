@@ -9,8 +9,7 @@
     ? `<a class="evidence-link" target="_blank" rel="noopener" href="${text(anchor.youtube_url)}">${title} · ${stamp(anchor.source_seconds)} ↗</a>` : "";
   const range = (a, b) => `${stamp(a)}–${stamp(b)}`;
   function renderTimeline(result) {
-    $("#end-timeline-content").innerHTML = `<p>Compare score histories, arrivals and possible clearings. Board posting is separate from play; unknowns remain explicit.</p>
-      <details><summary>Interpretation limits and evidence</summary><p>${text(result.notice)}</p></details>
+    $("#end-timeline-content").innerHTML = `<details><summary>Interpretation limits and evidence</summary><p>${text(result.notice)}</p></details>
       <p>${result.coverage.board_observation_frames} board frames · ${result.coverage.paired_row_epochs} repeated two-row readings · ${result.end_candidates.length} possible clearings</p>
       <p><a class="evidence-link" href="/api/sources/${encodeURIComponent(selectedSource)}/end-timeline" target="_blank" rel="noopener">Open complete end timeline JSON ↗</a></p>
       <h3>End and score histories</h3>
@@ -34,7 +33,7 @@
     $("#house-score-content").innerHTML = `<h3>Experimental house scores · ${observations.length} frames</h3><p>These are image-space proposals. Detection completeness, physical calibration and final-end phase need review. A mid-end house score is not the played result.</p>${observations.length ? observations.map((observation) => `<details><summary>${stamp(observation.source_seconds)} · ${Object.entries(observation.views).map(([view, data]) => `${view === "house_top" ? "Top" : "Bottom"}: ${score(data.scoring.provisional_score)}`).join(" · ")}</summary>${Object.entries(observation.views).map(([view, data]) => {
       const asset = observation.input_crops[view];
       const circles = data.footprints.filter((f) => f.status === "candidate").map((f) => `<circle cx="${Number(f.center_px[0])}" cy="${Number(f.center_px[1])}" r="${Number(f.radius_px)}" fill="none" stroke="${f.color === "red" ? "#ff5555" : "#ffee55"}" stroke-width="2"/>`).join("");
-      return `<figure><figcaption>${label(view)} · candidate score ${score(data.scoring.provisional_score)}${data.scoring.reasons.length ? " · " + data.scoring.reasons.map(label).join(", ") : " · proposed"}</figcaption><div class="house-score-image"><img loading="lazy" src="/api/evidence/${encodeURIComponent(observation.evidence_id)}/${view}" width="${asset.width}" height="${asset.height}" alt="${label(view)} with experimental granite boundaries"><svg viewBox="0 0 ${asset.width} ${asset.height}" aria-hidden="true">${circles}</svg></div></figure>`;
+      return `<figure><figcaption>${label(view)} · candidate score ${score(data.scoring.provisional_score)}${data.scoring.score_options?.length > 1 ? ` · possibilities ${data.scoring.score_options.map(score).join(" or ")}` : ""}${data.scoring.reasons.length ? " · " + data.scoring.reasons.map(label).join(", ") : " · proposed"}</figcaption><div class="house-score-image"><img loading="lazy" src="/api/evidence/${encodeURIComponent(observation.evidence_id)}/${view}" width="${asset.width}" height="${asset.height}" alt="${label(view)} with experimental granite boundaries"><svg viewBox="0 0 ${asset.width} ${asset.height}" aria-hidden="true">${circles}</svg></div></figure>`;
     }).join("")}${link(observation, "Check original frame")} <a class="evidence-link" target="_blank" rel="noopener" href="/api/house-scores/${encodeURIComponent(observation.id)}">Inspect measurements JSON ↗</a></details>`).join("") : "<p>Choose Analyze cached houses to inspect retained frames.</p>"}`;
   }
   async function load() {

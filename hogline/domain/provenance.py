@@ -5,7 +5,7 @@ from collections import defaultdict
 from sqlalchemy import select
 
 from hogline.adapters.sources import digest
-from hogline.db import AnalysisWindow, Evidence, Job, MetadataSnapshot, Scan
+from hogline.db import AnalysisWindow, Evidence, Job, MetadataSnapshot, Scan, rows_by_ids
 
 VERSION = "evidence-acquisition-manifest-resolution-v1"
 
@@ -53,7 +53,7 @@ def resolve_observation_manifests(session, observations):
         return []
     frames = {
         r.id: {**r.document, "id": r.id, "source_id": r.source_id}
-        for r in session.scalars(select(Evidence).where(Evidence.id.in_(ids)))
+        for r in rows_by_ids(session, Evidence, Evidence.id, ids)
     }
     scans = [
         {

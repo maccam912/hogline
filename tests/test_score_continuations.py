@@ -167,15 +167,16 @@ def test_grouped_ice_agreement_crosses_continuation_without_duplicating_ends():
     assert rows[-1]["cumulative_red_points"] == "4"
 
 
-def test_grouping_cannot_hide_independent_ice_disagreement_in_other_recording():
+def test_grouped_board_corrects_independent_ice_disagreement_in_other_recording():
     _, grouping, reports = grouped_corpus(source="right", number=1, points=(0, 3))
     result = reconcile_continuation_groups(grouping, reports)
     history = result["histories"][0]
-    assert history["ends"][0]["comparison"] == "disagreement"
-    assert history["ends"][0]["points"] == {"red": None, "yellow": None}
-    assert history["ends"][-1]["score_after_end"] == {"red": None, "yellow": None}
-    assert history["score_history_complete_through"] is history["final_result"] is None
-    assert result["summary"]["score_disagreements"] == 1
+    assert history["ends"][0]["comparison"] == "scoreboard_corrected_ice"
+    assert history["ends"][0]["points"] == history["ends"][0]["board_points"]
+    assert history["ends"][0]["ice_points"] == {"red": 0, "yellow": 3}
+    assert history["ends"][-1]["score_after_end"] == {"red": 4, "yellow": 3}
+    assert history["score_history_complete_through"] == 5
+    assert result["summary"]["score_disagreements"] == 0
 
 
 def test_later_continuation_board_replaces_earlier_lower_estimate():
@@ -273,5 +274,5 @@ def test_grouped_unscored_concession_retains_the_previous_score_and_conflicts_wi
     )
     combined[0]["histories"][0]["ends"].append(other)
     result = reconcile_continuation_groups(grouping, combined)
-    assert result["histories"][0]["ends"][-1]["status"] == "disputed"
-    assert result["histories"][0]["final_result"] is None
+    assert result["histories"][0]["ends"][-1]["status"] == "proposed"
+    assert result["histories"][0]["final_result"] == {"red": 4, "yellow": 3}

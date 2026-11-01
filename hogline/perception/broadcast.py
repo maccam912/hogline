@@ -20,7 +20,7 @@ from hogline.perception.overlay_clock import read_clock
 from hogline.perception.scoreboard import persistent_board_claims, read_board
 from hogline.reconstruction.board_events import board_timeline
 
-VERSION = "traditional-board-clock-v12"
+VERSION = "traditional-board-clock-v13"
 
 
 def broadcast_version(layout, reference_manifest=None):
@@ -232,13 +232,15 @@ def broadcast_catalog(db):
         return broadcast_catalog_in_session(session, db.settings.data_dir)
 
 
-def broadcast_catalog_in_session(session, root):
+def broadcast_catalog_in_session(session, root, source_id=None, *, source_ids=None):
     context = broadcast_context(session, root, profile())
     version = context["version"]
-    observations = [
-        r.document
-        for r in session.scalars(select(FrameObservation).where(FrameObservation.model_version == version))
-    ]
+    query = select(FrameObservation).where(FrameObservation.model_version == version)
+    if source_id is not None or source_ids is not None:
+        query = query.join(Evidence, FrameObservation.evidence_id == Evidence.id).where(
+            Evidence.source_id.in_(source_ids) if source_ids is not None else Evidence.source_id == source_id
+        )
+    observations = [r.document for r in session.scalars(query)]
     observations = resolve_observation_manifests(session, observations)
     return {
         "observations": observations,

@@ -1,4 +1,3 @@
-import hashlib
 import math
 from uuid import NAMESPACE_URL, uuid5
 
@@ -167,8 +166,11 @@ def evaluate_dataset(db, request: EvaluationRequest):
                 exclusions.append({"labels_id": record["labels_id"], "reason": "prediction_crop_mismatch"})
                 continue
             # Even a frozen dataset cannot make a deleted/corrupt source image reproducible.
-            path = db.settings.data_dir / asset["path"]
-            if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != asset["sha256"]:
+            from hogline.media.frames import read_image
+
+            try:
+                read_image(db.settings.data_dir, asset)
+            except ValueError:
                 exclusions.append({"labels_id": record["labels_id"], "reason": "evidence_missing_or_corrupt"})
                 continue
             row = evaluate_view(

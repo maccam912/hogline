@@ -113,8 +113,7 @@ def test_opposing_color_blank_and_competing_proposals_remain_visible():
 def test_audited_acknowledgment_reopen_and_changed_game_cannot_reuse_old_review(db, monkeypatch):
     data, broadcast = fixture()
     before = copy.deepcopy(data)
-    monkeypatch.setattr(reviews, "catalog_in_session", lambda _: data)
-    monkeypatch.setattr(reviews, "broadcast_catalog_in_session", lambda *_: broadcast)
+    monkeypatch.setattr(reviews, "conflict_inputs", lambda *_: (data, broadcast))
     conflict = reviews.get_score_conflicts(db)["conflicts"][0]
     request = reviews.ScoreConflictDecision(
         expected_review_revision=0,
@@ -150,8 +149,7 @@ def test_audited_acknowledgment_reopen_and_changed_game_cannot_reuse_old_review(
 
 def test_review_api_checks_revision_and_requires_nonblank_reason(db, monkeypatch):
     data, broadcast = fixture()
-    monkeypatch.setattr(reviews, "catalog_in_session", lambda _: data)
-    monkeypatch.setattr(reviews, "broadcast_catalog_in_session", lambda *_: broadcast)
+    monkeypatch.setattr(reviews, "conflict_inputs", lambda *_: (data, broadcast))
     client = TestClient(create_app(db.settings))
     conflict = client.get("/api/score-disagreements").json()["conflicts"][0]
     payload = {
@@ -171,8 +169,7 @@ def test_export_recomputes_disagreements_and_checks_review_history(db, monkeypat
     from hogline.reconstruction.score_conflicts import validate_review_export
 
     data, broadcast = fixture()
-    monkeypatch.setattr(reviews, "catalog_in_session", lambda _: data)
-    monkeypatch.setattr(reviews, "broadcast_catalog_in_session", lambda *_: broadcast)
+    monkeypatch.setattr(reviews, "conflict_inputs", lambda *_: (data, broadcast))
     current = reviews.get_score_conflicts(db)
     validate_review_export(current, data, broadcast)
     conflict = current["conflicts"][0]

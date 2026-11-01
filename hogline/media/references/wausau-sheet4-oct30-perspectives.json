@@ -1,0 +1,20 @@
+{
+  "id": "wausau-sheet4-oct30-perspectives-v1",
+  "source_id": "1c54b78f-e33a-4857-81da-a421c9651f54",
+  "media_sha256": "93a70bafe4dfd1a4130c5cd6f5fe77afd4966ec7892b1fd5a1d9bc7ff91d8e44",
+  "image_size": [1280, 720],
+  "reference_seconds": 300,
+  "point_convention": "camera_near_bottom_granite_edge_assistant_reviewed",
+  "review_basis": "Original composite frames inspected at 512, 513, 514, 1332 and 1333 seconds; isolated yellow delivered stone visible in both wider views. Both delivery directions represented. Coordinates are crop-local.",
+  "cameras": {
+    "perspective_left": {"tee_seed_px": [221, 310], "hog_y_seed_px": 375, "ice_bottom_px": 660, "house_view": "house_top", "transverse_sign": 1},
+    "perspective_right": {"tee_seed_px": [230, 319], "hog_y_seed_px": 377, "ice_bottom_px": 660, "house_view": "house_bottom", "transverse_sign": -1}
+  },
+  "pairs": [
+    {"source_seconds": 512, "perspective_left": [78, 584], "perspective_right": [369, 528]},
+    {"source_seconds": 513, "perspective_left": [83, 531], "perspective_right": [393, 578]},
+    {"source_seconds": 514, "perspective_left": [87, 485], "perspective_right": [414, 639]},
+    {"source_seconds": 1332, "perspective_left": [184, 517], "perspective_right": [278, 596]},
+    {"source_seconds": 1333, "perspective_left": [185, 552], "perspective_right": [271, 548]}
+  ]
+}

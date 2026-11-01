@@ -11,6 +11,7 @@ from hogline.config import profile
 from hogline.db import Job, JobExecution, ProcessingBatch, now
 from hogline.domain.catalog import Conflict, source_or_error
 from hogline.domain.models import Model, ScanRequest
+from hogline.media.frames import STORAGE_VERSION
 from hogline.perception.stones import VERSION as DETECTOR_VERSION
 from hogline.reconstruction.activity import VERSION
 
@@ -45,6 +46,7 @@ def payload_for(source, request, layout=None):
     return {
         "request": request.model_dump(),
         "stage_version": VERSION,
+        "storage_version": STORAGE_VERSION,
         "profile_sha256": digest(layout),
         "profile": layout,
         "source_hash": source["metadata_sha256"],
@@ -70,7 +72,12 @@ def enqueue_in_session(session, payload, batch_id=None):
 def plan_in_session(session, request):
     layout, units, deferred, reused = profile(), [], 0, 0
     new_jobs, total_units, total_frames = 0, 0, 0
-    existing = {j.job_key: j for j in session.scalars(select(Job))}
+    existing = {
+        j.job_key: j
+        for j in session.scalars(
+            select(Job).where(Job.document["request"]["source_id"].as_string().in_(request.source_ids))
+        )
+    }
     for identifier in request.source_ids:
         source = source_or_error(session, identifier)
         duration = source.get("duration_seconds")
@@ -188,7 +195,8 @@ def publish_batch(session, plan):
             "active_execution": None,
             "active_executions": [],
             "parallelism": plan.get("parallelism", 1)
-            if plan.get("kind") in ("ice_survey", "scorecard_read")
+            if plan.get("kind") in ("ice_survey", "scorecard_read", "lineup")
+            or plan.get("campaign_purpose") == "recording_analysis"
             else 1,
             "limits": {k: plan["request"][k] for k in ("max_image_growth_mb", "max_worker_seconds")},
             "control_history": [],
@@ -222,11 +230,14 @@ def publish_batch(session, plan):
     return batch_view(session, batch)
 
 
-def batch_view(session, batch):
+def batch_view(session, batch, *, jobs=None, executions=None):
     from hogline.orchestration.progress import analysis_progress
 
     doc = batch.document
-    jobs = {u["job_id"]: session.get(Job, u["job_id"]) for u in doc["units"]}
+    if jobs is None:
+        from hogline.db import rows_by_ids
+
+        jobs = {j.id: j for j in rows_by_ids(session, Job, Job.id, [u["job_id"] for u in doc["units"]])}
     states = doc.get("unit_outcomes") or {identifier: job.state for identifier, job in jobs.items()}
     units = [
         {
@@ -239,7 +250,8 @@ def batch_view(session, batch):
         }
         for u in doc["units"]
     ]
-    executions = list(session.scalars(select(JobExecution).where(JobExecution.batch_id == batch.id)))
+    if executions is None:
+        executions = list(session.scalars(select(JobExecution).where(JobExecution.batch_id == batch.id)))
     return {
         "id": batch.id,
         "revision": batch.revision,
@@ -284,10 +296,8 @@ def control_batch(db, identifier, control):
         batch = session.get(ProcessingBatch, identifier)
         if batch is None:
             raise ValueError("Batch not found")
-        if batch.state in ("completed", "cancelled"):
-            raise ValueError(
-                "Completed/cancelled batches are immutable; preview a new plan for remaining work"
-            )
+        if batch.state in ("completed", "cancelled", "failed"):
+            raise ValueError("Finished batches are immutable; start a new analysis for remaining work")
         if control.parallelism is not None and batch.document.get("kind") not in (
             "ice_survey",
             "scorecard_read",

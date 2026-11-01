@@ -1,5 +1,40 @@
 # Player skill review and vision pilot
 
+## Estimated player reports
+
+Player skills now links to printable, evidence-backed estimated reports. Named players come from the recording's existing lineup links and team color from its explicit operator context. Assistant-reviewed observations can include visible house placements, front-of-rings placements and contact outcomes without inventing a target speed or release angle. The strict measurement report below keeps its existing requirements.
+
+Estimate review is append-only and checksummed. Changed game/context/lineup/source/candidate/frame inputs withhold stale findings; cited original images are retained. Independently reviewed deliveries can fill scan gaps without creating fictitious vision jobs. These are assistant estimates, not human-confirmed shot ratings.
+
+Routes: `GET/PUT /api/games/{id}/skill-estimates`, `GET /history`, `GET /report`, and `POST /frames` beneath that path. Frame acquisition is bounded, uses verified local footage, preserves original PTS and spends no vision budget. It runs outside the writer transaction.
+
+The October 30 Koski reports were produced by assistant video review, including ten recovered deliveries and a wider-camera pass for guards. Autonomous delivery attribution, outcome judging and report writing are still planned. See [the automation plan](SKILL_REPORT_AUTOMATION_PLAN.md) for the lessons, proposed local/LLM pipeline, milestones and acceptance tests.
+
+## Automatic recording follow-up (October 31)
+
+Completed recording analyses automatically schedule player-skill evidence: overlapping
+delivery surveys over each game span in pieces of at most 30 minutes, bounded delivery
+close-ups and pre-delivery call searches, followed by local motion tracking as candidates
+arrive. If there is no game workspace, a single matchup in the recording title can create
+a proposed workspace with unidentified stone colors; multiple-matchup boundaries require
+review. Live/upcoming and unseekable post-live recordings wait until footage is available.
+
+`HOGLINE_AUTO_SKILLS=1` in the server environment enables this follow-up by default. Set it to `0` to stop
+new automatic skill clips. All vision clips share `HOGLINE_VISION_BUDGET_USD`; the scheduler
+never raises that limit. Automatic budget pauses resume when reservation capacity becomes
+available, while operator pause/cancel decisions stand. Failed automatic clips keep their
+job, error and reservation and become explicit coverage gaps; other clips continue without
+retrying the failed API call. Manual excerpt campaigns still pause on a failed clip.
+Completing a run with gaps is reported separately from completing all its clips.
+
+Local tracking of existing delivery proposals continues even if vision is disabled or
+budget-paused. Player skills shows automatic survey progress and gaps; recording Results
+shows the follow-up state and links to each game's skill review. Plans, progress and
+evidence survive worker restarts, and repeated scheduling reuses the same campaigns.
+Player identity, roles, intended calls and calibration still require review before
+weight/aim statistics can enter a player's report. Finishing the automated evidence
+pipeline does not establish complete delivery detection or validated player ratings.
+
 The **Player skills** link opens `/static/skills.html`. It supports proposed game spans, anonymous participant labels assigned to each end/side/throwing position, separate skip assignments, editable shot observations, and descriptive weight/aim reports. Naming a participant is optional. Confirmed assignments establish continuity across ends only when the same participant label is deliberately reused.
 
 Throwing-order proposals assume standard four-player order (deliveries 1–2 lead, 3–4 second, 5–6 third, 7–8 fourth). They retain competing candidates and never infer skip from fourth. Reviewed end intervals and observed deliveries produce possible throwing-order assignments while preserving missing-shot ambiguity. Game-local continuity proposals connect shared delivery observations or identical frame crops; accepting a participant link remains explicit. Do not apply this assumption to doubles or other formats.

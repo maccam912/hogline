@@ -1,25 +1,38 @@
 import json
+import os
 import time
 from datetime import UTC, datetime, timedelta
 from uuid import NAMESPACE_URL, uuid5
 
 import numpy as np
 from PIL import Image
-from sqlalchemy import select, update
+from sqlalchemy import case, select, update
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm.exc import StaleDataError
 
 from hogline.adapters.sources import digest, video_link
 from hogline.config import profile
-from hogline.db import Evidence, Job, JobExecution, ProcessingBatch, Scan, now
+from hogline.db import (
+    Evidence,
+    Job,
+    JobExecution,
+    ProcessingBatch,
+    Scan,
+    now,
+    queue_field,
+    temporary_database_lock,
+)
 from hogline.domain.catalog import propose_games, source_or_error
 from hogline.domain.models import ScanRequest, uid
 from hogline.media.chunks import VideoChunk
 from hogline.media.errors import TransientMediaError
 from hogline.media.frames import (
+    STORAGE_VERSION,
     EvidenceBudget,
     EvidenceLimitError,
     capture,
     observe,
+    read_image,
     resolve_media,
     save_image,
     source_seconds,
@@ -33,7 +46,7 @@ from hogline.orchestration.plans import (
     freeze_outcomes,
     payload_for,
 )
-from hogline.perception.pipeline import analyze_frame
+from hogline.perception.pipeline import prepare_frame_observations, publish_frame_observations
 from hogline.perception.stones import VERSION as DETECTOR_VERSION
 from hogline.reconstruction.activity import VERSION, classify, propose
 
@@ -76,7 +89,9 @@ def jobs_in_session(session):
 
 
 def claim(db):
+    from hogline.orchestration.auto_lineups import advance_safely as advance_auto_lineups
     from hogline.orchestration.automatic import advance_automatic
+    from hogline.orchestration.recording_followups import advance_safely as advance_followups
     from hogline.orchestration.skill_campaigns import advance_skill_campaigns
     from hogline.orchestration.skill_motion_batches import advance_motion_batches
 
@@ -84,6 +99,8 @@ def claim(db):
         advance_automatic(db)
         advance_skill_campaigns(db)
         advance_motion_batches(db)
+        advance_auto_lineups(db)
+        advance_followups(db)
         return claim_transaction(db)
     except StaleDataError:
         return None  # Another worker/control updated this batch; retry on the next poll.
@@ -118,15 +135,58 @@ def claim_transaction(db):
         session.flush()
         eligible = (Job.state == "queued") & (Job.attempts < 3)
         job, batch = None, None
+        from hogline.orchestration.scheduling import recording_turns
+
+        admitted = recording_turns(session, db.settings.recording_slots)
+        owner_id = queue_field(Job, "batch_id")
+        recording_ids = list(
+            session.scalars(
+                select(ProcessingBatch.id).where(
+                    queue_field(ProcessingBatch, "campaign_purpose") == "recording_analysis"
+                )
+            )
+        )
+        if recording_ids:
+            from sqlalchemy import or_
+
+            eligible = eligible & or_(
+                owner_id.in_(admitted), owner_id.is_(None), owner_id.not_in(recording_ids)
+            )
+        from hogline.media.retention import pending_cleanup_query
+
+        cleanup_pending = (
+            session.scalar(pending_cleanup_query().with_only_columns(ProcessingBatch.id).limit(1)) is not None
+        )
+        # Give an admitted recording with fewer active tasks first access to a free worker.
+        # Either recording can use spare capacity when its peer is between stages.
+        loads = {
+            identifier: len(active_tokens(session.get(ProcessingBatch, identifier).document))
+            for identifier in admitted
+        }
+        ordering = [case(loads, value=owner_id, else_=db.settings.workers + 1), Job.id] if loads else [Job.id]
+        next_units = {}
+        # Paid vision requests reserve their maximum cost until completion. Serialize
+        # standalone requests too, so a transient reservation does not fail a second
+        # house view while the first would shortly release most of its reservation.
         vision_busy = (
             session.scalar(
                 select(Job.id)
-                .where(Job.state == "running", Job.document["kind"].as_string() == "skill_sequence")
+                .where(Job.state == "running", queue_field(Job, "kind") == "skill_sequence")
                 .limit(1)
             )
             is not None
         )
-        for candidate in session.scalars(select(Job).where(eligible).order_by(Job.id)):
+        reconstruction_busy = (
+            session.scalar(
+                select(Job.id)
+                .where(Job.state == "running", queue_field(Job, "kind") == "throw_reconstruction")
+                .limit(1)
+            )
+            is not None
+        )
+        for candidate in session.scalars(select(Job).where(eligible).order_by(*ordering)):
+            if reconstruction_busy and candidate.document.get("kind") == "throw_reconstruction":
+                continue
             if vision_busy and candidate.document.get("kind") == "skill_sequence":
                 continue
             if (candidate.document.get("retry_after") or "") > now():
@@ -136,6 +196,12 @@ def claim_transaction(db):
                 if candidate.document.get("batch_id")
                 else None
             )
+            if (
+                owner
+                and owner.document.get("campaign_purpose") == "recording_analysis"
+                and (owner.id not in admitted or cleanup_pending)
+            ):
+                continue
             if owner and (
                 owner.state != "active"
                 or len(active_tokens(owner.document)) >= owner.document.get("parallelism", 1)
@@ -144,17 +210,21 @@ def claim_transaction(db):
             if owner:
                 # A bounded plan's order encodes its priorities (including quiet
                 # audits). Random UUID ordering must not decide what fits its budget.
-                next_unit = next(
-                    (
-                        unit["job_id"]
-                        for unit in owner.document["units"]
-                        if (planned := session.get(Job, unit["job_id"])).state == "queued"
-                        and planned.attempts < 3
-                        and planned.document.get("batch_id") == owner.id
-                    ),
-                    None,
-                )
-                if candidate.id != next_unit:
+                if owner.id not in next_units:
+                    queued_ids = set(
+                        session.scalars(
+                            select(Job.id).where(
+                                Job.state == "queued",
+                                Job.attempts < 3,
+                                owner_id == owner.id,
+                            )
+                        )
+                    )
+                    next_units[owner.id] = next(
+                        (u["job_id"] for u in owner.document["units"] if u["job_id"] in queued_ids),
+                        None,
+                    )
+                if candidate.id != next_units[owner.id]:
                     continue
             job, batch = candidate, owner
             break
@@ -186,7 +256,12 @@ def claim_transaction(db):
                 job_id=job.id,
                 batch_id=batch.id if batch else None,
                 state="running",
-                document={"started_at": now(), "wall_seconds": 0, "new_image_bytes_reserved": 0},
+                document={
+                    "started_at": now(),
+                    "worker_pid": os.getpid(),
+                    "wall_seconds": 0,
+                    "new_image_bytes_reserved": 0,
+                },
             )
         )
         if batch:
@@ -211,52 +286,12 @@ def cached_frame(db, source, seconds, layout=None, acquisition_tier="evidence"):
         "metadata": source["metadata_sha256"],
         "second": seconds,
         "version": "original-pts-frame-v1",
+        "storage_version": STORAGE_VERSION,
     }
     if acquisition_tier == "coarse":
         cache_key["acquisition_tier"] = "coarse-v1"
     key = digest(cache_key)
     path = db.settings.data_dir / "cache" / f"{key}.json"
-    if not path.exists() and acquisition_tier == "evidence":
-        # Pre-acquisition-cache pilot keys included the profile/stage. Only inspect
-        # exact keys pinned to this metadata snapshot, never arbitrary manifests
-        # that happen to have the same source ID and timestamp.
-        with db.session() as session:
-            old_jobs = session.scalars(
-                select(Job).where(
-                    Job.document["request"]["source_id"].as_string() == source["id"],
-                    Job.document["source_hash"].as_string() == source["metadata_sha256"],
-                )
-            )
-            variants = {
-                (j.document["profile_sha256"], j.document["stage_version"])
-                for j in old_jobs
-                if j.document.get("kind", "scan") == "scan" and "profile_sha256" in j.document
-            }
-        for profile_hash, stage_version in variants:
-            legacy_key = digest(
-                {
-                    "source": source["id"],
-                    "metadata": source["metadata_sha256"],
-                    "second": seconds,
-                    "profile": profile_hash,
-                    "version": stage_version,
-                }
-            )
-            legacy = path.parent / f"{legacy_key}.json"
-            try:
-                candidate = json.loads(legacy.read_text())
-                if (
-                    candidate.get("source_id") == source["id"]
-                    and candidate.get("acquisition_tier", "evidence") == acquisition_tier
-                    and abs(
-                        candidate.get("requested_seconds", candidate.get("source_seconds", -1000)) - seconds
-                    )
-                    < 0.001
-                ):
-                    path.write_text(json.dumps(candidate))
-                    break
-            except (OSError, ValueError, TypeError):
-                continue
     if not path.exists():
         return None, path
     try:
@@ -273,8 +308,9 @@ def cached_frame(db, source, seconds, layout=None, acquisition_tier="evidence"):
             return None, path
     doc["_recrop_required"] = doc.get("profile_sha256") != digest(layout or profile())
     for asset in doc["crops"].values():
-        file = db.settings.data_dir / asset["path"]
-        if not file.is_file() or hashlib.sha256(file.read_bytes()).hexdigest() != asset["sha256"]:
+        try:
+            read_image(db.settings.data_dir, asset)
+        except ValueError:
             doc["_recrop_required"] = True
     return doc, path
 
@@ -282,21 +318,25 @@ def cached_frame(db, source, seconds, layout=None, acquisition_tier="evidence"):
 def vectors_from_doc(db, doc):
     return {
         name: np.asarray(
-            Image.open(db.settings.data_dir / crop["path"]).convert("L").resize((96, 96)), dtype=np.float32
+            read_image(db.settings.data_dir, crop).convert("L").resize((96, 96)), dtype=np.float32
         )
         for name, crop in doc["crops"].items()
     }
 
 
 def execute(db, job):
-    if job.get("kind") == "skill_sequence":
-        from hogline.orchestration.skills import execute_skill_sequence
+    if job.get("kind") == "throw_reconstruction":
+        from hogline.orchestration.throw_reconstructions import execute_reconstruction
 
-        return execute_skill_sequence(db, job)
+        return execute_reconstruction(db, job)
     if job.get("kind") == "skill_motion":
         from hogline.orchestration.skill_motion import execute_skill_motion
 
         return execute_skill_motion(db, job)
+    if job.get("kind") == "skill_sequence":
+        from hogline.orchestration.skills import execute_skill_sequence
+
+        return execute_skill_sequence(db, job)
     if job.get("kind") == "ice_survey":
         from hogline.orchestration.ice import execute_ice
 
@@ -317,6 +357,12 @@ def execute(db, job):
         from hogline.orchestration.ocr_jobs import execute_ocr
 
         return execute_ocr(db, job)
+    if job.get("kind") in ("lineup_segment", "lineup_assembly"):
+        from hogline.orchestration.lineups import execute_lineup_assembly, execute_lineup_segment
+
+        return (execute_lineup_segment if job["kind"] == "lineup_segment" else execute_lineup_assembly)(
+            db, job
+        )
     if job.get("kind") == "dense_window":
         from hogline.orchestration.windows import execute_window
 
@@ -479,6 +525,18 @@ def execute_scan(db, job, chunk):
         "cache_hits": cache_hits,
         "evidence_bytes": logical_bytes,
     }
+
+    def preparation_tick():
+        elapsed = time.monotonic() - started
+        check_execution(db, token, elapsed)
+        update_owned(db, job["id"], token, wall_seconds=elapsed)
+
+    prepared = (
+        prepare_frame_observations(db, evidence_docs.values(), preparation_tick)
+        if request.acquisition_tier == "evidence"
+        else []
+    )
+    result["wall_seconds"] = time.monotonic() - started
     check_execution(db, token, time.monotonic() - started)
     with db.snapshot_session(write=True) as session:
         row = session.get(Job, job["id"])
@@ -493,9 +551,7 @@ def execute_scan(db, job, chunk):
                     )
                 )
         session.flush()
-        if request.acquisition_tier == "evidence":
-            for doc in evidence_docs.values():
-                analyze_frame(session, session.get(Evidence, doc["id"]), db.settings.data_dir)
+        publish_frame_observations(session, prepared)
         result["game_ids"] = propose_games(session, source, result, row.id) if request.propose_games else []
         session.add(Scan(job_id=row.id, source_id=source["id"], document=result))
         row.state, row.lease_until = "succeeded", None
@@ -517,6 +573,7 @@ def run_one(db):
     try:
         execute(db, job)
     except Exception as exc:
+        error = str(exc.orig) if isinstance(exc, OperationalError) else str(exc)
         with db.snapshot_session(write=True) as session:
             row = session.get(Job, job["id"])
             if row.document.get("lease_token") == job["lease_token"]:
@@ -530,14 +587,14 @@ def run_one(db):
                 )
                 retrying = (
                     not stopped
-                    and isinstance(exc, TransientMediaError)
+                    and (isinstance(exc, TransientMediaError) or temporary_database_lock(exc))
                     and row.attempts < 3
                     and (batch is None or batch.state == "active")
                 )
                 if stopped:
                     if batch and batch.state == "active":
                         batch.state = "paused"
-                        batch.document = {**batch.document, "pause_reason": str(exc)}
+                        batch.document = {**batch.document, "pause_reason": error}
                     row.state = "cancelled" if batch and batch.state == "cancelled" else "queued"
                     row.attempts = max(0, row.attempts - 1)  # Operator pauses do not consume failure retries.
                 elif retrying:
@@ -548,12 +605,12 @@ def run_one(db):
                 failure = {
                     "at": now(),
                     "attempt": row.attempts,
-                    "error": str(exc),
+                    "error": error,
                     "automatic_retry": retrying,
                 }
                 row.document = {
                     **row.document,
-                    "error": str(exc),
+                    "error": error,
                     "finished_at": now(),
                     "retry_pending": retrying,
                     "retry_after": (
@@ -581,7 +638,7 @@ def run_one(db):
                 outcome = row.state
             else:
                 outcome = "lease_lost"
-        return {"id": job["id"], "state": outcome, "error": str(exc)}
+        return {"id": job["id"], "state": outcome, "error": error}
     return {"id": job["id"], "state": "succeeded"}
 
 

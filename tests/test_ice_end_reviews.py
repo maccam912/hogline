@@ -230,7 +230,7 @@ def test_unknown_ice_points_never_supply_zero_and_explicit_correction_keeps_hist
         assert len(list(s.scalars(select(FrameObservation)))) == 2
 
 
-def test_board_and_ice_disagreement_remains_visible_without_total(db, sources):
+def test_board_corrects_ice_and_preserves_original_claim_and_legacy_projection(db, sources):
     edit = request(db, sources[0])
     rv = save_ice_end_review(db, edit)
     rv["request"]["board_history_id"] = "board"
@@ -252,10 +252,13 @@ def test_board_and_ice_disagreement_remains_visible_without_total(db, sources):
         ],
     }
     book = reconcile_scores(report, [rv])["histories"][0]
-    assert book["ends"][0]["comparison"] == "disagreement"
+    assert book["ends"][0]["comparison"] == "scoreboard_corrected_ice"
     assert book["ends"][0]["board_points"] == {"red": 0, "yellow": 3}
     assert book["ends"][0]["ice_points"] == {"red": 2, "yellow": 0}
-    assert book["final_result"] is None
+    assert book["final_result"] == {"red": 0, "yellow": 3}
+    assert book["final_result_range"] == {"red": {"min": 0, "max": 0}, "yellow": {"min": 3, "max": 3}}
+    legacy = reconcile_scores(report, [rv], version="board-and-reviewed-ice-scores-v4")["histories"][0]
+    assert legacy["ends"][0]["comparison"] == "disagreement" and legacy["final_result"] is None
 
 
 def test_assistant_cannot_replace_human_review_or_use_duplicate_frames(db, sources):
@@ -317,7 +320,16 @@ def test_unresolved_final_end_preserves_known_prefix_and_legacy_projection(db, s
         {
             k: v
             for k, v in end.items()
-            if k not in ("score_is_estimate", "estimated_points", "score_policy_applications")
+            if k
+            not in (
+                "score_is_estimate",
+                "estimated_points",
+                "score_policy_applications",
+                "score_options",
+                "points_range",
+                "score_confidence",
+                "score_after_end_range",
+            )
         }
         for end in history["ends"]
     ]
@@ -448,7 +460,9 @@ def test_unscored_concession_conflicts_with_a_posted_or_completed_end(db, source
         ],
     }
     history = reconcile_scores(report, [review])["histories"][0]
-    assert history["ends"][0]["status"] == "disputed" and history["final_result"] is None
+    assert history["ends"][0]["status"] == "proposed"
+    assert history["ends"][0]["comparison"] == "scoreboard_corrected_ice"
+    assert history["final_result"] == {"red": 0, "yellow": 0}
     completed = deepcopy(review)
     completed["id"] = "independent-completed"
     completed["request"].pop("concession")

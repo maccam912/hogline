@@ -220,6 +220,82 @@ def test_changed_game_or_failed_clip_pauses_without_automatic_retry(db, excerpt,
         )
 
 
+def test_automatic_campaign_keeps_failed_gap_and_finishes_other_clips(db, excerpt, monkeypatch):
+    request = excerpt.model_copy(update={"max_refinements": 0})
+    current = campaigns.start_campaign(db, "game", request, automatic=True)
+    propose = skills.propose_call
+    monkeypatch.setattr(
+        skills, "propose_call", lambda *a, **k: (_ for _ in ()).throw(ValueError("invalid vision response"))
+    )
+    assert worker.run_one(db)["state"] == "failed"
+    monkeypatch.setattr(skills, "propose_call", propose)
+    result = finish(db, current["id"])
+    assert result["state"] == "completed"
+    assert result["survey"][0]["skipped_failed"]
+    assert result["survey"][0]["state"] == "failed"
+    assert len(result["coverage_gaps"]) == 1
+    assert result["coverage_gaps"][0]["error"] == "invalid vision response"
+    assert [u["state"] for u in result["survey"][1:]] == ["succeeded", "succeeded"]
+    with db.snapshot_session() as session:
+        assert session.get(Job, result["survey"][0]["job_id"]).attempts == 1
+        assert s_count(session, SkillSequence) == 2
+        from hogline.orchestration.recording_followups import followup_status
+
+        assert followup_status(session, ["game"])["state"] == "completed_with_gaps"
+
+
+def test_only_automatic_budget_pauses_resume_when_capacity_returns(db, excerpt, monkeypatch):
+    monkeypatch.setattr(
+        campaigns, "load_vision_config", lambda: VisionConfig("secret", "gpt-6.1-terra", Decimal(".5"), True)
+    )
+    auto = campaigns.start_campaign(db, "game", excerpt, automatic=True)
+    manual = campaigns.start_campaign(db, "game", excerpt.model_copy(update={"start_seconds": 10}))
+    stopped = campaigns.start_campaign(
+        db, "game", excerpt.model_copy(update={"start_seconds": 20}), automatic=True
+    )
+    campaigns.control_campaign(
+        db, stopped["id"], campaigns.CampaignControl(action="pause", expected_revision=stopped["revision"])
+    )
+    campaigns.advance_skill_campaigns(db)
+    assert view(db, auto["id"])["pause_code"] == "vision_budget"
+    monkeypatch.setattr(
+        campaigns, "load_vision_config", lambda: VisionConfig("secret", "gpt-6.1-terra", Decimal(10), True)
+    )
+    campaigns.advance_skill_campaigns(db)
+    assert view(db, auto["id"])["state"] == "active"
+    assert view(db, manual["id"])["state"] == "paused"
+    assert view(db, stopped["id"])["pause_code"] == "operator"
+    assert view(db, stopped["id"])["state"] == "paused"
+    with db.snapshot_session() as session:
+        assert s_count(session, Job) == 1
+
+
+def test_adopting_existing_followup_preserves_operator_stop_and_failed_job(db, excerpt, monkeypatch):
+    current = campaigns.start_campaign(db, "game", excerpt)
+    monkeypatch.setattr(
+        skills, "propose_call", lambda *a, **k: (_ for _ in ()).throw(ValueError("invalid response"))
+    )
+    worker.run_one(db)
+    campaigns.advance_skill_campaigns(db)
+    assert view(db, current["id"])["state"] == "paused"
+    adopted = campaigns.start_campaign(db, "game", excerpt, automatic=True)
+    assert adopted["id"] == current["id"] and adopted["state"] == "active"
+    campaigns.advance_skill_campaigns(db)
+    assert view(db, current["id"])["coverage_gaps"][0]["error"] == "invalid response"
+    stopped = campaigns.start_campaign(db, "game", excerpt.model_copy(update={"start_seconds": 10}))
+    campaigns.control_campaign(
+        db, stopped["id"], campaigns.CampaignControl(action="cancel", expected_revision=stopped["revision"])
+    )
+    assert (
+        campaigns.start_campaign(
+            db, "game", excerpt.model_copy(update={"start_seconds": 10}), automatic=True
+        )["state"]
+        == "cancelled"
+    )
+    with db.snapshot_session() as session:
+        assert session.get(Job, view(db, current["id"])["survey"][0]["job_id"]).attempts == 1
+
+
 def test_campaign_rejects_outside_game_and_unbounded_requests(db, excerpt):
     with pytest.raises(ValueError, match="source span"):
         campaigns.start_campaign(db, "game", excerpt.model_copy(update={"end_seconds": 101}))

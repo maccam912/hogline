@@ -157,7 +157,7 @@ def create_automatic_batch(db, request, expected_plan_sha256=None):
         return publish_batch(session, plan)
 
 
-def ocr_units(session, root, request, hashes, allowed_evidence_ids=None):
+def ocr_units(session, root, request, hashes, allowed_evidence_ids=None, repair_run=None):
     layout = profile()
     context = broadcast_context(session, root, layout)
     version = context["version"]
@@ -186,7 +186,12 @@ def ocr_units(session, root, request, hashes, allowed_evidence_ids=None):
         if i < len(group)
     ]
     units, busy = [], 0
-    existing = {j.job_key: j for j in session.scalars(select(Job))}
+    existing = {
+        j.job_key: j
+        for j in session.scalars(
+            select(Job).where(Job.document["request"]["source_id"].as_string().in_(request.source_ids))
+        )
+    }
     for frame in ordered:
         seconds = frame.document["source_seconds"]
         payload = {
@@ -205,6 +210,8 @@ def ocr_units(session, root, request, hashes, allowed_evidence_ids=None):
                 "max_evidence_mb": 8,
             },
         }
+        if repair_run:
+            payload["repair_run"] = repair_run
         old = existing.get(digest(payload))
         if old and not (old.state == "cancelled" and old.attempts < 3):
             busy += 1
@@ -236,8 +243,11 @@ def append_phase(session, batch, phase, units, summary):
     doc = batch.document
     added = []
     for unit in units:
-        job = enqueue_in_session(session, unit["payload"], batch.id)
-        added.append({**unit, "job_id": job.id})
+        payload = unit["payload"]
+        if doc.get("repair_run"):
+            payload = {**payload, "repair_run": doc["repair_run"]}
+        job = enqueue_in_session(session, payload, batch.id)
+        added.append({**unit, "payload": payload, "job_id": job.id})
     batch.document = {
         **doc,
         "phase": phase,
@@ -263,9 +273,40 @@ def append_phase(session, batch, phase, units, summary):
 def advance_automatic(db):
     """Atomically advance ready stages; finite rounds also handle all-cached stages."""
     with db.snapshot_session(write=True) as session:
-        for batch in session.scalars(select(ProcessingBatch).where(ProcessingBatch.state == "active")):
+        from sqlalchemy import or_
+
+        from hogline.orchestration.recovery import recover_recordings
+        from hogline.orchestration.scheduling import recording_turns
+
+        recover_recordings(session)
+        session.flush()
+        admitted = recording_turns(session, db.settings.recording_slots)
+        from hogline.db import queue_field
+
+        purpose = queue_field(ProcessingBatch, "campaign_purpose")
+        query = select(ProcessingBatch).where(
+            ProcessingBatch.state == "active",
+            or_(purpose.is_(None), purpose != "recording_analysis", ProcessingBatch.id.in_(admitted)),
+        )
+        for batch in session.scalars(query):
             if batch.document.get("kind") != "automatic":
                 continue
+            if (
+                batch.document.get("campaign_purpose") == "recording_analysis"
+                and batch.document.get("parallelism") != db.settings.recording_parallelism
+            ):
+                batch.document = {
+                    **batch.document,
+                    "parallelism": db.settings.recording_parallelism,
+                    "scheduling_history": [
+                        *batch.document.get("scheduling_history", []),
+                        {
+                            "at": now(),
+                            "parallelism": db.settings.recording_parallelism,
+                            "recording_slots": db.settings.recording_slots,
+                        },
+                    ],
+                }
             try:
                 with session.begin_nested():
                     advance_ready_batch(session, db.settings.data_dir, batch)
@@ -273,6 +314,11 @@ def advance_automatic(db):
                 batch.state = "paused"
                 batch.document = {**batch.document, "pause_reason": str(exc)}
         session.flush()
+        recover_recordings(session)
+        session.flush()
+        from hogline.media.retention import cleanup_completed
+
+        cleanup_completed(session, db.settings.data_dir)
 
 
 def advance_ready_batch(session, root, batch):

@@ -7,8 +7,8 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from hogline.adapters.sources import digest
-from hogline.db import ScoreConflictReview, now
-from hogline.domain.catalog import Conflict, catalog_in_session
+from hogline.db import Evidence, GameRow, ScoreConflictReview, Source, now
+from hogline.domain.catalog import Conflict, present_game
 from hogline.domain.models import Model
 from hogline.perception.broadcast import broadcast_catalog_in_session
 from hogline.reconstruction.score_conflicts import VERSION, score_conflicts
@@ -67,18 +67,33 @@ def conflicts_in_session(session, data, broadcast):
     }
 
 
+def conflict_inputs(session, root):
+    sources = {r.id: {**r.document, "id": r.id} for r in session.scalars(select(Source))}
+    games = [
+        present_game(r, sources)
+        for r in session.scalars(select(GameRow))
+        if not r.document.get("retired_into")
+    ]
+    source_ids = sorted({s["source_id"] for game in games for s in game["spans"]})
+    data = {
+        "sources": list(sources.values()),
+        "games": games,
+        "evidence": [
+            {**r.document, "id": r.id, "source_id": r.source_id}
+            for r in session.scalars(select(Evidence).where(Evidence.source_id.in_(source_ids)))
+        ],
+    }
+    return data, broadcast_catalog_in_session(session, root, source_ids=source_ids)
+
+
 def get_score_conflicts(db):
     with db.snapshot_session() as session:
-        return conflicts_in_session(
-            session, catalog_in_session(session), broadcast_catalog_in_session(session, db.settings.data_dir)
-        )
+        return conflicts_in_session(session, *conflict_inputs(session, db.settings.data_dir))
 
 
 def save_score_conflict_review(db, conflict_id, request):
     with db.snapshot_session(write=True) as session:
-        result = conflicts_in_session(
-            session, catalog_in_session(session), broadcast_catalog_in_session(session, db.settings.data_dir)
-        )
+        result = conflicts_in_session(session, *conflict_inputs(session, db.settings.data_dir))
         conflict = next((c for c in result["conflicts"] if c["id"] == conflict_id), None)
         if conflict is None:
             raise Conflict("The score discrepancy changed or no longer exists. Refresh before reviewing.")

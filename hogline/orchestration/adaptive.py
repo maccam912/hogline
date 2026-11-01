@@ -56,7 +56,9 @@ def adaptive_in_session(session, request):
     evidence = {
         e.id: e.document for e in session.scalars(select(Evidence).where(Evidence.source_id.in_(sources)))
     }
-    jobs = list(session.scalars(select(Job)))
+    jobs = list(
+        session.scalars(select(Job).where(Job.document["request"]["source_id"].as_string().in_(sources)))
+    )
     by_key = {j.job_key: j for j in jobs}
     samples, exclusions = {}, Counter()
     # Only current, explicitly pinned scans can choose more media work.

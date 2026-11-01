@@ -7,8 +7,9 @@ from sqlalchemy import select
 
 from hogline.adapters.sources import digest
 from hogline.analytics.skills import skill_report
-from hogline.db import GameRow, Job, SkillMotion, SkillSequence, Source
+from hogline.db import GameRow, Job, SkillEstimateRevision, SkillMotion, SkillSequence, Source
 from hogline.domain.skill_calibration import CameraCalibration
+from hogline.domain.skill_estimates import EstimateEdit, estimate_report, save_estimates
 from hogline.domain.skill_scope import CoverageExtension, extend_skill_coverage
 from hogline.domain.skills import (
     Shot,
@@ -20,6 +21,7 @@ from hogline.domain.skills import (
     skill_history,
 )
 from hogline.media.frames import read_image_bytes
+from hogline.orchestration.delivery_rays import DeliveryRayRequest
 from hogline.orchestration.skill_calibration import (
     aim_preview,
     calibration_draft,
@@ -40,6 +42,7 @@ from hogline.orchestration.skill_campaigns import (
     preview_campaign,
     start_campaign,
 )
+from hogline.orchestration.skill_estimate_frames import EstimateFramesRequest, capture_estimate_frames
 from hogline.orchestration.skill_house_context import (
     analyze_house_context,
     house_context_image,
@@ -85,6 +88,83 @@ from hogline.reconstruction.skill_order import order_report
 
 
 def register_skills(app, db):
+    from hogline.review.hog_rays import register_hog_rays
+
+    register_hog_rays(app, db)
+
+    @app.post("/api/games/{game_id}/skill-estimates/frames")
+    def estimate_frames(game_id: str, request: EstimateFramesRequest):
+        return capture_estimate_frames(db, game_id, request)
+
+    @app.get("/api/games/{game_id}/skill-estimates")
+    def read_estimates(game_id: str):
+        return estimate_report(db, game_id)
+
+    @app.put("/api/games/{game_id}/skill-estimates")
+    def edit_estimates(game_id: str, edit: EstimateEdit):
+        return save_estimates(db, game_id, edit)
+
+    @app.get("/api/games/{game_id}/skill-estimates/history")
+    def estimate_history(game_id: str):
+        with db.snapshot_session() as session:
+            result = []
+            for row in session.scalars(
+                select(SkillEstimateRevision)
+                .where(SkillEstimateRevision.game_id == game_id)
+                .order_by(SkillEstimateRevision.number)
+            ):
+                if digest(row.document) != row.sha256:
+                    raise ValueError("Estimated report review checksum mismatch")
+                result.append(
+                    {
+                        "revision": row.number,
+                        "sha256": row.sha256,
+                        "created_at": row.created_at,
+                        "document": row.document,
+                    }
+                )
+            return {"revisions": result}
+
+    @app.get("/api/games/{game_id}/skill-estimates/report")
+    def printable_estimates(game_id: str):
+        from hogline.analytics.estimated_reports import report_html
+
+        return Response(report_html(estimate_report(db, game_id)), media_type="text/html")
+
+    @app.post("/api/games/{game_id}/skill-estimates/delivery-rays")
+    def native_delivery_ray(game_id: str, request: DeliveryRayRequest):
+        from hogline.orchestration.delivery_rays import analyze_delivery_ray
+
+        return analyze_delivery_ray(db, game_id, request)
+
+    from hogline.orchestration.perspective_rays import PerspectiveRayRequest
+
+    @app.post("/api/games/{game_id}/skill-estimates/perspective-rays")
+    def perspective_delivery_ray(game_id: str, request: PerspectiveRayRequest):
+        from hogline.orchestration.perspective_rays import analyze_perspective_ray
+
+        return analyze_perspective_ray(db, game_id, request)
+
+    @app.get("/api/games/{game_id}/skill-estimates/delivery-rays/{ray_id}/{view}.svg")
+    def native_ray_image(game_id: str, ray_id: str, view: str):
+        from hogline.analytics.delivery_rays import ray_svg
+
+        if view not in ("origin", "receiving", "perspective_left", "perspective_right", "distance"):
+            raise ValueError("Choose a house, perspective, or distance-check view")
+        report = estimate_report(db, game_id)
+        ray = next(
+            (
+                d["delivery_ray"]
+                for p in report["players"]
+                for d in p["deliveries"]
+                if d.get("delivery_ray") and d["delivery_ray"]["id"] == ray_id
+            ),
+            None,
+        )
+        if ray is None:
+            raise ValueError("Ray evidence changed or no longer belongs to this report")
+        return Response(ray_svg(db, ray, view), media_type="image/svg+xml")
+
     @app.get("/api/skills/end-direction")
     def read_end_direction():
         with db.snapshot_session() as session:
@@ -202,6 +282,7 @@ def register_skills(app, db):
         return {
             **load_vision_config().public_status(),
             **budget_status(db.settings.data_dir / "skill-vision"),
+            "automatic_skills": db.settings.auto_skills,
         }
 
     @app.post("/api/games/{game_id}/skill-sequences")

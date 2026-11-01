@@ -74,9 +74,14 @@ def derive_house_states(db, window_id):
         return save_house_states_in_session(session, window, load_track_input(db.settings.data_dir, window))
 
 
-def house_states_in_session(session, *, full=False):
+def house_states_in_session(session, *, full=False, source_id=None):
     output = []
-    for row in session.scalars(select(WindowHouseStates).order_by(WindowHouseStates.id)):
+    query = select(WindowHouseStates)
+    if source_id is not None:
+        query = query.join(AnalysisWindow, WindowHouseStates.window_id == AnalysisWindow.id).where(
+            AnalysisWindow.source_id == source_id
+        )
+    for row in session.scalars(query.order_by(WindowHouseStates.id)):
         result = checked_result(row)
         if not full:
             result["state_count"] = len(result.pop("states"))

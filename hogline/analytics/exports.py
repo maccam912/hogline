@@ -191,6 +191,9 @@ def csv_export(release):
         "estimated_red_points",
         "estimated_yellow_points",
         "score_policy_json",
+        "score_options_json",
+        "points_range_json",
+        "cumulative_range_json",
     ]
     writer = csv.DictWriter(out, fieldnames=fields)
     writer.writeheader()
@@ -306,6 +309,9 @@ def csv_export(release):
                             "estimated_red_points": (end.get("estimated_points") or {}).get("red"),
                             "estimated_yellow_points": (end.get("estimated_points") or {}).get("yellow"),
                             "score_policy_json": json.dumps(end.get("score_policy_applications", [])),
+                            "score_options_json": json.dumps(end.get("score_options", [])),
+                            "points_range_json": json.dumps(end.get("points_range")),
+                            "cumulative_range_json": json.dumps(end.get("score_after_end_range")),
                             "evidence_ids": "|".join(ids),
                             "youtube_links": "|".join(evidence[i].get("youtube_url") or "" for i in ids),
                         }
@@ -349,6 +355,9 @@ def grouped_scores_csv(release):
         "estimated_red_points",
         "estimated_yellow_points",
         "score_policy_json",
+        "score_options_json",
+        "points_range_json",
+        "cumulative_range_json",
         "game_completion",
         "ice_review_ids",
         "evidence_ids",
@@ -397,6 +406,9 @@ def grouped_scores_csv(release):
                 "estimated_red_points": (end.get("estimated_points") or {}).get("red"),
                 "estimated_yellow_points": (end.get("estimated_points") or {}).get("yellow"),
                 "score_policy_json": json.dumps(end.get("score_policy_applications", [])),
+                "score_options_json": json.dumps(end.get("score_options", [])),
+                "points_range_json": json.dumps(end.get("points_range")),
+                "cumulative_range_json": json.dumps(end.get("score_after_end_range")),
                 "game_completion": history["game_completion"],
                 "ice_review_ids": "|".join(end["ice_review_ids"]),
                 "evidence_ids": "|".join(ids),

@@ -1,0 +1,57 @@
+/* Main tasks stay visible; dense inspection tools are secondary. */
+:root { --workspace-bg:#f4f6f3; }
+body { background:var(--workspace-bg); }
+header { height:60px; }
+main { padding-top:24px; max-width:1920px; }
+.page-heading { margin-bottom:12px; }
+.stats { padding:10px 0; margin-bottom:12px; }
+.analysis-hero { align-items:center; gap:14px; flex-wrap:wrap; }
+.analysis-hero h3 { font-size:20px; }
+.analysis-hero p { margin:5px 0 0; }
+.analysis-start { flex-wrap:wrap; }
+.workspace-actions { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.workspace-next { font-size:13px; color:var(--muted); line-height:1.6; margin:12px 0 18px; }
+.recording-actions { position:relative; }
+.recording-actions summary { cursor:pointer; padding:9px 12px; border:1px solid var(--line); border-radius:7px; font-size:12px; }
+.recording-actions[open] > div { position:absolute; right:0; top:100%; min-width:245px; display:grid; z-index:20; background:white; border:1px solid var(--line); padding:8px; box-shadow:0 12px 25px #173d2720; border-radius:8px; }
+.recording-tabs { position:sticky; top:0; z-index:5; background:white; padding-top:8px; }
+.recording-tabs button { min-height:44px; }
+.recording-game { border-radius:9px; }
+.review-task-card { padding:16px; margin:12px 0; background:#f6f8f4; border:1px solid var(--line); border-radius:8px; }
+.review-task-card h3 { margin:0 0 12px; }
+.quick-evidence { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin:16px 0; }
+.quick-frame { margin:0; }
+.quick-frame img { width:100%; height:auto; border:1px solid var(--line); border-radius:6px; }
+.quick-frame figcaption { font-size:12px; line-height:1.6; margin-top:6px; }
+#quick-review-status, #reset-status { white-space:pre-wrap; }
+.workflow-help { padding-left:24px; }
+.workflow-help li { line-height:1.65; margin:16px 0; }
+.end-table th small { font-weight:normal; display:inline-block; margin-top:5px; color:var(--muted); }
+#game-performance .end-table td { min-width:120px; }
+#game-performance .end-table th { min-width:165px; }
+.button:focus-visible, summary:focus-visible, a:focus-visible { outline:3px solid #638fca; outline-offset:3px; }
+@media(min-width:1400px) { .workbench { grid-template-columns:290px minmax(0,1fr); } }
+@media(max-width:720px) { .quick-evidence { grid-template-columns:1fr; } .workspace-actions > .button { flex:1 1 45%; } .analysis-start { width:100%; } main { padding:16px; } }
+.heading-actions { flex-wrap:wrap; }
+#batch-work-form fieldset { border:1px solid var(--line); border-radius:8px; padding:12px; margin:12px 0; }
+#batch-work-form .check-label { display:flex; align-items:center; gap:6px; margin:4px 12px 4px 0; }
+#batch-work-form .check-label input { width:auto; margin:0; }
+#batch-work-form details { margin:14px 0; }
+.library-filters { margin:12px 0; font-size:12px; }
+.library-filters summary { cursor:pointer; padding:8px 0; }
+.library-filters .sheet-grid { grid-template-columns:repeat(8,1fr); margin:10px 0; }
+.library-filters label { display:block; margin:8px 0; }
+@media(max-width:720px) {
+  .analysis-hero { align-items:flex-start; padding:14px; }
+  .analysis-hero h3 { font-size:16px; }
+  .analysis-hero p { display:none; }
+  .analysis-start { gap:6px; }
+  .page-heading h1 { font-size:26px; margin:0 0 8px; }
+  .page-heading { gap:8px; }
+  .heading-actions { gap:6px; }
+  .heading-actions .button { padding:10px; }
+  #processing-banner { padding:10px; }
+}
+#weekday-filters { border:1px solid var(--line); border-radius:6px; margin:12px 0; }
+#weekday-filters label { display:inline-flex; align-items:center; gap:5px; margin:6px; }
+#weekday-filters input { width:auto; margin:0; }

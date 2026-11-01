@@ -12,6 +12,8 @@ from hogline.adapters.sources import digest, video_link
 from hogline.config import profile
 from hogline.media.errors import TransientMediaError, remote_options
 
+STORAGE_VERSION = "derived-crops-v1"
+
 _shared_cache_usage = {}
 
 
@@ -31,7 +33,26 @@ def share_cache_usage(root, counter):
         _shared_cache_usage[key] = counter
 
 
+LIVE_STATUS_MESSAGES = {
+    "is_live": "This recording is still live on YouTube; analyze it after the stream ends and YouTube "
+    "finishes processing it",
+    "is_upcoming": "This recording has not started streaming yet",
+    "post_live": "YouTube is still processing this ended live stream; until it finishes, only the end of the "
+    "recording can be read. Try again later",
+}
+
+
 def resolve_media(source, max_height=1080):
+    if source.get("verified_download"):
+        from hogline.media.post_live import has_verified_download
+
+        if not has_verified_download(source):
+            raise ValueError("Verified recording download is missing or stale; prepare it again")
+        saved = source["verified_download"]
+        with Path(saved["path"]).open("rb") as handle:
+            if hashlib.file_digest(handle, "sha256").hexdigest() != saved["sha256"]:
+                raise ValueError("Verified recording download changed; prepare it again")
+        return {"uri": saved["path"], "format_id": "verified-post-live", "sha256": saved["sha256"]}
     if source["platform"] == "local":
         path = Path(source["local_path"])
         if not path.is_file():
@@ -53,7 +74,7 @@ def resolve_media(source, max_height=1080):
                 "-f",
                 f"best[height<={max_height}]/bestvideo[height<={max_height}]",
                 "--print",
-                "%(format_id)s\t%(url)s",
+                "%(format_id)s\t%(url)s\t%(live_status)s",
                 source["url"],
             ],
             capture_output=True,
@@ -68,9 +89,13 @@ def resolve_media(source, max_height=1080):
             "Cannot access the recording. Metadata and timestamp links remain available."
         ) from exc
     try:
-        format_id, url = result.stdout.strip().splitlines()[0].split("\t", 1)
+        format_id, url, *rest = result.stdout.strip().splitlines()[0].split("\t")
     except (IndexError, ValueError) as exc:
         raise ValueError("The media adapter returned no usable selected format") from exc
+    if rest and rest[0] in LIVE_STATUS_MESSAGES:
+        # A live or just-ended stream serves only its live edge: seeking to earlier source
+        # times returns no frames until YouTube has finished processing the recording.
+        raise TransientMediaError(LIVE_STATUS_MESSAGES[rest[0]])
     if not url.startswith("https://"):
         raise ValueError("The media adapter did not return an HTTPS stream")
     return {"uri": url, "format_id": format_id}
@@ -160,15 +185,29 @@ class EvidenceBudget:
         self.cache_bytes += additional_bytes
 
 
-def save_image(image, root, budget=None):
+def image_content(image):
     buffer = io.BytesIO()
     image.save(buffer, format="PNG")
-    content = buffer.getvalue()
+    return buffer.getvalue()
+
+
+def image_asset(image, content):
     sha = hashlib.sha256(content).hexdigest()
-    relative = f"evidence/{sha[:2]}/{sha}.png"
-    path = root / relative
+    return {
+        "path": f"evidence/{sha[:2]}/{sha}.png",
+        "sha256": sha,
+        "bytes": len(content),
+        "width": image.width,
+        "height": image.height,
+    }
+
+
+def save_image(image, root, budget=None):
+    content = image_content(image)
+    asset = image_asset(image, content)
+    path = root / asset["path"]
     path.parent.mkdir(parents=True, exist_ok=True)
-    valid = path.is_file() and hashlib.sha256(path.read_bytes()).hexdigest() == sha
+    valid = path.is_file() and hashlib.sha256(path.read_bytes()).hexdigest() == asset["sha256"]
     if budget:
         budget.consume(
             len(content), 0 if valid else len(content) - (path.stat().st_size if path.exists() else 0)
@@ -177,75 +216,16 @@ def save_image(image, root, budget=None):
         temp = path.with_suffix(f".{os.getpid()}.tmp")
         temp.write_bytes(content)
         os.replace(temp, path)
-    return {
-        "path": relative,
-        "sha256": sha,
-        "bytes": len(content),
-        "width": image.width,
-        "height": image.height,
-    }
+    return asset
 
 
-def source_seconds(timing, source):
-    info = source.get("probe", {})
-    return timing["pts"] * timing["time_base_num"] / timing["time_base_den"] - (
-        info.get("start_pts", 0) * info.get("time_base_num", 1) / info.get("time_base_den", 1)
-    )
-
-
-def observe(
-    image, timing, source, root, budget=None, layout=None, composite_asset=None, acquisition_tier="evidence"
-):
-    layout = layout or profile()
-    seconds = source_seconds(timing, source)
-    result = {
-        "source_id": source["id"],
-        "source_metadata_sha256": source["metadata_sha256"],
-        **timing,
-        "source_seconds": seconds,
-        "youtube_url": video_link(source, seconds),
-        "view": "composite",
-        "clock_status": "unresolved",
-        "layout_profile": layout["id"],
-        "profile_sha256": digest(layout),
-        "crop_status": "unverified_seed_crops",
-        "acquisition_tier": acquisition_tier,
-        "measurement_quality": "coarse_scan_only"
-        if acquisition_tier == "coarse"
-        else "native_selected_encode",
-        "image": composite_asset or save_image(image, root, budget),
-        "crops": {},
-    }
-    vectors = {}
-    for name, bounds in layout["views"].items():
-        x1, y1, x2, y2 = bounds
-        crop = image.crop(
-            (
-                round(x1 * image.width),
-                round(y1 * image.height),
-                round(x2 * image.width),
-                round(y2 * image.height),
-            )
-        )
-        result["crops"][name] = {**save_image(crop, root, budget), "normalized_bounds": bounds}
-        vectors[name] = np.asarray(crop.convert("L").resize((96, 96)), dtype=np.float32)
-    key = {
-        "source": source["id"],
-        "source_snapshot": source["metadata_sha256"],
-        **timing,
-        "image": result["image"]["sha256"],
-        "profile_sha256": digest(layout),
-    }
-    if acquisition_tier == "coarse":
-        key["acquisition_tier"] = "coarse-v1"
-    result["evidence_key"] = digest(key)
-    return result, vectors
-
-
-def image_content(image):
-    buffer = io.BytesIO()
-    image.save(buffer, format="PNG")
-    return buffer.getvalue()
+def crop_asset(image, parent, bounds, budget=None):
+    """An exact PNG crop, reproducible from its checked parent, with no second file."""
+    crop = image.crop(bounds)
+    asset = image_asset(crop, image_content(crop))
+    if budget:
+        budget.consume(asset["bytes"])
+    return {**asset, "derived_from": parent, "pixel_bounds": list(bounds)}, crop
 
 
 def read_image_bytes(root, asset):
@@ -279,3 +259,64 @@ def read_image(root, asset):
         if image.size != (asset["width"], asset["height"]):
             raise ValueError("Evidence image dimensions disagree with its manifest")
         return image.convert("RGB")
+
+
+def source_seconds(timing, source):
+    info = source.get("probe", {})
+    return timing["pts"] * timing["time_base_num"] / timing["time_base_den"] - (
+        info.get("start_pts", 0) * info.get("time_base_num", 1) / info.get("time_base_den", 1)
+    )
+
+
+def observe(
+    image, timing, source, root, budget=None, layout=None, composite_asset=None, acquisition_tier="evidence"
+):
+    layout = layout or profile()
+    seconds = source_seconds(timing, source)
+    result = {
+        "source_id": source["id"],
+        "storage_version": STORAGE_VERSION,
+        "source_metadata_sha256": source["metadata_sha256"],
+        **timing,
+        "source_seconds": seconds,
+        "youtube_url": video_link(source, seconds),
+        "view": "composite",
+        "clock_status": "unresolved",
+        "layout_profile": layout["id"],
+        "profile_sha256": digest(layout),
+        "crop_status": "unverified_seed_crops",
+        "acquisition_tier": acquisition_tier,
+        "measurement_quality": "coarse_scan_only"
+        if acquisition_tier == "coarse"
+        else "native_selected_encode",
+        "image": composite_asset or save_image(image, root, budget),
+        "crops": {},
+    }
+    vectors = {}
+    for name, bounds in layout["views"].items():
+        x1, y1, x2, y2 = bounds
+        asset, crop = crop_asset(
+            image,
+            result["image"],
+            (
+                round(x1 * image.width),
+                round(y1 * image.height),
+                round(x2 * image.width),
+                round(y2 * image.height),
+            ),
+            budget,
+        )
+        result["crops"][name] = {**asset, "normalized_bounds": bounds}
+        vectors[name] = np.asarray(crop.convert("L").resize((96, 96)), dtype=np.float32)
+    key = {
+        "source": source["id"],
+        "source_snapshot": source["metadata_sha256"],
+        "storage_version": STORAGE_VERSION,
+        **timing,
+        "image": result["image"]["sha256"],
+        "profile_sha256": digest(layout),
+    }
+    if acquisition_tier == "coarse":
+        key["acquisition_tier"] = "coarse-v1"
+    result["evidence_key"] = digest(key)
+    return result, vectors

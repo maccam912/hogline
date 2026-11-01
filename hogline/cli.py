@@ -103,6 +103,10 @@ def main():
     refresh.add_argument("--limit", type=int, default=4)
     refresh.add_argument("--timeout", type=int, default=30)
     refresh.add_argument("--preview", action="store_true")
+    download = commands.add_parser(
+        "prepare-recording", help="Download and verify an ended stream for local analysis"
+    )
+    download.add_argument("source_id")
     commands.add_parser("catalog")
     commands.add_parser("analyze", help="Run OpenCV on cached evidence; never downloads video")
     broadcast = commands.add_parser("analyze-broadcast", help="Resume OCR on pending detailed frames")
@@ -267,6 +271,38 @@ def main():
     serve.add_argument("--port", type=int, default=8765)
     serve.add_argument("--no-worker", action="store_true")
     serve.add_argument("--workers", type=int, choices=range(1, 33), metavar="1-32")
+    serve.add_argument("--recordings", type=int, choices=range(1, 5), metavar="1-4")
+    serve.add_argument("--recording-parallelism", type=int, choices=range(1, 9), metavar="1-8")
+    face_models = commands.add_parser("face-models", help="Show or explicitly install pinned face models")
+    face_models.add_argument("--install", action="store_true", help="Download pinned models now")
+    face_models.add_argument(
+        "--without-arcface", action="store_true", help="Skip InsightFace ArcFace (non-commercial weights)"
+    )
+    lineup = commands.add_parser(
+        "lineup", help="Find on-ice faces across one game span and group them into anonymous players"
+    )
+    lineup.add_argument("source_id")
+    lineup.add_argument("--start", type=float, required=True)
+    lineup.add_argument("--end", type=float, required=True)
+    lineup.add_argument("--interval", type=float, default=1.0)
+    lineup.add_argument("--segment", type=float, default=300)
+    lineup.add_argument("--embedder", choices=["arcface-r50", "sface"])
+    lineup.add_argument("--parallel", type=int, default=3)
+    lineups_command = commands.add_parser(
+        "lineups", help="Summarize game lineups, named people and team games"
+    )
+    lineups_command.add_argument(
+        "--automatic", action="store_true", help="Show the automatic face-finding queue instead"
+    )
+    lineups_command.add_argument(
+        "--backfill",
+        nargs="*",
+        metavar="SOURCE_ID",
+        help="Queue analyzed recordings without lineups for automatic face finding (all, or those given)",
+    )
+    faces_command = commands.add_parser("faces", help="List probable people across games, most games first")
+    faces_command.add_argument("--min-games", type=int, default=2)
+    faces_command.add_argument("--limit", type=int, default=50)
     export = commands.add_parser("export", help="Create an immutable dataset release")
     export.add_argument("path")
     export.add_argument("--mode", choices=["confirmed", "exploratory"], default="confirmed")
@@ -282,6 +318,10 @@ def main():
                 result = {"data_dir": str(settings.data_dir), "status": "ready"}
             case "import":
                 result = import_youtube(db, args.url)
+            case "prepare-recording":
+                from hogline.media.post_live import prepare_download
+
+                result = prepare_download(db, args.source_id)
             case "import-local":
                 result = import_local(db, args.path, args.sheet)
             case "inventory":
@@ -539,6 +579,63 @@ def main():
                     Path(args.output).write_text(json.dumps(result, indent=2))
                     print(args.output)
                     return
+            case "face-models":
+                from hogline.perception.faces import face_model_status, install_face_models
+
+                if args.install:
+                    keys = ("yunet", "sface") if args.without_arcface else ("yunet", "arcface-r50", "sface")
+                    install_face_models(settings.data_dir, keys)
+                result = face_model_status(settings.data_dir)
+            case "lineup":
+                from hogline.orchestration.lineups import LineupRequest, create_lineup_batch
+
+                result = create_lineup_batch(
+                    db,
+                    LineupRequest(
+                        source_id=args.source_id,
+                        start_seconds=args.start,
+                        end_seconds=args.end,
+                        interval_seconds=args.interval,
+                        segment_seconds=args.segment,
+                        embedder=args.embedder,
+                        parallelism=args.parallel,
+                    ),
+                )
+                result = {k: result[k] for k in ("id", "state", "lineup", "progress_summary")}
+            case "lineups" if args.backfill is not None:
+                from hogline.orchestration.auto_lineups import backfill
+
+                result = backfill(db, args.backfill or None)
+            case "lineups" if args.automatic:
+                from hogline.orchestration.auto_lineups import status
+
+                result = status(db)
+            case "faces":
+                from hogline.domain.identities import faces_overview
+
+                with db.snapshot_session() as session:
+                    result = faces_overview(
+                        session, settings.data_dir, min_games=max(1, args.min_games), limit=max(1, args.limit)
+                    )
+            case "lineups":
+                from hogline.domain.lineups import lineups_in_session
+
+                with db.snapshot_session() as session:
+                    view = lineups_in_session(session, settings.data_dir)
+                result = {
+                    "lineups": [
+                        {
+                            "id": x["id"],
+                            "title": x.get("title"),
+                            "span": [x["start_seconds"], x["end_seconds"]],
+                            "players": sum(p["role"] == "player" for p in x["players"]),
+                            "minor_groups": sum(p["role"] == "minor" for p in x["players"]),
+                            "named": [p["link"]["name"] for p in x["players"] if p["link"]],
+                        }
+                        for x in view["lineups"]
+                    ],
+                    "teams": view["teams"],
+                }
             case "retry":
                 result = retry(db, args.job_id)
             case "serve":
@@ -550,6 +647,10 @@ def main():
 
                 if args.workers is not None:
                     settings = replace(settings, workers=args.workers)
+                if args.recordings is not None:
+                    settings = replace(settings, recording_slots=args.recordings)
+                if args.recording_parallelism is not None:
+                    settings = replace(settings, recording_parallelism=args.recording_parallelism)
                 uvicorn.run(
                     create_app(settings, start_worker=not args.no_worker), host="127.0.0.1", port=args.port
                 )

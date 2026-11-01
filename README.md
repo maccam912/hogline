@@ -6,20 +6,24 @@ The target workflow is unattended score reconstruction, delivery/thrower associa
 
 For the latest development checkpoint and next steps, see [HANDOFF.md](HANDOFF.md).
 
+For the current Sunday-only, four-game polishing workflow and **Find my team** preview gallery, see [Sunday review batches](docs/SUNDAY_POLISH.md).
+
 ## Run it
 
-Requires Python 3.12+, [uv](https://docs.astral.sh/uv/), [FFmpeg/ffprobe](https://ffmpeg.org/), and [yt-dlp](https://github.com/yt-dlp/yt-dlp) on `PATH`.
+Requires Python 3.12+, [uv](https://docs.astral.sh/uv/), [FFmpeg/ffprobe](https://ffmpeg.org/), [yt-dlp](https://github.com/yt-dlp/yt-dlp), and [Git LFS](https://git-lfs.com/) on `PATH`. The packaged scoreboard reference PNGs are stored in Git LFS.
 
 ```sh
+git lfs install --local
+git lfs pull
 uv sync --group dev
 uv run hogline serve
 ```
 
-Open **http://127.0.0.1:8765**. The server starts four worker processes. Use `uv run hogline serve --workers 8` (or `HOGLINE_WORKERS=8`) to advance more recordings together. Each recording's tasks remain ordered. Data is kept in `data/`, which is excluded from version control. The web app is a local operator tool; leave it bound to loopback.
+Open **http://127.0.0.1:8765**. The server starts four worker processes. Use `uv run hogline serve --workers 8 --recordings 2 --recording-parallelism 8` to share eight workers across two recording workspaces. Tasks retain their planned order within each stage; eligible tasks run independently. Data is kept in `data/`, which is excluded from version control. The web app is a local operator tool; leave it bound to loopback. For a larger machine, `uv run hogline serve --workers 16 --recordings 4 --recording-parallelism 8` shares sixteen workers across four workspaces under the same retained-data cap.
 
 Sparse remote scans temporarily download their requested video section once, without re-encoding, and seek locally. Each worker can use up to 512 MiB of temporary compressed video (`HOGLINE_WORKING_VIDEO_MB`, set to `0` to disable); eight workers allow about 4 GiB. Sections are removed after the task, including failures, and on server shutdown. This working space is separate from retained evidence and its cache limit. Jobs reports the number of online workers and when a task is downloading its section. See [processing and resource limits](docs/PROCESSING.md).
 
-For the main workflow, **Add recording**, select it, and choose **Analyze recording**. The entire recording receives a sparse survey, board reading, selected detailed inspection, and game/end reconstruction in one resumable pipeline. **Jobs** shows running/queued/paused work, stage progress, elapsed processing time, limits, failures and retry/resume controls. **Results** shows candidate games, ends and score evidence; **Video & evidence** and **Advanced tools** keep the detailed inspection controls available. See [recording analysis and progress](docs/RECORDING_ANALYSIS.md) for scope and limits. Pipeline completion does not mean every game or score has been verified.
+For the main workflow, **Add recording**, select it, and choose **Analyze recording**. The entire recording receives a sparse survey, board reading, selected detailed inspection, and game/end reconstruction in one resumable pipeline. **Jobs** shows running/queued/paused work, stage progress, elapsed processing time, limits, failures and retry/resume controls. **Results** shows candidate games, ends and score evidence; **Video & evidence** and **Advanced tools** keep the detailed inspection controls available. See [recording analysis and progress](docs/RECORDING_ANALYSIS.md) for scope and limits. Pipeline completion does not mean every game or score has been verified. By default analyses finish one recording at a time with up to four workers; the recording-slot and task limits above enable bounded concurrency. Crop views share one original image; routine images are released after reconstruction, with a bounded review cache. Measurements, source links and compressed observations remain available. See the [retention policy](docs/RECORDING_ANALYSIS.md#bounded-image-retention-october-29-2026).
 
 ### Detailed and advanced workflows
 
@@ -48,6 +52,8 @@ The [house-state benchmark](docs/HOUSE_EVALUATION.md) freezes independently revi
 
 **Anonymous players** keep persistent group IDs with optional names, exact-frame body previews and reversible fragment links. Naming is optional; automatic overlap links require identical source-frame evidence. See [player groups](docs/PLAYERS.md).
 
+**Faces & lineups** find the faces of people on the ice after each recording analysis (or across one game you choose), group them into anonymous players with one representative face each, link the same face across games, and let you name only the people you want (for example your own team). Select a face to see every game it appears in; archive search also matches named people. Team labels then list every game where two or more of those people appear, whichever sheet it was on. Face data stays in a separate local biometric store, is never exported, and is deleted with the game's lineup. Models are installed explicitly with `hogline face-models --install`. See [game lineups](docs/LINEUPS.md).
+
 **Delivery evidence** adds optional limb poses, perspective handle motion and conservative hand-control/separation hypotheses automatically. Missing control or ambiguous actors remain explicit; see [release associations and validation](docs/DELIVERIES.md). Automatic campaigns can refine supported delivery brackets in short native-cadence windows under the same budget. Physical timing and player statistics still need reliable stone, geometry and attribution evidence.
 
 **Local model training** learns a small context classifier from frozen corrected handle labels, with checksummed weights and recording/day leakage checks. It stays an experimental benchmark until independent validation; see [training experiments](docs/TRAINING.md).
@@ -62,7 +68,7 @@ The default catalog is SQLite for a zero-service local pilot. SQLAlchemy models 
 # These import metadata only.
 uv run hogline import 'https://www.youtube.com/watch?v=es9urvYvLiE'
 uv run hogline import 'https://www.youtube.com/watch?v=976gtQn17P0'
-uv run hogline inventory 'https://www.youtube.com/channel/UCpQIZCWomj9fy287uBS3cxA/streams' --limit 12
+uv run hogline inventory 'https://www.youtube.com/@curlingstadiumwausau/streams' --limit 12
 uv run hogline catalog
 
 # Register a local original by content hash, without copying it.
@@ -155,3 +161,19 @@ and supply your own key. Requests use a bounded local budget and preserve propos
 status. No validated real-player weight/aim cohort or complete action-only reel is
 claimed. See [skill reports](docs/SKILL_REPORTS.md) and the
 [shot-quality plan](docs/SHOT_QUALITY_PLAN.md).
+
+
+### Resetting local data
+
+Stop the server and its workers before deleting or moving `data/` (or `HOGLINE_DATA_DIR`).
+That resets the catalog, recordings/downloads, analysis, saved reviews, player data, and
+catalog-trained models. Pretrained face/person/pose models now live in the sibling
+`hogline-assets/models/` directory (override with `HOGLINE_MODELS_DIR`). Legacy installs
+under `data/models/` should be migrated before deleting data. Resetting data does not remove the shipped scoreboard references:
+`hogline/media/references/` contains the two checksum-pinned reference frames used by
+`hogline/media/wausau-v1.json`. These assets load without a database and are included in
+the application package. Missing/corrupt pinned assets block new recording analyses with
+an actionable error. Keep this directory with the application when moving/installing it.
+
+Existing custom profiles without packaged assets still use their original database-backed
+references. Those references must be exported and pinned before resetting their data.

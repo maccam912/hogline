@@ -5,7 +5,9 @@ import math
 import cv2
 import numpy as np
 
-VERSION = "image-space-granite-score-v3"
+from hogline.perception.score_options import predict_score
+
+VERSION = "image-space-granite-score-v4"
 
 
 def normalized_point(point, ring):
@@ -223,7 +225,7 @@ def inspect_house_score(rgb, view):
         "footprints": footprints,
         "ring_reference": ring,
         "visibility": visibility,
-        "scoring": scoring,
+        "scoring": {**scoring, **predict_score(scoring)},
         "acceptance": "proposed",
         "end_phase": "unknown",
         "official_end_number": None,

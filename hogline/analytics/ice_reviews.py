@@ -8,7 +8,7 @@ from sqlalchemy import select
 
 from hogline.adapters.sources import digest
 from hogline.analytics.scorecards import scorecard_observations_in_session, select_inputs
-from hogline.db import Evidence, FrameObservation, now
+from hogline.db import Evidence, FrameObservation, now, rows_by_ids
 from hogline.domain.catalog import source_or_error
 from hogline.domain.models import Model
 from hogline.domain.provenance import observation_manifest, resolve_observation_manifests
@@ -130,9 +130,7 @@ def save_ice_end_review(db, request):
     with db.snapshot_session(write=True) as session:
         source = source_or_error(session, request.source_id)
         frame_ids = set(request.final_state_evidence_ids + request.phase_evidence_ids)
-        frames = {
-            e.id: e.document for e in session.scalars(select(Evidence).where(Evidence.id.in_(frame_ids)))
-        }
+        frames = {e.id: e.document for e in rows_by_ids(session, Evidence, Evidence.id, frame_ids)}
         if len(frames) != len(frame_ids):
             raise ValueError("Original evidence is missing")
         resolved = resolve_observation_manifests(
@@ -148,7 +146,11 @@ def save_ice_end_review(db, request):
         if request.board_history_id:
             obs = scorecard_observations_in_session(session, request.source_id)
             old = (
-                broadcast_catalog_in_session(session, db.settings.data_dir)["observations"] if not obs else []
+                broadcast_catalog_in_session(session, db.settings.data_dir, source_id=request.source_id)[
+                    "observations"
+                ]
+                if not obs
+                else []
             )
             report = reconstruct_scorecards(request.source_id, select_inputs(request.source_id, old, obs))
             history = next((h for h in report["scorecards"] if h["id"] == request.board_history_id), None)
@@ -219,7 +221,7 @@ def ice_reviews_in_session(session, source_id=None):
     )
     documents = [r.document for r in rows if source_id is None or r.document["source_id"] == source_id]
     ids = {i for d in documents for i in d["evidence_refs"]}
-    frames = {e.id: e.document for e in session.scalars(select(Evidence).where(Evidence.id.in_(ids)))}
+    frames = {e.id: e.document for e in rows_by_ids(session, Evidence, Evidence.id, ids)}
     for d in documents:
         check_review(d, frames)
     return documents
@@ -232,7 +234,7 @@ def source_score_history(db, source_id):
         source_or_error(session, source_id)
         inspected = scorecard_observations_in_session(session, source_id)
         old = (
-            broadcast_catalog_in_session(session, db.settings.data_dir)["observations"]
+            broadcast_catalog_in_session(session, db.settings.data_dir, source_id=source_id)["observations"]
             if not inspected
             else []
         )

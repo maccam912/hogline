@@ -344,9 +344,14 @@ def derive_window_actors(db, window_id):
         return save_actors_in_session(session, window, load_actor_input(db.settings.data_dir, window))
 
 
-def actors_in_session(session, *, full=False):
+def actors_in_session(session, *, full=False, source_id=None):
     output = []
-    for row in session.scalars(select(WindowActors).order_by(WindowActors.id)):
+    query = select(WindowActors)
+    if source_id is not None:
+        query = query.join(AnalysisWindow, WindowActors.window_id == AnalysisWindow.id).where(
+            AnalysisWindow.source_id == source_id
+        )
+    for row in session.scalars(query.order_by(WindowActors.id)):
         result = checked_actor_result(row)
         if not full:
             result["track_count"] = len(result.pop("tracks"))

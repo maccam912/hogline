@@ -119,7 +119,7 @@ def test_same_sheet_new_recording_does_not_inherit_board_reader(db, sources):
             EvidenceBudget(db.settings.data_dir, 100, 2048),
         )
         assert result["sheet"] == 4
-        assert result["scoreboard"]["missing_reason"] == "retained_header_reference_unavailable"
+        assert result["scoreboard"]["missing_reason"] == "colored_board_bands_not_found"
         assert reader.calls == 6  # date/time alternatives only; no board-cell OCR
 
 
@@ -146,8 +146,8 @@ def test_static_board_alignment_translates_small_shifts_and_declines_large_chang
 
 def test_missing_reference_does_not_trigger_acquisition(db):
     with db.session() as session:
-        image, result = reference_image(
-            session, db.settings.data_dir, profile()["broadcast"]["scoreboards"]["4"]
-        )
+        template = profile()["broadcast"]["scoreboards"]["4"]
+        template["layout_reference"].pop("asset", None)
+        image, result = reference_image(session, db.settings.data_dir, template)
         assert image is None
         assert result["missing_reason"] == "retained_layout_reference_missing_or_corrupt"

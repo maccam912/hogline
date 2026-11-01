@@ -7,6 +7,8 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from hogline.config import pretrained_model_path
+
 VERSION = "yolox-perspective-people-v1"
 MODEL_SHA256 = "c5c2d13e59ae883e6af3b45daea64af4833a4951c92d116ec270d9ddbe998063"
 MODEL_BYTES = 35858002
@@ -98,7 +100,8 @@ class PersonDetector:
 def optional_person_detector(root):
     path = Path(
         os.environ.get(
-            "HOGLINE_PERSON_MODEL", root / "models/yolox-s-coco/object_detection_yolox_2022nov.onnx"
+            "HOGLINE_PERSON_MODEL",
+            pretrained_model_path(root, "yolox-s-coco/object_detection_yolox_2022nov.onnx"),
         )
     )
     if not path.is_file():

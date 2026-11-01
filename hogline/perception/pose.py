@@ -7,6 +7,8 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from hogline.config import pretrained_model_path
+
 VERSION = "mediapipe-body-limbs-v1"
 MODEL_SHA256 = "9d89c599319a18fb7d2e28451a883476164543182bafca5f09eb2cf767ed2f3f"
 MODEL_BYTES = 5557238
@@ -97,7 +99,8 @@ class BodyPoseDetector:
 def optional_body_pose(root):
     path = Path(
         os.environ.get(
-            "HOGLINE_POSE_MODEL", root / "models/mediapipe-pose/pose_estimation_mediapipe_2023mar.onnx"
+            "HOGLINE_POSE_MODEL",
+            pretrained_model_path(root, "mediapipe-pose/pose_estimation_mediapipe_2023mar.onnx"),
         )
     )
     if not path.is_file():

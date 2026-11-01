@@ -8,7 +8,7 @@ import cv2
 import numpy as np
 from scipy.optimize import least_squares
 
-VERSION = "concentric-painted-house-projection-v1"
+VERSION = "concentric-painted-house-projection-v2"
 RADII = (1 / 3, 2 / 3, 1.0)
 
 
@@ -68,8 +68,9 @@ def diagnose_house_projection(rgb):
     hsv = cv2.cvtColor(rgb, cv2.COLOR_RGB2HSV)
     blue = cv2.inRange(hsv, (90, 60, 45), (140, 255, 255))
     green = cv2.inRange(hsv, (42, 60, 40), (88, 255, 255))
+    red = cv2.inRange(hsv, (0, 60, 40), (12, 255, 255)) | cv2.inRange(hsv, (165, 60, 40), (179, 255, 255))
     pixels, radii = [], []
-    for mask, choices in ((blue, np.array([2 / 3, 1.0])), (green, np.array([1 / 3]))):
+    for mask, choices in ((blue, np.array([2 / 3, 1.0])), (green | red, np.array([1 / 3]))):
         contours, _ = cv2.findContours(mask, cv2.RETR_LIST, cv2.CHAIN_APPROX_NONE)
         for contour in contours:
             if cv2.contourArea(contour) < width * height / 230.4:

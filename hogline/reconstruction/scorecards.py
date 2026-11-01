@@ -13,7 +13,8 @@ from hogline.adapters.sources import digest
 from hogline.domain.provenance import observation_manifest
 from hogline.reconstruction.ends import paired_epochs
 
-VERSION = "temporal-scorecards-v2"
+VERSION = "temporal-scorecards-v3"
+LEGACY_VERSION = "temporal-scorecards-v2"
 COLORS = ("red", "yellow")
 
 
@@ -206,7 +207,44 @@ def assign_reversed_blanks(samples, claims, counters):
         }
 
 
-def partition_scorecards(observations, partition):
+def reject_column_aliases(claims, conflicts):
+    """A team's cumulative column cannot score twice in one board history.
+
+    A dominant repeated label can reject an occasional OCR alias (e.g. 3 → 8).
+    Comparable support remains a conflict, including a possible unobserved reset.
+    Keep the rejected readings and their original evidence for inspection.
+    """
+    columns = defaultdict(list)
+    for claim in claims.values():
+        if claim["color"] in COLORS:
+            columns[(claim["color"], claim["cumulative_points"])].append(claim)
+    for alternatives in columns.values():
+        if len(alternatives) < 2:
+            continue
+        alternatives.sort(key=lambda c: (-c["supporting_frames"], c["official_number"]))
+        best, *others = alternatives
+        if others[0]["supporting_frames"] < best["supporting_frames"] * 0.25:
+            claims[best["official_number"]] = {
+                **best,
+                "rejected_column_aliases": [
+                    {**c, "reason": "weaker_end_label_in_same_cumulative_column"} for c in others
+                ],
+            }
+            for claim in others:
+                del claims[claim["official_number"]]
+        else:
+            for claim in alternatives:
+                del claims[claim["official_number"]]
+            conflicts.append(
+                {
+                    "reason": "competing_end_labels_in_same_cumulative_column",
+                    "official_numbers": sorted(c["official_number"] for c in alternatives),
+                    "alternatives": alternatives,
+                }
+            )
+
+
+def partition_scorecards(observations, partition, version=VERSION):
     by_evidence = {o["evidence_id"]: o for o in observations}
 
     def clear_header(epoch):
@@ -235,6 +273,8 @@ def partition_scorecards(observations, partition):
     output = []
     for index, samples in sorted(buckets.items()):
         claims, conflicts = stable_claims(samples)
+        if version == VERSION:
+            reject_column_aliases(claims, conflicts)
         if not claims and not conflicts:
             continue
         counters = current_end_evidence(samples)
@@ -283,7 +323,9 @@ def partition_scorecards(observations, partition):
     return output
 
 
-def reconstruct_scorecards(source_id, observations, scope=None):
+def reconstruct_scorecards(source_id, observations, scope=None, *, version=VERSION):
+    if version not in (VERSION, LEGACY_VERSION):
+        raise ValueError("Unsupported temporal scorecard version")
     partitions = defaultdict(list)
     by_time = defaultdict(list)
     for observation in observations:
@@ -312,10 +354,10 @@ def reconstruct_scorecards(source_id, observations, scope=None):
     cards = [
         card
         for partition, samples in sorted(partitions.items())
-        for card in partition_scorecards(samples, partition)
+        for card in partition_scorecards(samples, partition, version)
     ]
     document = {
-        "version": VERSION,
+        "version": version,
         "source_id": source_id,
         "scope": list(scope) if scope else None,
         "scorecards": cards,

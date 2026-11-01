@@ -168,9 +168,14 @@ def derive_window_tracks(db, window_id):
         return save_tracks_in_session(session, window, rows)
 
 
-def tracks_in_session(session, full=False):
+def tracks_in_session(session, full=False, source_id=None):
     output = []
-    for row in session.scalars(select(WindowTracks)):
+    query = select(WindowTracks)
+    if source_id is not None:
+        query = query.join(AnalysisWindow, WindowTracks.window_id == AnalysisWindow.id).where(
+            AnalysisWindow.source_id == source_id
+        )
+    for row in session.scalars(query):
         if digest(row.document) != row.sha256:
             raise ValueError("Stored handle tracklet checksum mismatch")
         document = row.document

@@ -142,3 +142,42 @@ def test_scorecards_are_exposed_and_exported_with_checked_inputs(db, sources):
     release["scorecard_timelines"][0]["summary"]["known_end_scores"] = 100
     with pytest.raises(ValueError, match="scorecard timelines"):
         validate_references(release)
+
+
+def test_repeated_ocr_alias_in_same_column_does_not_invent_later_ends():
+    # March 8 Sheet 5: 44 readings of red end 3 at cumulative 4, four misreads as 8.
+    rows = repeated(0)
+    for t in range(20, 240, 5):
+        rows.append(reading(t, red=((2, 1), (3, 4), (5, 5)), yellow=((1, 4), (4, 5))))
+    for t in range(240, 260, 5):
+        rows.append(reading(t, red=((2, 1), (8, 4), (5, 5)), yellow=((1, 4), (4, 5))))
+    current = reconstruct_scorecards("source", rows)
+    (book,) = current["scorecards"]
+    assert book["highest_posted_end"] == 5
+    assert book["ends"][-1]["score_after_end"] == {"red": 5, "yellow": 5}
+    rejected = book["ends"][2]["board_evidence"]["rejected_column_aliases"]
+    assert rejected[0]["official_number"] == 8 and rejected[0]["supporting_frames"] == 4
+    assert len(rejected[0]["evidence_ids"]) == 4
+    legacy = reconstruct_scorecards("source", rows, version="temporal-scorecards-v2")
+    assert legacy["scorecards"][0]["highest_posted_end"] == 8
+    assert current == reconstruct_scorecards("source", list(reversed(rows)))
+
+
+def test_comparable_column_aliases_abstain_and_blanks_do_not_share_scoring_columns():
+    rows = repeated(0, red=((1, 2),)) + repeated(20, red=((3, 2),))
+    (book,) = reconstruct_scorecards("source", rows)["scorecards"]
+    assert book["card_conflicts"][0]["official_numbers"] == [1, 3]
+    assert not book["ends"] and book["score_history_complete_through"] is None
+    rows = repeated(0, red=((1, 2), (4, 3)))
+    for row in rows:
+        row["scoreboard"]["blank_end_cards"] = [{"end_number": 2}, {"end_number": 3}]
+    (book,) = reconstruct_scorecards("source", rows)["scorecards"]
+    assert book["score_history_complete_through"] == 4
+    assert [e["state"] for e in book["ends"]] == ["played", "blank", "blank", "played"]
+
+
+def test_legacy_scorecard_release_reproduces_with_pinned_version(db):
+    release = snapshot(db, "exploratory")
+    for report in release["scorecard_timelines"]:
+        report.update(reconstruct_scorecards(report["source_id"], [], version="temporal-scorecards-v2"))
+    validate_references(release)

@@ -1,7 +1,7 @@
 from sqlalchemy import select
 from sqlalchemy.orm.exc import StaleDataError
 
-from hogline.adapters.sources import video_link
+from hogline.adapters.sources import source_view, video_link
 from hogline.db import AnalysisWindow, Evidence, GameRow, Job, ReviewTask, Revision, Scan, Source
 from hogline.domain.models import Game, GameEdit
 from hogline.reconstruction.timeline import reconstruct_source
@@ -161,15 +161,22 @@ def catalog(db):
         return catalog_in_session(session)
 
 
-def catalog_in_session(session):
+def catalog_in_session(session, source_id=None):
     from hogline.domain.reconciliation import reconciliations_in_session
 
-    sources = {r.id: {**r.document, "id": r.id} for r in session.scalars(select(Source))}
+    sources = {r.id: {**source_view(r.document), "id": r.id} for r in session.scalars(select(Source))}
     games = [
         present_game(r, sources)
         for r in session.scalars(select(GameRow))
         if not r.document.get("retired_into")
     ]
+    scan_query = select(Scan, Job).join(Job, Scan.job_id == Job.id)
+    evidence_query = select(Evidence)
+    window_query = select(AnalysisWindow)
+    if source_id is not None:
+        scan_query = scan_query.where(Scan.source_id == source_id)
+        evidence_query = evidence_query.where(Evidence.source_id == source_id)
+        window_query = window_query.where(AnalysisWindow.source_id == source_id)
     scans = [
         {
             **r.document,
@@ -178,11 +185,9 @@ def catalog_in_session(session):
             "source_id": r.source_id,
             "source_metadata_sha256": j.document["source_hash"],
         }
-        for r, j in session.execute(select(Scan, Job).join(Job, Scan.job_id == Job.id))
+        for r, j in session.execute(scan_query)
     ]
-    evidence = [
-        {**r.document, "id": r.id, "source_id": r.source_id} for r in session.scalars(select(Evidence))
-    ]
+    evidence = [{**r.document, "id": r.id, "source_id": r.source_id} for r in session.scalars(evidence_query)]
     tasks = [
         {"id": r.id, "game_id": r.game_id, "reason": r.reason, "state": r.state}
         for r in session.scalars(select(ReviewTask))
@@ -199,7 +204,7 @@ def catalog_in_session(session):
         "scans": scans,
         "analysis_windows": [
             {**r.document, "id": r.id, "source_id": r.source_id, "job_id": r.job_id}
-            for r in session.scalars(select(AnalysisWindow))
+            for r in session.scalars(window_query)
         ],
         "evidence": evidence,
         "review_tasks": tasks,
@@ -210,5 +215,6 @@ def catalog_in_session(session):
                 {e["id"]: e for e in evidence},
             )
             for s in sources.values()
+            if source_id is None or s["id"] == source_id
         ],
     }
