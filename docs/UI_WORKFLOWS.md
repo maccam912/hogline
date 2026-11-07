@@ -9,7 +9,7 @@ The recording workspace puts common tasks above the results. Date-range, weekday
 
 ## Date-range batches
 
-Choose **Batch add & analyze**, inclusive dates, sheets and any combination of weekdays. Choose either the current archive or a YouTube channel/playlist, then preview and start. The channel preset is Curling Stadium Wausau (`@curlingstadiumwausau`). All dates and weekdays are visible by default; no season is privileged.
+Choose **Batch add & analyze**, inclusive dates, sheets and any combination of weekdays. Optionally enter **Video title contains**, for example `Koski`, to download and process only videos containing that text in their titles (case-insensitive, literal substring matching). Leading and trailing spaces are ignored; leave it blank for all titles. This combines with the date, sheet and weekday filters. Choose either the current archive or a YouTube channel/playlist, then preview and start. The channel preset is Curling Stadium Wausau (`@curlingstadiumwausau`). All dates and weekdays are visible by default; no season is privileged.
 
 A saved batch continues without the browser open while the server runs. It advances the channel listing, imports metadata, refreshes matching recording manifests, and queues recording analysis. It discovers game and score proposals within recordings; it does not assume one recording equals one game or automatically confirm results. Existing active, paused and completed analyses are reused. Automatic face finding follows the server’s existing configuration.
 

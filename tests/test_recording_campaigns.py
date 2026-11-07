@@ -1,5 +1,6 @@
 from datetime import date
 
+import pytest
 from sqlalchemy import select
 
 from hogline.db import DiscoveryFeed, DiscoveryMembership, Job, ProcessingBatch, Source
@@ -125,6 +126,7 @@ def test_new_channel_undated_listing_gets_metadata_then_date_filter(db, sources)
         end_date="2026-10-31",
         sheets=[5],
         weekdays=[4],
+        title_filter="koski",
         feed_url="https://www.youtube.com/@curlingstadiumwausau/streams",
     )
     result = start(db, CampaignStart(id="new-channel", request=req))
@@ -151,3 +153,90 @@ def test_new_channel_undated_listing_gets_metadata_then_date_filter(db, sources)
         item = session.get(RecordingCampaign, "new-channel").document["items"][sid]
         assert item["state"] == "active"
         assert item["batch_id"]
+
+
+@pytest.mark.parametrize(
+    ("text", "title", "expected"),
+    [
+        (" Koski ", "SHEET 5 | Koski, Lindsey vs Dobbs", True),
+        ("koski", "KOSKI vs Dobbs", True),
+        ("Koski", "Dobbs vs Smith", False),
+        ("   ", "Dobbs vs Smith", True),
+        ("Koski.*", "Koski vs Dobbs", False),
+        ("Koski", "", False),
+    ],
+)
+def test_title_filter_is_optional_case_insensitive_literal_text(text, title, expected):
+    source = {"title_date": "2026-01-16", "sheet": 5, "title": title}
+    assert matches(source, request(title_filter=text), ()) is expected
+
+
+def test_filtered_preview_only_queues_matching_video(db, sources):
+    sid = sources[0]["id"]
+    with db.session() as session:
+        source = session.get(Source, sid)
+        source.document = {**source.document, "title": source.document["title"] + " | KOSKI vs Dobbs"}
+    req = request(title_filter=" Koski ")
+    assert [i["id"] for i in preview(db, req)["items"]] == [sid]
+    body = CampaignStart(id="filtered", request=req)
+    assert start(db, body)["request"]["title_filter"] == "Koski"
+    tick(db)
+    tick(db)
+    with db.session() as session:
+        assert set(session.get(RecordingCampaign, body.id).document["items"]) == {sid}
+        assert len(list(session.scalars(select(ProcessingBatch)))) == 1
+        jobs = list(session.scalars(select(Job)))
+        assert jobs
+        assert all(j.document["request"]["source_id"] == sid for j in jobs)
+
+
+def test_discovery_checks_title_before_metadata_and_again_after_refresh(db, sources):
+    body = CampaignStart(
+        id="title-discovery",
+        request=request(title_filter="Koski", feed_url="https://www.youtube.com/@test/streams"),
+    )
+    feed_id = start(db, body)["feed_id"]
+    with db.session() as session:
+        for source in sources:
+            session.add(DiscoveryMembership(feed_id=feed_id, source_id=source["id"], document={}))
+            row = session.get(Source, source["id"])
+            row.document = {
+                **row.document,
+                "title_date": None,
+                "metadata_refresh_needed": True,
+                "title": "Koski vs Dobbs" if source == sources[0] else "Smith vs Jones",
+            }
+        feed = session.get(DiscoveryFeed, feed_id)
+        feed.document = {**feed.document, "backfill_state": "visible_end_observed"}
+    tick(db)
+    with db.session() as session:
+        items = session.get(RecordingCampaign, body.id).document["items"]
+        assert set(items) == {sources[0]["id"]}
+        assert items[sources[0]["id"]]["state"] == "metadata"
+        assert len(list(session.scalars(select(Job)))) == 1
+        row = session.get(Source, sources[0]["id"])
+        row.document = {
+            **row.document,
+            "title": "Smith vs Jones",
+            "title_date": "2026-01-16",
+            "metadata_refresh_needed": False,
+        }
+    tick(db)
+    with db.session() as session:
+        assert (
+            session.get(RecordingCampaign, body.id).document["items"][sources[0]["id"]]["state"] == "excluded"
+        )
+        assert not list(session.scalars(select(ProcessingBatch)))
+
+
+def test_legacy_campaign_without_title_filter_is_still_idempotent(db):
+    body = CampaignStart(id="legacy", request=request())
+    start(db, body)
+    with db.session() as session:
+        row = session.get(RecordingCampaign, body.id)
+        saved = dict(row.document["request"])
+        saved.pop("title_filter")
+        row.document = {**row.document, "request": saved}
+    start(db, body)
+    with pytest.raises(ValueError, match="different filters"):
+        start(db, CampaignStart(id=body.id, request=request(title_filter="Koski")))

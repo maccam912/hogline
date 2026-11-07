@@ -39,6 +39,7 @@ class CampaignRequest(Model):
     sheets: list[int] = Field(default_factory=lambda: list(range(1, 9)), min_length=1, max_length=8)
     weekdays: list[int] = Field(default_factory=lambda: list(range(7)), min_length=1, max_length=7)
     feed_url: str | None = Field(default=None, max_length=500)
+    title_filter: str = Field(default="", max_length=500)
     max_worker_seconds: int = Field(default=14400, ge=60, le=86400)
     max_image_growth_mb: int = Field(default=512, ge=32, le=4096)
 
@@ -54,6 +55,7 @@ class CampaignRequest(Model):
 
     @model_validator(mode="after")
     def valid_scope(self):
+        self.title_filter = self.title_filter.strip()
         if self.end_date < self.start_date:
             raise ValueError("End date must be on or after start date")
         if any(s not in range(1, 9) for s in self.sheets) or len(set(self.sheets)) != len(self.sheets):
@@ -74,6 +76,10 @@ class CampaignControl(Model):
     action: Literal["pause", "resume", "cancel"]
 
 
+def title_matches(source, request):
+    return request.title_filter.casefold() in (source.get("title") or "").casefold()
+
+
 def matches(source, request, excluded):
     try:
         day = date.fromisoformat(source.get("title_date") or "")
@@ -83,6 +89,7 @@ def matches(source, request, excluded):
         request.start_date <= day <= request.end_date
         and source.get("sheet") in request.sheets
         and day.weekday() in request.weekdays
+        and title_matches(source, request)
         and not any(word.lower() in source.get("title", "").lower() for word in excluded)
     )
 
@@ -106,6 +113,7 @@ def candidates(session, request, excluded, feed_id=None, *, resolve_dates=False,
             or s.id in tracked
             or (
                 resolve_dates
+                and title_matches(s.document, request)
                 and not s.document.get("title_date")
                 and s.document.get("metadata_refresh_needed")
                 and s.document.get("sheet") in request.sheets
@@ -177,8 +185,8 @@ def start(db, body):
         row = session.get(RecordingCampaign, body.id)
         request = body.request.model_dump(mode="json")
         if row:
-            if row.document["request"] != request:
-                raise ValueError("Batch ID already belongs to a different date range")
+            if CampaignRequest.model_validate(row.document["request"]).model_dump(mode="json") != request:
+                raise ValueError("Batch ID already belongs to different filters or limits")
             return view(row)
         row = RecordingCampaign(
             id=body.id,
@@ -246,6 +254,9 @@ def tick(db):
                     item["problem"] = batch.document.get("pause_reason") if batch else "Analysis was cleared"
                     continue
                 if item["state"] == "attention":
+                    continue
+                if not title_matches(source, request):
+                    item.update(state="excluded", problem="Video title does not match the selected filter")
                     continue
                 if not source.get("metadata_refresh_needed") and not matches(
                     source, request, db.settings.auto_lineup_exclude
