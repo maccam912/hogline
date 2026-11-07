@@ -19,7 +19,7 @@ from hogline.db import (
 )
 from hogline.domain.models import Model, uid
 from hogline.media.post_live import has_verified_download
-from hogline.orchestration.discovery import FeedCreate, create_feed, enqueue_page
+from hogline.orchestration.discovery import FeedCreate, create_feed, enqueue_page, set_import_scope
 from hogline.orchestration.metadata import VERSION as METADATA_VERSION
 from hogline.orchestration.metadata import source_pin
 from hogline.orchestration.plans import BatchControl, control_batch, enqueue_in_session, publish_batch
@@ -173,10 +173,27 @@ def preview(db, request):
 
 
 def start(db, body):
+    with db.snapshot_session() as session:
+        existing = session.get(RecordingCampaign, body.id)
+        if existing:
+            if CampaignRequest.model_validate(existing.document["request"]) != body.request:
+                raise ValueError("Batch ID already belongs to different filters or limits")
+            return view(existing)
+        title_filters = [body.request.title_filter] + [
+            row.document["request"].get("title_filter", "")
+            for row in session.scalars(
+                select(RecordingCampaign).where(
+                    RecordingCampaign.state.in_(["active", "paused", "attention"])
+                )
+            )
+            if row.document["request"].get("feed_url") == body.request.feed_url
+        ]
     # Feed registration is idempotent; it queues metadata listing, never analysis.
     feed = (
         create_feed(
-            db, FeedCreate(url=body.request.feed_url, page_size=50, overlap=3, backfill_pages_per_cycle=0)
+            db,
+            FeedCreate(url=body.request.feed_url, page_size=50, overlap=3, backfill_pages_per_cycle=0),
+            title_filters=title_filters,
         )
         if body.request.feed_url
         else None
@@ -228,6 +245,18 @@ def tick(db):
             items = {k: dict(v) for k, v in doc["items"].items()}
             feed = session.get(DiscoveryFeed, doc["feed_id"]) if doc["feed_id"] else None
             if feed:
+                if "import_title_filters" not in feed.document["config"]:
+                    # Upgrade saved batches created before discovery respected their title scope.
+                    scopes = [
+                        c.document["request"].get("title_filter", "")
+                        for c in session.scalars(
+                            select(RecordingCampaign).where(
+                                RecordingCampaign.state.in_(["active", "paused", "attention"])
+                            )
+                        )
+                        if c.document.get("feed_id") == feed.id
+                    ]
+                    set_import_scope(session, feed, scopes)
                 doc["discovery_state"] = feed.document["backfill_state"]
                 if doc["discovery_state"] == "ready":
                     enqueue_page(session, feed)

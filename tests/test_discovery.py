@@ -91,6 +91,92 @@ def test_overlapping_pages_resume_without_media_jobs(db, listing):
     assert not (db.settings.data_dir / "evidence").exists()
 
 
+def test_filtered_discovery_skips_imports_but_keeps_page_positions_and_anchors(db, listing):
+    from hogline.orchestration import recording_campaigns as campaigns
+
+    videos, calls = listing
+    videos[6]["title"] += " | KOSKI vs Dobbs"
+    videos[8]["title"] += " | Koski vs Smith"
+    feed = create_feed(db, FeedCreate(url=URL, page_size=4, overlap=1), title_filters=[" Koski "])
+    campaigns.start(
+        db,
+        campaigns.CampaignStart(
+            id="koski",
+            request=campaigns.CampaignRequest(
+                start_date="2026-01-01", end_date="2026-01-31", feed_url=URL, title_filter="Koski"
+            ),
+        ),
+    )
+    for _ in range(3):
+        campaigns.tick(db)
+        assert run_discovery_once(db)["state"] == "succeeded"
+    campaigns.tick(db)
+    assert calls == [(1, 4), (4, 7), (7, 10)]
+    result = feeds(db)[0]
+    assert result["id"] == feed["id"]
+    assert result["backfill_state"] == "visible_end_observed"
+    assert result["discovered_sources"] == 2
+    assert all(run["continuity_supported"] for run in result["runs"])
+    first = next(r for r in result["runs"] if r["request"]["start"] == 1)
+    assert first["source_count"] == 0
+    assert first["listed_source_count"] == first["title_filtered_count"] == 4
+    with db.session() as session:
+        assert session.scalar(select(func.count()).select_from(Source)) == 2
+        assert session.scalar(select(func.count()).select_from(DiscoveryMembership)) == 2
+        assert all("koski" in s.document["title"].casefold() for s in session.scalars(select(Source)))
+        assert len(session.get(campaigns.RecordingCampaign, "koski").document["items"]) == 2
+
+
+def test_new_title_scope_restarts_discovery_and_preserves_existing_recordings(db, listing):
+    from hogline.orchestration import recording_campaigns as campaigns
+
+    listing[0][0]["title"] += " | Koski vs Dobbs"
+    listing[0][1]["title"] += " | Smith vs Jones"
+    first = campaigns.CampaignRequest(
+        start_date="2026-01-01", end_date="2026-01-31", feed_url=URL, title_filter="Koski"
+    )
+    campaigns.start(db, campaigns.CampaignStart(id="koski", request=first))
+    run_discovery_once(db)
+    assert feeds(db)[0]["discovered_sources"] == 1
+    second = first.model_copy(update={"title_filter": "Smith"})
+    campaigns.start(db, campaigns.CampaignStart(id="smith", request=second))
+    result = feeds(db)[0]
+    assert result["generation"] == 2 and result["next_index"] == 1
+    assert result["config"]["import_title_filters"] == ["koski", "smith"]
+    run_discovery_once(db)
+    assert feeds(db)[0]["discovered_sources"] == 2
+    # Retrying a saved campaign must not narrow the other campaign's import scope.
+    campaigns.start(db, campaigns.CampaignStart(id="koski", request=first))
+    assert feeds(db)[0]["config"]["import_title_filters"] == ["koski", "smith"]
+    # An explicit unrestricted discovery request can recover the previously skipped titles.
+    create_feed(db, FeedCreate(url=URL))
+    run_discovery_once(db)
+    assert feeds(db)[0]["discovered_sources"] == 9
+
+
+def test_saved_filtered_campaign_upgrades_legacy_feed_before_next_page(db, listing):
+    from hogline.orchestration import recording_campaigns as campaigns
+
+    result = campaigns.start(
+        db,
+        campaigns.CampaignStart(
+            id="legacy",
+            request=campaigns.CampaignRequest(
+                start_date="2026-01-01", end_date="2026-01-31", feed_url=URL, title_filter="Koski"
+            ),
+        ),
+    )
+    with db.session() as session:
+        feed = session.get(DiscoveryFeed, result["feed_id"])
+        config = dict(feed.document["config"])
+        config.pop("import_title_filters")
+        feed.document = {**feed.document, "config": config}
+    campaigns.tick(db)
+    assert feeds(db)[0]["config"]["import_title_filters"] == ["koski"]
+    run_discovery_once(db)
+    assert feeds(db)[0]["discovered_sources"] == 0
+
+
 def test_page_drift_and_repeated_page_cannot_claim_continuity(db, listing, monkeypatch):
     feed = create_feed(db, FeedCreate(url=URL, page_size=4, overlap=1, backfill_pages_per_cycle=1))
     run_discovery_once(db)

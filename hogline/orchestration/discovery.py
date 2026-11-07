@@ -56,15 +56,58 @@ def enqueue_page(session, feed, mode="advance", slot=None):
     return row
 
 
-def create_feed(db, request):
+def normalize_title_filters(values):
+    values = sorted({value.strip().casefold() for value in values or []})
+    return values if values and "" not in values else None
+
+
+def title_selected(metadata, filters):
+    return not filters or any(word in (metadata.get("title") or "").casefold() for word in filters)
+
+
+def set_import_scope(session, feed, title_filters):
+    """A changed import scope needs a new pass, including pages previously skipped."""
+    filters = normalize_title_filters(title_filters)
+    config = feed.document["config"]
+    if "import_title_filters" in config and config["import_title_filters"] == filters:
+        return
+    if config.get("import_title_filters") == filters:
+        feed.document = {**feed.document, "config": {**config, "import_title_filters": filters}}
+        return
+    for run in session.scalars(
+        select(DiscoveryRun).where(
+            DiscoveryRun.feed_id == feed.id, DiscoveryRun.state.in_(["queued", "failed"])
+        )
+    ):
+        run.state = "cancelled"
+    feed.document = {
+        **feed.document,
+        "config": {**config, "import_title_filters": filters},
+        "generation": feed.document["generation"] + 1,
+        "next_index": 1,
+        "anchors": [],
+        "last_page_ids": [],
+        "backfill_state": "paused" if feed.document["backfill_state"] == "paused" else "ready",
+        "paused_from": "ready",
+        "cycle_remaining": max(1, config["backfill_pages_per_cycle"]),
+        "pause_reason": None,
+    }
+    enqueue_page(session, feed)
+
+
+def create_feed(db, request, *, title_filters=None):
     with db.session() as session:
         existing = session.scalar(select(DiscoveryFeed).where(DiscoveryFeed.url == request.url))
         if existing:
+            set_import_scope(session, existing, title_filters)
             return feed_view(session, existing)
         feed = DiscoveryFeed(
             url=request.url,
             document={
-                "config": request.model_dump(),
+                "config": {
+                    **request.model_dump(),
+                    "import_title_filters": normalize_title_filters(title_filters),
+                },
                 "created_at": now(),
                 "generation": 1,
                 "next_index": 1,
@@ -295,6 +338,11 @@ def execute_discovery(db, run):
     for entry in response["entries"]:
         with db.session() as session:
             owned(session, run)
+            filters = (
+                session.get(DiscoveryFeed, run["feed_id"]).document["config"].get("import_title_filters")
+            )
+        if not title_selected(entry["metadata"], filters):
+            continue
         metadata = entry["metadata"]
         sources.append(
             import_youtube(
@@ -351,6 +399,9 @@ def execute_discovery(db, run):
                     m.source_id
                     for m in members
                     if m.document.get("last_backfill_generation") != request["generation"]
+                    and title_selected(
+                        session.get(Source, m.source_id).document, doc["config"].get("import_title_filters")
+                    )
                 ]
                 for identifier in unseen:
                     source_row = session.get(Source, identifier)
@@ -393,7 +444,9 @@ def execute_discovery(db, run):
             "finished_at": now(),
             "response_sha256": response["sha256"],
             "source_ids": list(dict.fromkeys(s["id"] for s in sources)),
-            "source_count": len(set(identifiers)),
+            "source_count": len(set(s["id"] for s in sources)),
+            "listed_source_count": len(set(identifiers)),
+            "title_filtered_count": len(set(identifiers)) - len(set(s["id"] for s in sources)),
             "raw_entry_count": response["raw_count"],
             "skipped": response["skipped"],
             "visible_end_observed": response["visible_end_observed"],

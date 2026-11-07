@@ -16,7 +16,8 @@
         current
           .map(
             (f) => `<article class="batch-card discovery-card">
-      <div class="batch-heading"><strong>${f.discovered_sources} recordings discovered</strong><span class="pill">${status(f.backfill_state)}</span></div>
+      <div class="batch-heading"><strong>${f.discovered_sources} recordings added to archive</strong><span class="pill">${status(f.backfill_state)}</span></div>
+      ${f.config.import_title_filters?.length ? `<p class="fine-print">Adding titles containing: ${f.config.import_title_filters.map(escapeHTML).join(" or ")} (ignoring capitalization). Other titles are skipped.</p>` : ""}
       <p><a class="evidence-link" href="${escapeHTML(f.url)}" target="_blank" rel="noopener">Channel / playlist ↗</a> · next listing position ${f.next_index} · pass ${f.generation}</p>
       <p class="fine-print">${f.config.page_size} entries/page, ${f.config.overlap} shared · scheduled ${f.config.scheduled ? `every ${f.config.reconcile_hours}h while running` : "off"}.</p>
       ${f.pause_reason ? `<p class="job-error">${escapeHTML(f.pause_reason)}</p>` : ""}
@@ -24,7 +25,7 @@
       ${f.backfill_state !== "paused" ? `<button class="button quiet" data-feed="${f.id}" data-feed-action="head">Check latest page</button><button class="button quiet" data-feed="${f.id}" data-feed-action="pause">Pause feed</button>` : `<button class="button quiet" data-feed="${f.id}" data-feed-action="resume">Resume feed</button>`}
       <button class="button quiet" data-feed="${f.id}" data-feed-action="restart">Restart listing pass</button>
       <button class="button quiet" data-feed="${f.id}" data-feed-action="configure">${f.config.scheduled ? "Disable" : "Enable"} schedule</button></div>
-      <details data-feed-runs="${f.id}" ${expanded.has(f.id) ? "open" : ""}><summary>${f.runs.length} recent page runs</summary>${f.runs.map((r) => `<p class="fine-print"><a href="/api/discovery/runs/${r.id}" target="_blank" rel="noopener">${r.request.mode === "head" ? "Head check" : `Position ${r.request.start}`} ↗</a> · ${status(r.state)} · ${r.attempts} ${r.attempts === 1 ? "attempt" : "attempts"}${r.source_count != null ? ` · ${r.source_count} listed recordings` : ""}${r.superseded ? " · superseded pass" : ""}${r.error ? `<br><span class="job-error">${escapeHTML(r.error)}</span>` : ""}</p>`).join("")}</details></article>`,
+      <details data-feed-runs="${f.id}" ${expanded.has(f.id) ? "open" : ""}><summary>${f.runs.length} recent page runs</summary>${f.runs.map((r) => `<p class="fine-print"><a href="/api/discovery/runs/${r.id}" target="_blank" rel="noopener">${r.request.mode === "head" ? "Head check" : `Position ${r.request.start}`} ↗</a> · ${status(r.state)} · ${r.attempts} ${r.attempts === 1 ? "attempt" : "attempts"}${r.source_count != null ? ` · ${r.source_count} added recordings${r.title_filtered_count ? ` · ${r.title_filtered_count} nonmatching titles skipped` : ""}` : ""}${r.superseded ? " · superseded pass" : ""}${r.error ? `<br><span class="job-error">${escapeHTML(r.error)}</span>` : ""}</p>`).join("")}</details></article>`,
           )
           .join("") ||
         '<p class="fine-print">No feeds added.</p>';

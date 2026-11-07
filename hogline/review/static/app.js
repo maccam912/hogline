@@ -63,12 +63,29 @@ let workspaceRequest = null;
 let workspaceController = null;
 let workspaceSource = null;
 
+function mergeWorkspaceBatch(summary, detail) {
+  if (detail.revision >= summary.revision) return detail;
+  // Overview and recording details refresh independently. Keep the last complete
+  // progress snapshot until its replacement arrives, while applying live controls.
+  const {summary_only, units, executions, phase_history, succeeded_units,
+    deferred_units, phase, ...live} = summary;
+  const progress = {...detail.progress_summary};
+  if (live.state !== "active") {
+    progress.live_worker_updates = [];
+    progress.live_updated_at = null;
+  }
+  if (live.state === "completed") progress.overall_fraction = 1;
+  return {...detail, ...live, summary_only: false,
+    progress_summary: progress, progress_refreshing: true};
+}
+
 function applyWorkspace() {
   if (!archiveOverview) return;
   const detail = selectedWorkspace?.source_id === state.source ? selectedWorkspace : {};
   const batches = new Map(archiveOverview.batches.map((b) => [b.id, b]));
   for (const b of detail.batches || []) {
-    if (b.revision === batches.get(b.id)?.revision) batches.set(b.id, b);
+    const summary = batches.get(b.id);
+    if (summary) batches.set(b.id, mergeWorkspaceBatch(summary, b));
   }
   const jobs = new Map((detail.jobs || []).map((j) => [j.id, j]));
   for (const j of archiveOverview.jobs) jobs.set(j.id, j);
